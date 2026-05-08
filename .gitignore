@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Build outputs
+dist/
+build/
+bin/
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Environment
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Private documentation (DO NOT PUSH)
+docs/
+CLAUDE.md
+MEMORY.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+*.test
+*.out
+coverage.txt
+
+# Tauri
+src-tauri/target/
+
+# Next.js
+.next/
+out/
+
+# Turborepo
+.turbo/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
