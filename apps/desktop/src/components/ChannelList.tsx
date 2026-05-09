@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useGuildStore } from "../stores/guild";
 import { useAuthStore } from "../stores/auth";
+import { type Channel } from "../lib/api";
 import CreateChannelModal from "./CreateChannelModal";
 
 const statusColors: Record<string, string> = {
@@ -10,13 +11,14 @@ const statusColors: Record<string, string> = {
   offline: "bg-slate-500",
 };
 
+const EMPTY_CHANNELS: Channel[] = [];
+
 export default function ChannelList() {
   const activeGuildId = useGuildStore((s) => s.activeGuildId);
   const activeChannelId = useGuildStore((s) => s.activeChannelId);
   const setActiveChannel = useGuildStore((s) => s.setActiveChannel);
-  const channels = useGuildStore((s) =>
-    activeGuildId ? (s.channels[activeGuildId] || []) : [],
-  );
+  const allChannels = useGuildStore((s) => s.channels);
+  const channels = (activeGuildId ? allChannels[activeGuildId] : undefined) ?? EMPTY_CHANNELS;
   const guilds = useGuildStore((s) => s.guilds);
   const user = useAuthStore((s) => s.user);
   const [showCreateChannel, setShowCreateChannel] = useState(false);

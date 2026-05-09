@@ -1,5 +1,6 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useGuildStore } from "../stores/guild";
+import { type Message } from "../lib/api";
 
 function formatTimestamp(iso: string): string {
   const date = new Date(iso);
@@ -43,19 +44,19 @@ function userColor(userId: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
+const EMPTY_MSGS: Message[] = [];
+
 export default function ChatArea() {
   const activeChannelId = useGuildStore((s) => s.activeChannelId);
-  const messages = useGuildStore((s) =>
-    activeChannelId ? (s.messages[activeChannelId] || []) : [],
-  );
-  const channels = useGuildStore((s) => s.channels);
+  const allMessages = useGuildStore((s) => s.messages);
+  const messages = (activeChannelId ? allMessages[activeChannelId] : undefined) ?? EMPTY_MSGS;
+  const allChannels = useGuildStore((s) => s.channels);
   const activeGuildId = useGuildStore((s) => s.activeGuildId);
   const usernames = useGuildStore((s) => s.usernames);
   const sendMessage = useGuildStore((s) => s.sendMessage);
   const loadMoreMessages = useGuildStore((s) => s.loadMoreMessages);
-  const hasMore = useGuildStore((s) =>
-    activeChannelId ? (s.hasMoreMessages[activeChannelId] ?? false) : false,
-  );
+  const allHasMore = useGuildStore((s) => s.hasMoreMessages);
+  const hasMore = activeChannelId ? (allHasMore[activeChannelId] ?? false) : false;
 
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -65,8 +66,8 @@ export default function ChatArea() {
   const [loadingMore, setLoadingMore] = useState(false);
 
   // Find the channel name
-  const guildChannels = activeGuildId ? (channels[activeGuildId] || []) : [];
-  const activeChannel = guildChannels.find((c) => c.id === activeChannelId);
+  const guildChannels = activeGuildId ? allChannels[activeGuildId] : undefined;
+  const activeChannel = guildChannels?.find((c) => c.id === activeChannelId);
   const channelName = activeChannel?.name || "general";
 
   // Auto-scroll to bottom when new messages arrive at the end

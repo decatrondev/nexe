@@ -1,4 +1,5 @@
 import { useGuildStore } from "../stores/guild";
+import { type GuildMember } from "../lib/api";
 
 function formatJoinDate(iso: string): string {
   const date = new Date(iso);
@@ -9,11 +10,12 @@ function formatJoinDate(iso: string): string {
   });
 }
 
+const EMPTY_MEMBERS: GuildMember[] = [];
+
 export default function MemberList() {
   const activeGuildId = useGuildStore((s) => s.activeGuildId);
-  const members = useGuildStore((s) =>
-    activeGuildId ? (s.members[activeGuildId] || []) : [],
-  );
+  const allMembers = useGuildStore((s) => s.members);
+  const members = (activeGuildId ? allMembers[activeGuildId] : undefined) ?? EMPTY_MEMBERS;
   const usernames = useGuildStore((s) => s.usernames);
 
   if (!activeGuildId) {
