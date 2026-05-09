@@ -6,6 +6,9 @@ import (
 	"os"
 
 	"github.com/decatrondev/nexe/services/presence/config"
+	"github.com/decatrondev/nexe/services/presence/internal/database"
+	"github.com/decatrondev/nexe/services/presence/internal/handler"
+	"github.com/decatrondev/nexe/services/presence/internal/service"
 )
 
 func main() {
@@ -16,6 +19,16 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
+	rdb, err := database.NewRedis(cfg.RedisUrl)
+	if err != nil {
+		slog.Error("failed to connect to Redis", "error", err)
+		os.Exit(1)
+	}
+	defer rdb.Close()
+
+	presenceSvc := service.NewPresenceService(rdb)
+	presenceHandler := handler.NewPresenceHandler(presenceSvc)
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
@@ -23,6 +36,8 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok","service":"presence"}`))
 	})
+
+	presenceHandler.RegisterRoutes(mux)
 
 	addr := ":" + cfg.Port
 	slog.Info("presence starting", "addr", addr, "env", cfg.Env)
