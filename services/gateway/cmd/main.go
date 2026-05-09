@@ -41,6 +41,7 @@ func main() {
 	userRepo := repository.NewUserRepository(db)
 	sessionRepo := repository.NewSessionRepository(db)
 	verificationRepo := repository.NewVerificationRepository(db)
+	profileRepo := repository.NewProfileRepository(db)
 
 	// Services
 	jwtSvc := service.NewJWTService(cfg.JWTSecret, 15*time.Minute, 7*24*time.Hour)
@@ -49,6 +50,7 @@ func main() {
 	// Handlers
 	authHandler := handler.NewAuthHandler(authSvc)
 	wsHandler := handler.NewWSHandler(jwtSvc)
+	profileHandler := handler.NewProfileHandler(profileRepo)
 
 	// Middleware
 	authMiddleware := middleware.Auth(jwtSvc)
@@ -77,6 +79,13 @@ func main() {
 	mux.Handle("POST /auth/logout-all", authMiddleware(http.HandlerFunc(authHandler.LogoutAll)))
 	mux.Handle("GET /auth/sessions", authMiddleware(http.HandlerFunc(authHandler.Sessions)))
 	mux.Handle("GET /users/@me", authMiddleware(http.HandlerFunc(authHandler.Me)))
+
+	// Profile routes
+	mux.Handle("GET /users/{id}/profile", authMiddleware(http.HandlerFunc(profileHandler.GetProfile)))
+	mux.Handle("PATCH /users/@me/profile", authMiddleware(http.HandlerFunc(profileHandler.UpdateProfile)))
+	mux.Handle("GET /users/{id}/badges", authMiddleware(http.HandlerFunc(profileHandler.GetBadges)))
+	mux.Handle("GET /users/{id}/activity", authMiddleware(http.HandlerFunc(profileHandler.GetActivity)))
+	mux.Handle("POST /internal/xp", apiRateLimiter.Middleware(http.HandlerFunc(profileHandler.AddXP)))
 
 	// WebSocket
 	mux.HandleFunc("GET /ws", wsHandler.HandleWS)
