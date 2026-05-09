@@ -1,4 +1,6 @@
-const API_URL = "http://localhost:8090";
+const API_URL = import.meta.env.DEV
+  ? "http://161.132.53.175:8090"
+  : "https://api.nexe.decatron.net";
 
 let accessToken: string | null = null;
 

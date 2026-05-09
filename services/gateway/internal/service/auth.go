@@ -26,6 +26,7 @@ type AuthService struct {
 	sessions     *repository.SessionRepository
 	verification *repository.VerificationRepository
 	jwt          *JWTService
+	email        *EmailService
 }
 
 func NewAuthService(
@@ -33,12 +34,14 @@ func NewAuthService(
 	sessions *repository.SessionRepository,
 	verification *repository.VerificationRepository,
 	jwt *JWTService,
+	email *EmailService,
 ) *AuthService {
 	return &AuthService{
 		users:        users,
 		sessions:     sessions,
 		verification: verification,
 		jwt:          jwt,
+		email:        email,
 	}
 }
 
@@ -120,6 +123,10 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*model
 	code, err := s.generateVerificationCode(ctx, input.Email)
 	if err != nil {
 		return nil, "", fmt.Errorf("generate verification code: %w", err)
+	}
+
+	if err := s.email.SendVerificationCode(input.Email, code); err != nil {
+		slog.Error("failed to send verification email", "error", err, "email", input.Email)
 	}
 
 	slog.Info("user registered", "userId", user.ID, "email", input.Email)
@@ -267,6 +274,10 @@ func (s *AuthService) ResendVerification(ctx context.Context, email string) (str
 	code, err := s.generateVerificationCode(ctx, email)
 	if err != nil {
 		return "", fmt.Errorf("generate code: %w", err)
+	}
+
+	if err := s.email.SendVerificationCode(email, code); err != nil {
+		slog.Error("failed to resend verification email", "error", err, "email", email)
 	}
 
 	return code, nil

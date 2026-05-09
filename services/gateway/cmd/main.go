@@ -46,7 +46,8 @@ func main() {
 
 	// Services
 	jwtSvc := service.NewJWTService(cfg.JWTSecret, 15*time.Minute, 7*24*time.Hour)
-	authSvc := service.NewAuthService(userRepo, sessionRepo, verificationRepo, jwtSvc)
+	emailSvc := service.NewEmailService(cfg.ResendAPIKey, cfg.EmailFrom)
+	authSvc := service.NewAuthService(userRepo, sessionRepo, verificationRepo, jwtSvc, emailSvc)
 	twitchSvc := service.NewTwitchService(cfg.TwitchClientID, cfg.TwitchClientSecret, cfg.TwitchRedirectURI)
 
 	// Handlers
