@@ -1,0 +1,6 @@
+DROP TRIGGER IF EXISTS trg_messages_search ON messages;
+DROP FUNCTION IF EXISTS messages_search_trigger();
+DROP TABLE IF EXISTS attachments CASCADE;
+DROP TABLE IF EXISTS reactions CASCADE;
+DROP TABLE IF EXISTS message_edits CASCADE;
+DROP TABLE IF EXISTS messages CASCADE;

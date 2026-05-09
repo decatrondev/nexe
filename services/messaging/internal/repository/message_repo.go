@@ -1,0 +1,510 @@
+package repository
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	"github.com/decatrondev/nexe/services/messaging/internal/model"
+)
+
+type MessageRepository struct {
+	db *sql.DB
+}
+
+func NewMessageRepository(db *sql.DB) *MessageRepository {
+	return &MessageRepository{db: db}
+}
+
+func (r *MessageRepository) Create(ctx context.Context, msg *model.Message) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("message create begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	embedsJSON, err := json.Marshal(msg.Embeds)
+	if err != nil {
+		return fmt.Errorf("message create marshal embeds: %w", err)
+	}
+	if msg.Embeds == nil {
+		embedsJSON = []byte("[]")
+	}
+
+	err = tx.QueryRowContext(ctx,
+		`INSERT INTO messages (channel_id, author_id, content, type, reply_to_id, thread_id, embeds, mention_everyone)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		 RETURNING id, created_at`,
+		msg.ChannelID, msg.AuthorID, msg.Content, msg.Type,
+		msg.ReplyToID, msg.ThreadID, string(embedsJSON), msg.MentionEveryone,
+	).Scan(&msg.ID, &msg.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("message create insert: %w", err)
+	}
+
+	_, err = tx.ExecContext(ctx,
+		`UPDATE channels SET last_message_id = $1, last_message_at = $2 WHERE id = $3`,
+		msg.ID, msg.CreatedAt, msg.ChannelID,
+	)
+	if err != nil {
+		return fmt.Errorf("message create update channel: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("message create commit: %w", err)
+	}
+
+	return nil
+}
+
+func (r *MessageRepository) GetByID(ctx context.Context, id string) (*model.Message, error) {
+	var msg model.Message
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, channel_id, author_id, content, type, reply_to_id, thread_id,
+		        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at
+		 FROM messages WHERE id = $1`, id,
+	).Scan(
+		&msg.ID, &msg.ChannelID, &msg.AuthorID, &msg.Content, &msg.Type,
+		&msg.ReplyToID, &msg.ThreadID, &msg.EditedAt, &msg.Deleted,
+		&msg.Pinned, &msg.PinnedBy, scanJSON(&msg.Embeds), &msg.MentionEveryone, &msg.CreatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("message get by id: %w", err)
+	}
+
+	attachments, err := r.fetchAttachments(ctx, []string{msg.ID})
+	if err != nil {
+		return nil, err
+	}
+	msg.Attachments = attachments[msg.ID]
+
+	reactions, err := r.fetchReactions(ctx, []string{msg.ID})
+	if err != nil {
+		return nil, err
+	}
+	msg.Reactions = reactions[msg.ID]
+
+	return &msg, nil
+}
+
+func (r *MessageRepository) ListByChannel(ctx context.Context, channelID string, before *string, limit int) ([]model.Message, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+
+	var rows *sql.Rows
+	var err error
+
+	if before != nil {
+		rows, err = r.db.QueryContext(ctx,
+			`SELECT id, channel_id, author_id, content, type, reply_to_id, thread_id,
+			        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at
+			 FROM messages
+			 WHERE channel_id = $1 AND deleted = false AND created_at < (SELECT created_at FROM messages WHERE id = $2)
+			 ORDER BY created_at DESC
+			 LIMIT $3`,
+			channelID, *before, limit,
+		)
+	} else {
+		rows, err = r.db.QueryContext(ctx,
+			`SELECT id, channel_id, author_id, content, type, reply_to_id, thread_id,
+			        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at
+			 FROM messages
+			 WHERE channel_id = $1 AND deleted = false
+			 ORDER BY created_at DESC
+			 LIMIT $2`,
+			channelID, limit,
+		)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("message list by channel: %w", err)
+	}
+	defer rows.Close()
+
+	var messages []model.Message
+	var messageIDs []string
+	for rows.Next() {
+		var msg model.Message
+		if err := rows.Scan(
+			&msg.ID, &msg.ChannelID, &msg.AuthorID, &msg.Content, &msg.Type,
+			&msg.ReplyToID, &msg.ThreadID, &msg.EditedAt, &msg.Deleted,
+			&msg.Pinned, &msg.PinnedBy, scanJSON(&msg.Embeds), &msg.MentionEveryone, &msg.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("message list by channel scan: %w", err)
+		}
+		messages = append(messages, msg)
+		messageIDs = append(messageIDs, msg.ID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("message list by channel rows: %w", err)
+	}
+
+	if len(messageIDs) == 0 {
+		return messages, nil
+	}
+
+	attachments, err := r.fetchAttachments(ctx, messageIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	reactions, err := r.fetchReactions(ctx, messageIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range messages {
+		messages[i].Attachments = attachments[messages[i].ID]
+		messages[i].Reactions = reactions[messages[i].ID]
+	}
+
+	return messages, nil
+}
+
+func (r *MessageRepository) Update(ctx context.Context, id, newContent string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("message update begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	var oldContent string
+	err = tx.QueryRowContext(ctx,
+		`SELECT content FROM messages WHERE id = $1`, id,
+	).Scan(&oldContent)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("message not found")
+	}
+	if err != nil {
+		return fmt.Errorf("message update get old: %w", err)
+	}
+
+	_, err = tx.ExecContext(ctx,
+		`INSERT INTO message_edits (message_id, old_content) VALUES ($1, $2)`,
+		id, oldContent,
+	)
+	if err != nil {
+		return fmt.Errorf("message update save edit: %w", err)
+	}
+
+	_, err = tx.ExecContext(ctx,
+		`UPDATE messages SET content = $1, edited_at = NOW() WHERE id = $2`,
+		newContent, id,
+	)
+	if err != nil {
+		return fmt.Errorf("message update content: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("message update commit: %w", err)
+	}
+
+	return nil
+}
+
+func (r *MessageRepository) Delete(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE messages SET deleted = true, deleted_at = NOW() WHERE id = $1`, id,
+	)
+	if err != nil {
+		return fmt.Errorf("message delete: %w", err)
+	}
+	return nil
+}
+
+func (r *MessageRepository) Pin(ctx context.Context, messageID, pinnedBy string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE messages SET pinned = true, pinned_by = $1, pinned_at = NOW() WHERE id = $2`,
+		pinnedBy, messageID,
+	)
+	if err != nil {
+		return fmt.Errorf("message pin: %w", err)
+	}
+	return nil
+}
+
+func (r *MessageRepository) Unpin(ctx context.Context, messageID string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE messages SET pinned = false, pinned_by = NULL, pinned_at = NULL WHERE id = $1`,
+		messageID,
+	)
+	if err != nil {
+		return fmt.Errorf("message unpin: %w", err)
+	}
+	return nil
+}
+
+func (r *MessageRepository) ListPins(ctx context.Context, channelID string) ([]model.Message, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, channel_id, author_id, content, type, reply_to_id, thread_id,
+		        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at
+		 FROM messages
+		 WHERE channel_id = $1 AND pinned = true AND deleted = false
+		 ORDER BY pinned_at DESC`,
+		channelID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("message list pins: %w", err)
+	}
+	defer rows.Close()
+
+	var messages []model.Message
+	var messageIDs []string
+	for rows.Next() {
+		var msg model.Message
+		if err := rows.Scan(
+			&msg.ID, &msg.ChannelID, &msg.AuthorID, &msg.Content, &msg.Type,
+			&msg.ReplyToID, &msg.ThreadID, &msg.EditedAt, &msg.Deleted,
+			&msg.Pinned, &msg.PinnedBy, scanJSON(&msg.Embeds), &msg.MentionEveryone, &msg.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("message list pins scan: %w", err)
+		}
+		messages = append(messages, msg)
+		messageIDs = append(messageIDs, msg.ID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("message list pins rows: %w", err)
+	}
+
+	if len(messageIDs) == 0 {
+		return messages, nil
+	}
+
+	attachments, err := r.fetchAttachments(ctx, messageIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range messages {
+		messages[i].Attachments = attachments[messages[i].ID]
+	}
+
+	return messages, nil
+}
+
+func (r *MessageRepository) Search(ctx context.Context, channelID, query string, authorID *string, limit int) ([]model.Message, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 25
+	}
+
+	var conditions []string
+	var args []interface{}
+	argIdx := 1
+
+	conditions = append(conditions, fmt.Sprintf("channel_id = $%d", argIdx))
+	args = append(args, channelID)
+	argIdx++
+
+	conditions = append(conditions, fmt.Sprintf("search_vector @@ plainto_tsquery('english', $%d)", argIdx))
+	args = append(args, query)
+	argIdx++
+
+	conditions = append(conditions, "deleted = false")
+
+	if authorID != nil {
+		conditions = append(conditions, fmt.Sprintf("author_id = $%d", argIdx))
+		args = append(args, *authorID)
+		argIdx++
+	}
+
+	args = append(args, limit)
+
+	sqlQuery := fmt.Sprintf(
+		`SELECT id, channel_id, author_id, content, type, reply_to_id, thread_id,
+		        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at
+		 FROM messages
+		 WHERE %s
+		 ORDER BY ts_rank(search_vector, plainto_tsquery('english', $2)) DESC
+		 LIMIT $%d`,
+		strings.Join(conditions, " AND "), argIdx,
+	)
+
+	rows, err := r.db.QueryContext(ctx, sqlQuery, args...)
+	if err != nil {
+		return nil, fmt.Errorf("message search: %w", err)
+	}
+	defer rows.Close()
+
+	var messages []model.Message
+	var messageIDs []string
+	for rows.Next() {
+		var msg model.Message
+		if err := rows.Scan(
+			&msg.ID, &msg.ChannelID, &msg.AuthorID, &msg.Content, &msg.Type,
+			&msg.ReplyToID, &msg.ThreadID, &msg.EditedAt, &msg.Deleted,
+			&msg.Pinned, &msg.PinnedBy, scanJSON(&msg.Embeds), &msg.MentionEveryone, &msg.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("message search scan: %w", err)
+		}
+		messages = append(messages, msg)
+		messageIDs = append(messageIDs, msg.ID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("message search rows: %w", err)
+	}
+
+	if len(messageIDs) == 0 {
+		return messages, nil
+	}
+
+	attachments, err := r.fetchAttachments(ctx, messageIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range messages {
+		messages[i].Attachments = attachments[messages[i].ID]
+	}
+
+	return messages, nil
+}
+
+func (r *MessageRepository) GetEditHistory(ctx context.Context, messageID string) ([]model.MessageEdit, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, message_id, old_content, edited_at
+		 FROM message_edits
+		 WHERE message_id = $1
+		 ORDER BY edited_at DESC`,
+		messageID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("message get edit history: %w", err)
+	}
+	defer rows.Close()
+
+	var edits []model.MessageEdit
+	for rows.Next() {
+		var edit model.MessageEdit
+		if err := rows.Scan(&edit.ID, &edit.MessageID, &edit.OldContent, &edit.EditedAt); err != nil {
+			return nil, fmt.Errorf("message get edit history scan: %w", err)
+		}
+		edits = append(edits, edit)
+	}
+	return edits, rows.Err()
+}
+
+// fetchAttachments batch-fetches attachments for the given message IDs.
+func (r *MessageRepository) fetchAttachments(ctx context.Context, messageIDs []string) (map[string][]model.Attachment, error) {
+	if len(messageIDs) == 0 {
+		return nil, nil
+	}
+
+	placeholders := make([]string, len(messageIDs))
+	args := make([]interface{}, len(messageIDs))
+	for i, id := range messageIDs {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+
+	query := fmt.Sprintf(
+		`SELECT id, message_id, filename, url, content_type, size_bytes, width, height
+		 FROM attachments
+		 WHERE message_id IN (%s)
+		 ORDER BY created_at`,
+		strings.Join(placeholders, ", "),
+	)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("fetch attachments: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string][]model.Attachment)
+	for rows.Next() {
+		var a model.Attachment
+		if err := rows.Scan(&a.ID, &a.MessageID, &a.Filename, &a.URL, &a.ContentType, &a.SizeBytes, &a.Width, &a.Height); err != nil {
+			return nil, fmt.Errorf("fetch attachments scan: %w", err)
+		}
+		result[a.MessageID] = append(result[a.MessageID], a)
+	}
+	return result, rows.Err()
+}
+
+// fetchReactions batch-fetches and aggregates reactions for the given message IDs.
+func (r *MessageRepository) fetchReactions(ctx context.Context, messageIDs []string) (map[string][]model.ReactionGroup, error) {
+	if len(messageIDs) == 0 {
+		return nil, nil
+	}
+
+	placeholders := make([]string, len(messageIDs))
+	args := make([]interface{}, len(messageIDs))
+	for i, id := range messageIDs {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+
+	query := fmt.Sprintf(
+		`SELECT message_id, emoji, COUNT(*) as count,
+		        ARRAY_AGG(user_id::text ORDER BY created_at) as users
+		 FROM reactions
+		 WHERE message_id IN (%s)
+		 GROUP BY message_id, emoji
+		 ORDER BY MIN(created_at)`,
+		strings.Join(placeholders, ", "),
+	)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("fetch reactions: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[string][]model.ReactionGroup)
+	for rows.Next() {
+		var messageID string
+		var rg model.ReactionGroup
+		var users pqStringArray
+		if err := rows.Scan(&messageID, &rg.Emoji, &rg.Count, &users); err != nil {
+			return nil, fmt.Errorf("fetch reactions scan: %w", err)
+		}
+		rg.Users = []string(users)
+		result[messageID] = append(result[messageID], rg)
+	}
+	return result, rows.Err()
+}
+
+// pqStringArray implements sql.Scanner for PostgreSQL text arrays.
+type pqStringArray []string
+
+func (a *pqStringArray) Scan(src interface{}) error {
+	if src == nil {
+		*a = nil
+		return nil
+	}
+	switch v := src.(type) {
+	case []byte:
+		return a.parseArray(string(v))
+	case string:
+		return a.parseArray(v)
+	default:
+		return fmt.Errorf("pqStringArray: cannot scan type %T", src)
+	}
+}
+
+func (a *pqStringArray) parseArray(s string) error {
+	if len(s) < 2 || s[0] != '{' || s[len(s)-1] != '}' {
+		*a = nil
+		return nil
+	}
+	inner := s[1 : len(s)-1]
+	if inner == "" {
+		*a = nil
+		return nil
+	}
+	var result []string
+	start := 0
+	for i := 0; i <= len(inner); i++ {
+		if i == len(inner) || inner[i] == ',' {
+			result = append(result, inner[start:i])
+			start = i + 1
+		}
+	}
+	*a = result
+	return nil
+}
