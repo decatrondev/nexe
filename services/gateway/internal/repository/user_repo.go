@@ -77,6 +77,28 @@ func (r *UserRepository) VerifyEmail(ctx context.Context, userID string) error {
 	return err
 }
 
+func (r *UserRepository) LinkTwitch(ctx context.Context, userID, twitchID, twitchLogin, twitchDisplayName, accessToken, refreshToken string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE users SET
+			twitch_id = $2, twitch_login = $3, twitch_display_name = $4,
+			twitch_access_token = $5, twitch_refresh_token = $6,
+			twitch_token_expires_at = NOW() + INTERVAL '4 hours',
+			updated_at = NOW()
+		WHERE id = $1`, userID, twitchID, twitchLogin, twitchDisplayName, accessToken, refreshToken)
+	return err
+}
+
+func (r *UserRepository) UnlinkTwitch(ctx context.Context, userID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE users SET
+			twitch_id = NULL, twitch_login = NULL, twitch_display_name = NULL,
+			twitch_access_token = NULL, twitch_refresh_token = NULL,
+			twitch_token_expires_at = NULL,
+			updated_at = NOW()
+		WHERE id = $1`, userID)
+	return err
+}
+
 func (r *UserRepository) CreateProfile(ctx context.Context, userID string) error {
 	_, err := r.db.ExecContext(ctx,
 		`INSERT INTO profiles (user_id) VALUES ($1) ON CONFLICT DO NOTHING`, userID)

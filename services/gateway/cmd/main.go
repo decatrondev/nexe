@@ -46,11 +46,13 @@ func main() {
 	// Services
 	jwtSvc := service.NewJWTService(cfg.JWTSecret, 15*time.Minute, 7*24*time.Hour)
 	authSvc := service.NewAuthService(userRepo, sessionRepo, verificationRepo, jwtSvc)
+	twitchSvc := service.NewTwitchService(cfg.TwitchClientID, cfg.TwitchClientSecret, cfg.TwitchRedirectURI)
 
 	// Handlers
 	authHandler := handler.NewAuthHandler(authSvc)
 	wsHandler := handler.NewWSHandler(jwtSvc)
 	profileHandler := handler.NewProfileHandler(profileRepo)
+	twitchHandler := handler.NewTwitchHandler(twitchSvc, userRepo, authSvc, jwtSvc, rdb, cfg.TwitchEventSubSecret, cfg.BaseURL)
 
 	// Middleware
 	authMiddleware := middleware.Auth(jwtSvc)
@@ -86,6 +88,15 @@ func main() {
 	mux.Handle("GET /users/{id}/badges", authMiddleware(http.HandlerFunc(profileHandler.GetBadges)))
 	mux.Handle("GET /users/{id}/activity", authMiddleware(http.HandlerFunc(profileHandler.GetActivity)))
 	mux.Handle("POST /internal/xp", apiRateLimiter.Middleware(http.HandlerFunc(profileHandler.AddXP)))
+
+	// Twitch routes
+	mux.HandleFunc("GET /auth/twitch", twitchHandler.TwitchAuth)
+	mux.HandleFunc("GET /auth/twitch/callback", twitchHandler.TwitchCallback)
+	mux.Handle("POST /auth/twitch/link", authMiddleware(http.HandlerFunc(twitchHandler.LinkTwitch)))
+	mux.Handle("DELETE /auth/twitch/link", authMiddleware(http.HandlerFunc(twitchHandler.UnlinkTwitch)))
+	mux.Handle("GET /users/{id}/stream", apiRateLimiter.Middleware(http.HandlerFunc(twitchHandler.GetStreamStatus)))
+	mux.Handle("POST /twitch/eventsub/setup", authMiddleware(http.HandlerFunc(twitchHandler.SetupEventSub)))
+	mux.HandleFunc("POST /twitch/webhook", twitchHandler.EventSubWebhook)
 
 	// WebSocket
 	mux.HandleFunc("GET /ws", wsHandler.HandleWS)
