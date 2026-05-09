@@ -6,6 +6,10 @@ import (
 	"os"
 
 	"github.com/decatrondev/nexe/services/guilds/config"
+	"github.com/decatrondev/nexe/services/guilds/internal/database"
+	"github.com/decatrondev/nexe/services/guilds/internal/handler"
+	"github.com/decatrondev/nexe/services/guilds/internal/repository"
+	"github.com/decatrondev/nexe/services/guilds/internal/service"
 )
 
 func main() {
@@ -16,6 +20,40 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
+	// Database connections
+	db, err := database.NewPostgres(cfg.DBUrl)
+	if err != nil {
+		slog.Error("failed to connect to postgres", "error", err)
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	rdb, err := database.NewRedis(cfg.RedisUrl)
+	if err != nil {
+		slog.Error("failed to connect to redis", "error", err)
+		os.Exit(1)
+	}
+	defer rdb.Close()
+
+	// Repositories
+	guildRepo := repository.NewGuildRepository(db)
+	channelRepo := repository.NewChannelRepository(db)
+	categoryRepo := repository.NewCategoryRepository(db)
+	roleRepo := repository.NewRoleRepository(db)
+	memberRepo := repository.NewMemberRepository(db)
+	inviteRepo := repository.NewInviteRepository(db)
+	moderationRepo := repository.NewModerationRepository(db)
+
+	// Service
+	guildService := service.NewGuildService(
+		guildRepo, channelRepo, categoryRepo, roleRepo,
+		memberRepo, inviteRepo, moderationRepo,
+	)
+
+	// Handler
+	guildHandler := handler.NewGuildHandler(guildService)
+
+	// Router
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
@@ -23,6 +61,8 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok","service":"guilds"}`))
 	})
+
+	guildHandler.RegisterRoutes(mux)
 
 	addr := ":" + cfg.Port
 	slog.Info("guilds starting", "addr", addr, "env", cfg.Env)
