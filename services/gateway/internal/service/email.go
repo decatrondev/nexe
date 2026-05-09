@@ -48,6 +48,28 @@ func (s *EmailService) SendVerificationCode(to, code string) error {
 	return s.send(to, subject, html)
 }
 
+func (s *EmailService) SendPasswordResetCode(to, code string) error {
+	if s.apiKey == "" {
+		slog.Info("email (dev mode)", "to", to, "resetCode", code)
+		return nil
+	}
+
+	html := fmt.Sprintf(`
+		<div style="font-family: -apple-system, sans-serif; max-width: 400px; margin: 0 auto; padding: 40px 20px; background: #0f172a;">
+			<h1 style="color: #6366f1; font-size: 28px; margin-bottom: 8px;">Nexe</h1>
+			<p style="color: #94a3b8; font-size: 14px; margin-bottom: 32px;">Communication for Streamers</p>
+			<h2 style="color: #e2e8f0; font-size: 20px;">Reset your password</h2>
+			<p style="color: #94a3b8;">Enter this code to reset your password:</p>
+			<div style="background: #1e293b; border-radius: 12px; padding: 24px; text-align: center; margin: 24px 0;">
+				<span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #6366f1;">%s</span>
+			</div>
+			<p style="color: #64748b; font-size: 12px;">This code expires in 10 minutes. If you didn't request this, ignore this email.</p>
+		</div>
+	`, code)
+
+	return s.send(to, fmt.Sprintf("Nexe — Password reset code: %s", code), html)
+}
+
 func (s *EmailService) send(to, subject, html string) error {
 	payload := map[string]interface{}{
 		"from":    s.from,

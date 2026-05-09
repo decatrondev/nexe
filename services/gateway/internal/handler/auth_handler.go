@@ -228,3 +228,43 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 }
+
+func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Email == "" {
+		writeError(w, http.StatusBadRequest, "invalid_body", "email is required")
+		return
+	}
+
+	if err := h.auth.ForgotPassword(r.Context(), body.Email); err != nil {
+		writeError(w, http.StatusInternalServerError, "forgot_error", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data": map[string]string{"message": "if the email exists, a reset code has been sent"},
+	})
+}
+
+func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Email       string `json:"email"`
+		Code        string `json:"code"`
+		NewPassword string `json:"newPassword"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Email == "" || body.Code == "" || body.NewPassword == "" {
+		writeError(w, http.StatusBadRequest, "invalid_body", "email, code, and newPassword are required")
+		return
+	}
+
+	if err := h.auth.ResetPassword(r.Context(), body.Email, body.Code, body.NewPassword); err != nil {
+		writeError(w, http.StatusBadRequest, "reset_failed", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data": map[string]string{"message": "password reset successfully"},
+	})
+}

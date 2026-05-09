@@ -283,6 +283,71 @@ func (s *AuthService) ResendVerification(ctx context.Context, email string) (str
 	return code, nil
 }
 
+func (s *AuthService) ForgotPassword(ctx context.Context, email string) error {
+	email = strings.ToLower(strings.TrimSpace(email))
+
+	user, err := s.users.GetByEmail(ctx, email)
+	if err != nil || user == nil {
+		// Don't reveal if email exists
+		return nil
+	}
+
+	code, err := s.generateVerificationCode(ctx, email)
+	if err != nil {
+		return fmt.Errorf("generate code: %w", err)
+	}
+
+	if err := s.email.SendPasswordResetCode(email, code); err != nil {
+		slog.Error("failed to send reset email", "error", err, "email", email)
+	}
+
+	slog.Info("password reset requested", "email", email)
+	return nil
+}
+
+func (s *AuthService) ResetPassword(ctx context.Context, email, code, newPassword string) error {
+	email = strings.ToLower(strings.TrimSpace(email))
+
+	if err := validatePassword(newPassword); err != nil {
+		return err
+	}
+
+	v, err := s.verification.GetLatest(ctx, email)
+	if err != nil {
+		return fmt.Errorf("get verification: %w", err)
+	}
+	if v == nil {
+		return fmt.Errorf("no pending reset code found")
+	}
+	if v.Attempts >= 5 {
+		return fmt.Errorf("too many attempts, request a new code")
+	}
+
+	if err := s.verification.IncrementAttempts(ctx, v.ID); err != nil {
+		return fmt.Errorf("increment attempts: %w", err)
+	}
+
+	if v.Code != code {
+		return fmt.Errorf("invalid reset code")
+	}
+
+	if err := s.verification.MarkUsed(ctx, v.ID); err != nil {
+		return fmt.Errorf("mark used: %w", err)
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), 12)
+	if err != nil {
+		return fmt.Errorf("hash password: %w", err)
+	}
+
+	if err := s.users.UpdatePassword(ctx, email, string(hash)); err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+
+	slog.Info("password reset successful", "email", email)
+	return nil
+}
+
 func (s *AuthService) createSession(ctx context.Context, user *model.User, ip, userAgent string) (*AuthTokens, error) {
 	twitchID := ""
 	if user.TwitchID != nil {

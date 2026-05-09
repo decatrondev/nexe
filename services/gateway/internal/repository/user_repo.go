@@ -77,6 +77,12 @@ func (r *UserRepository) VerifyEmail(ctx context.Context, userID string) error {
 	return err
 }
 
+func (r *UserRepository) UpdatePassword(ctx context.Context, email, passwordHash string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE users SET password_hash = $2, updated_at = NOW() WHERE email = $1`, email, passwordHash)
+	return err
+}
+
 func (r *UserRepository) LinkTwitch(ctx context.Context, userID, twitchID, twitchLogin, twitchDisplayName, accessToken, refreshToken string) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE users SET

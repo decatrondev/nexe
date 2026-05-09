@@ -79,6 +79,8 @@ func main() {
 	mux.Handle("POST /auth/login", authRateLimiter.Middleware(http.HandlerFunc(authHandler.Login)))
 	mux.Handle("POST /auth/refresh", apiRateLimiter.Middleware(http.HandlerFunc(authHandler.Refresh)))
 	mux.Handle("POST /auth/resend-verification", authRateLimiter.Middleware(http.HandlerFunc(authHandler.ResendVerification)))
+	mux.Handle("POST /auth/forgot-password", authRateLimiter.Middleware(http.HandlerFunc(authHandler.ForgotPassword)))
+	mux.Handle("POST /auth/reset-password", authRateLimiter.Middleware(http.HandlerFunc(authHandler.ResetPassword)))
 
 	// Auth routes (require auth)
 	mux.Handle("POST /auth/logout", authMiddleware(http.HandlerFunc(authHandler.Logout)))

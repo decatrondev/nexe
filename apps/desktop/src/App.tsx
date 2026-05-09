@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import HomePage from "./pages/HomePage";
 import { useAuthStore } from "./stores/auth";
 import { checkForUpdates } from "./lib/updater";
@@ -50,6 +51,14 @@ export default function App() {
           element={
             <AuthRoute>
               <RegisterPage />
+            </AuthRoute>
+          }
+        />
+        <Route
+          path="/forgot-password"
+          element={
+            <AuthRoute>
+              <ForgotPasswordPage />
             </AuthRoute>
           }
         />

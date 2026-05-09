@@ -187,6 +187,14 @@ export const api = {
     return request<void>("POST", "/auth/verify-email", { email, code });
   },
 
+  forgotPassword(email: string) {
+    return request<{ message: string }>("POST", "/auth/forgot-password", { email });
+  },
+
+  resetPassword(email: string, code: string, newPassword: string) {
+    return request<{ message: string }>("POST", "/auth/reset-password", { email, code, newPassword });
+  },
+
   login(email: string, password: string) {
     return request<LoginResponse>("POST", "/auth/login", { email, password });
   },
