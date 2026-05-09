@@ -59,7 +59,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     });
   },
 
-  loadFromStorage() {
+  async loadFromStorage() {
     const token = localStorage.getItem("token");
     const refreshToken = localStorage.getItem("refreshToken");
     const userJson = localStorage.getItem("user");
@@ -68,6 +68,10 @@ export const useAuthStore = create<AuthState>((set) => ({
       try {
         const user = JSON.parse(userJson) as User;
         api.setToken(token);
+
+        // Validate token is still valid
+        await api.getMe();
+
         set({
           user,
           token,
@@ -75,10 +79,17 @@ export const useAuthStore = create<AuthState>((set) => ({
           isAuthenticated: true,
         });
       } catch {
-        // corrupted data, clear it
+        // Token expired or invalid — clear everything
+        api.setToken(null);
         localStorage.removeItem("token");
         localStorage.removeItem("refreshToken");
         localStorage.removeItem("user");
+        set({
+          user: null,
+          token: null,
+          refreshToken: null,
+          isAuthenticated: false,
+        });
       }
     }
   },
