@@ -19,9 +19,8 @@ function headers(extra?: Record<string, string>): Record<string, string> {
   return h;
 }
 
-interface ApiResponse<T> {
-  data?: T;
-  error?: string;
+interface ApiErrorResponse {
+  error?: { code: string; message: string };
 }
 
 async function request<T>(
@@ -37,15 +36,20 @@ async function request<T>(
   });
 
   if (!res.ok) {
-    const err = (await res.json().catch(() => ({}))) as ApiResponse<unknown>;
-    throw new Error(err.error || `Request failed: ${res.status}`);
+    const err = (await res.json().catch(() => ({}))) as ApiErrorResponse;
+    throw new Error(err.error?.message || `Request failed: ${res.status}`);
   }
 
   if (res.status === 204) {
     return undefined as T;
   }
 
-  return res.json() as Promise<T>;
+  const json = await res.json();
+  // Unwrap {data: T} envelope if present
+  if (json && typeof json === "object" && "data" in json) {
+    return json.data as T;
+  }
+  return json as T;
 }
 
 // ---- Auth types ----
