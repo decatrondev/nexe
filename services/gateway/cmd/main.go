@@ -42,6 +42,7 @@ func main() {
 	sessionRepo := repository.NewSessionRepository(db)
 	verificationRepo := repository.NewVerificationRepository(db)
 	profileRepo := repository.NewProfileRepository(db)
+	botRepo := repository.NewBotRepository(db)
 
 	// Services
 	jwtSvc := service.NewJWTService(cfg.JWTSecret, 15*time.Minute, 7*24*time.Hour)
@@ -53,6 +54,7 @@ func main() {
 	wsHandler := handler.NewWSHandler(jwtSvc)
 	profileHandler := handler.NewProfileHandler(profileRepo)
 	twitchHandler := handler.NewTwitchHandler(twitchSvc, userRepo, authSvc, jwtSvc, rdb, cfg.TwitchEventSubSecret, cfg.BaseURL)
+	botHandler := handler.NewBotHandler(botRepo, jwtSvc)
 
 	// Middleware
 	authMiddleware := middleware.Auth(jwtSvc)
@@ -97,6 +99,16 @@ func main() {
 	mux.Handle("GET /users/{id}/stream", apiRateLimiter.Middleware(http.HandlerFunc(twitchHandler.GetStreamStatus)))
 	mux.Handle("POST /twitch/eventsub/setup", authMiddleware(http.HandlerFunc(twitchHandler.SetupEventSub)))
 	mux.HandleFunc("POST /twitch/webhook", twitchHandler.EventSubWebhook)
+
+	// Bot API / Developer routes
+	mux.Handle("POST /api/v1/applications", authMiddleware(http.HandlerFunc(botHandler.CreateApp)))
+	mux.Handle("GET /api/v1/applications", authMiddleware(http.HandlerFunc(botHandler.ListApps)))
+	mux.Handle("GET /api/v1/applications/{id}", authMiddleware(http.HandlerFunc(botHandler.GetApp)))
+	mux.Handle("PATCH /api/v1/applications/{id}", authMiddleware(http.HandlerFunc(botHandler.UpdateApp)))
+	mux.Handle("DELETE /api/v1/applications/{id}", authMiddleware(http.HandlerFunc(botHandler.DeleteApp)))
+	mux.Handle("POST /api/v1/applications/{id}/reset-secret", authMiddleware(http.HandlerFunc(botHandler.ResetSecret)))
+	mux.Handle("POST /api/v1/oauth2/token", apiRateLimiter.Middleware(http.HandlerFunc(botHandler.TokenExchange)))
+	mux.HandleFunc("GET /api/v1/scopes", botHandler.ListScopes)
 
 	// WebSocket
 	mux.HandleFunc("GET /ws", wsHandler.HandleWS)
