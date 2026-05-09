@@ -33,7 +33,8 @@ export default function App() {
   useEffect(() => {
     loadFromStorage();
     checkForUpdates();
-  }, [loadFromStorage]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <BrowserRouter>

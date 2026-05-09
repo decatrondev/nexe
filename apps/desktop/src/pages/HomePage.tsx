@@ -5,6 +5,7 @@ import ChatArea from "../components/ChatArea";
 import MemberList from "../components/MemberList";
 import CreateGuildModal from "../components/CreateGuildModal";
 import { useGuildStore } from "../stores/guild";
+import { useAuthStore } from "../stores/auth";
 
 function WelcomeScreen({ onCreateServer }: { onCreateServer: () => void }) {
   return (
@@ -33,11 +34,19 @@ export default function HomePage() {
   const guilds = useGuildStore((s) => s.guilds);
   const activeGuildId = useGuildStore((s) => s.activeGuildId);
   const loading = useGuildStore((s) => s.loading);
+  const user = useAuthStore((s) => s.user);
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   useEffect(() => {
     loadGuilds();
-  }, [loadGuilds]);
+    // Register current user's username in the guild store
+    if (user) {
+      useGuildStore.setState((s) => ({
+        usernames: { ...s.usernames, [user.id]: user.displayName || user.username },
+      }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const showWelcome = guilds.length === 0 && !activeGuildId && !loading;
 

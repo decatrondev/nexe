@@ -38,13 +38,12 @@ async function request<T>(
   if (!res.ok) {
     const err = (await res.json().catch(() => ({}))) as ApiErrorResponse;
 
-    // Auto-logout on 401 (expired/invalid token)
-    if (res.status === 401 && path !== "/auth/login" && path !== "/users/@me") {
+    // Auto-logout on 401 (expired/invalid token) — only once
+    if (res.status === 401 && path !== "/auth/login" && path !== "/users/@me" && accessToken) {
       accessToken = null;
       localStorage.removeItem("token");
       localStorage.removeItem("refreshToken");
       localStorage.removeItem("user");
-      window.location.href = "/login";
     }
 
     throw new Error(err.error?.message || `Request failed: ${res.status}`);

@@ -84,7 +84,8 @@ export const useGuildStore = create<GuildState>((set, get) => ({
         );
         profiles.forEach((result, idx) => {
           if (result.status === "fulfilled") {
-            newUsernames[batch[idx]] = result.value.displayName || result.value.username;
+            const p = result.value;
+            newUsernames[batch[idx]] = p?.displayName || p?.username || p?.id?.slice(0, 8) || "User";
           } else {
             newUsernames[batch[idx]] = "Unknown";
           }
@@ -136,7 +137,8 @@ export const useGuildStore = create<GuildState>((set, get) => ({
         );
         profiles.forEach((result, idx) => {
           if (result.status === "fulfilled") {
-            newUsernames[batch[idx]] = result.value.displayName || result.value.username;
+            const p = result.value;
+            newUsernames[batch[idx]] = p?.displayName || p?.username || p?.id?.slice(0, 8) || "User";
           } else {
             newUsernames[batch[idx]] = "Unknown";
           }

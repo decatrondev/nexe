@@ -1,8 +1,11 @@
-import { check } from "@tauri-apps/plugin-updater";
-import { relaunch } from "@tauri-apps/plugin-process";
-
 export async function checkForUpdates(): Promise<boolean> {
   try {
+    // Only run in Tauri desktop, not in browser
+    if (!("__TAURI_INTERNALS__" in window)) {
+      return false;
+    }
+    const { check } = await import("@tauri-apps/plugin-updater");
+    const { relaunch } = await import("@tauri-apps/plugin-process");
     const update = await check();
     if (update) {
       console.log(`Update available: ${update.version}`);
