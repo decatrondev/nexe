@@ -33,7 +33,7 @@ func Load() *Config {
 		TwitchEventSubSecret: getEnv("NEXE_TWITCH_EVENTSUB_SECRET", "nexe-eventsub-secret"),
 		BaseURL:              getEnv("NEXE_BASE_URL", "https://api.nexe.decatron.net"),
 		ResendAPIKey:         getEnv("RESEND_API_KEY", ""),
-		EmailFrom:            getEnv("NEXE_EMAIL_FROM", "Nexe <onboarding@resend.dev>"),
+		EmailFrom:            getEnv("NEXE_EMAIL_FROM", "Nexe <nexe@decatron.net>"),
 	}
 }
 
