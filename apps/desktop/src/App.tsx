@@ -4,6 +4,7 @@ import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import HomePage from "./pages/HomePage";
 import { useAuthStore } from "./stores/auth";
+import { checkForUpdates } from "./lib/updater";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -30,6 +31,7 @@ export default function App() {
 
   useEffect(() => {
     loadFromStorage();
+    checkForUpdates();
   }, [loadFromStorage]);
 
   return (
