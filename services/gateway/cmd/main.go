@@ -59,7 +59,7 @@ func main() {
 
 	// Middleware
 	authMiddleware := middleware.Auth(jwtSvc)
-	authRateLimiter := middleware.NewRateLimiter(rdb, 5, time.Hour)    // 5 req/hr for auth
+	authRateLimiter := middleware.NewRateLimiter(rdb, 50, time.Hour)   // 50 req/hr for auth
 	apiRateLimiter := middleware.NewRateLimiter(rdb, 100, time.Minute) // 100 req/min for API
 
 	// Routes
