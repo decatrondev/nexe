@@ -1,0 +1,45 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            export PATH=$PATH:/snap/bin:/usr/local/bin
+
+            cd /var/www/html/nexe
+            git pull origin main
+
+            # Build Go services
+            for svc in gateway guilds messaging presence; do
+              echo "Building $svc..."
+              cd /var/www/html/nexe/services/$svc
+              go build -o bin/$svc ./cmd/main.go
+            done
+
+            # Build frontend
+            cd /var/www/html/nexe
+            pnpm install --no-frozen-lockfile
+            cd apps/desktop && pnpm build
+            cd ../web && pnpm build
+
+            # Restart services
+            cd /root
+            for svc in nexe-gateway nexe-guilds nexe-messaging nexe-presence nexe-web nexe-desktop; do
+              ./web-services.sh restart $svc
+            done
+
+            echo "Deploy complete!"
