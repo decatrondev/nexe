@@ -1,0 +1,155 @@
+@import "tailwindcss";
+
+@theme {
+  --color-nexe-400: #818cf8;
+  --color-nexe-500: #6366f1;
+  --color-nexe-600: #4f46e5;
+  --color-nexe-700: #4338ca;
+  --color-dark-700: #27364b;
+  --color-dark-800: #1e293b;
+  --color-dark-850: #172033;
+  --color-dark-900: #0f172a;
+  --color-dark-950: #020617;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-dark-950);
+  color: #e2e8f0;
+  font-family: var(--font-sans);
+}
+
+/* Markdown prose styles for admin doc viewer */
+.prose-nexe h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  margin-top: 2rem;
+  color: #f1f5f9;
+  border-bottom: 1px solid #334155;
+  padding-bottom: 0.5rem;
+}
+
+.prose-nexe h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  margin-top: 1.75rem;
+  color: #e2e8f0;
+}
+
+.prose-nexe h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  margin-top: 1.5rem;
+  color: #cbd5e1;
+}
+
+.prose-nexe h4 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+  margin-top: 1.25rem;
+  color: #cbd5e1;
+}
+
+.prose-nexe p {
+  margin-bottom: 1rem;
+  line-height: 1.75;
+  color: #94a3b8;
+}
+
+.prose-nexe ul,
+.prose-nexe ol {
+  margin-bottom: 1rem;
+  padding-left: 1.5rem;
+  color: #94a3b8;
+}
+
+.prose-nexe ul {
+  list-style-type: disc;
+}
+
+.prose-nexe ol {
+  list-style-type: decimal;
+}
+
+.prose-nexe li {
+  margin-bottom: 0.25rem;
+  line-height: 1.75;
+}
+
+.prose-nexe a {
+  color: #818cf8;
+  text-decoration: underline;
+}
+
+.prose-nexe a:hover {
+  color: #6366f1;
+}
+
+.prose-nexe code {
+  background: #1e293b;
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+  color: #e879f9;
+}
+
+.prose-nexe pre {
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 0.5rem;
+  padding: 1rem;
+  overflow-x: auto;
+  margin-bottom: 1rem;
+}
+
+.prose-nexe pre code {
+  background: none;
+  padding: 0;
+  color: #e2e8f0;
+}
+
+.prose-nexe table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1rem;
+}
+
+.prose-nexe th {
+  text-align: left;
+  padding: 0.75rem;
+  border-bottom: 2px solid #334155;
+  color: #e2e8f0;
+  font-weight: 600;
+}
+
+.prose-nexe td {
+  padding: 0.75rem;
+  border-bottom: 1px solid #1e293b;
+  color: #94a3b8;
+}
+
+.prose-nexe blockquote {
+  border-left: 4px solid #6366f1;
+  padding-left: 1rem;
+  margin-bottom: 1rem;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+.prose-nexe hr {
+  border-color: #334155;
+  margin: 2rem 0;
+}
+
+.prose-nexe strong {
+  color: #e2e8f0;
+  font-weight: 600;
+}
