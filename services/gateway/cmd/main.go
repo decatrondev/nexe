@@ -56,6 +56,7 @@ func main() {
 	profileHandler := handler.NewProfileHandler(profileRepo)
 	twitchHandler := handler.NewTwitchHandler(twitchSvc, userRepo, authSvc, jwtSvc, rdb, cfg.TwitchEventSubSecret, cfg.BaseURL)
 	botHandler := handler.NewBotHandler(botRepo, jwtSvc)
+	proxyHandler := handler.NewProxyHandler(cfg.GuildsURL, cfg.MessagingURL, cfg.PresenceURL)
 
 	// Middleware
 	authMiddleware := middleware.Auth(jwtSvc)
@@ -110,6 +111,25 @@ func main() {
 	mux.Handle("POST /api/v1/applications/{id}/reset-secret", authMiddleware(http.HandlerFunc(botHandler.ResetSecret)))
 	mux.Handle("POST /api/v1/oauth2/token", apiRateLimiter.Middleware(http.HandlerFunc(botHandler.TokenExchange)))
 	mux.HandleFunc("GET /api/v1/scopes", botHandler.ListScopes)
+
+	// Proxy to internal services (authenticated)
+	mux.Handle("GET /guilds/", authMiddleware(http.HandlerFunc(proxyHandler.ProxyGuilds)))
+	mux.Handle("POST /guilds/", authMiddleware(http.HandlerFunc(proxyHandler.ProxyGuilds)))
+	mux.Handle("POST /guilds", authMiddleware(http.HandlerFunc(proxyHandler.ProxyGuilds)))
+	mux.Handle("PATCH /guilds/", authMiddleware(http.HandlerFunc(proxyHandler.ProxyGuilds)))
+	mux.Handle("DELETE /guilds/", authMiddleware(http.HandlerFunc(proxyHandler.ProxyGuilds)))
+	mux.Handle("PUT /guilds/", authMiddleware(http.HandlerFunc(proxyHandler.ProxyGuilds)))
+	mux.Handle("GET /channels/", authMiddleware(http.HandlerFunc(proxyHandler.ProxyMessaging)))
+	mux.Handle("POST /channels/", authMiddleware(http.HandlerFunc(proxyHandler.ProxyMessaging)))
+	mux.Handle("GET /messages/", authMiddleware(http.HandlerFunc(proxyHandler.ProxyMessaging)))
+	mux.Handle("PATCH /messages/", authMiddleware(http.HandlerFunc(proxyHandler.ProxyMessaging)))
+	mux.Handle("DELETE /messages/", authMiddleware(http.HandlerFunc(proxyHandler.ProxyMessaging)))
+	mux.Handle("PUT /messages/", authMiddleware(http.HandlerFunc(proxyHandler.ProxyMessaging)))
+	mux.Handle("POST /invites/", authMiddleware(http.HandlerFunc(proxyHandler.ProxyGuilds)))
+	mux.Handle("GET /invites/", authMiddleware(http.HandlerFunc(proxyHandler.ProxyGuilds)))
+	mux.Handle("GET /roles/", authMiddleware(http.HandlerFunc(proxyHandler.ProxyGuilds)))
+	mux.Handle("PATCH /roles/", authMiddleware(http.HandlerFunc(proxyHandler.ProxyGuilds)))
+	mux.Handle("DELETE /roles/", authMiddleware(http.HandlerFunc(proxyHandler.ProxyGuilds)))
 
 	// WebSocket
 	mux.HandleFunc("GET /ws", wsHandler.HandleWS)

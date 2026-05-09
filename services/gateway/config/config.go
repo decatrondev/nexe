@@ -18,6 +18,9 @@ type Config struct {
 	BaseURL              string
 	ResendAPIKey         string
 	EmailFrom            string
+	GuildsURL            string
+	MessagingURL         string
+	PresenceURL          string
 }
 
 func Load() *Config {
@@ -34,6 +37,9 @@ func Load() *Config {
 		BaseURL:              getEnv("NEXE_BASE_URL", "https://api.nexe.decatron.net"),
 		ResendAPIKey:         getEnv("RESEND_API_KEY", ""),
 		EmailFrom:            getEnv("NEXE_EMAIL_FROM", "Nexe <nexe@decatron.net>"),
+		GuildsURL:            getEnv("NEXE_GUILDS_URL", "http://localhost:8082"),
+		MessagingURL:         getEnv("NEXE_MESSAGING_URL", "http://localhost:8083"),
+		PresenceURL:          getEnv("NEXE_PRESENCE_URL", "http://localhost:8084"),
 	}
 }
 

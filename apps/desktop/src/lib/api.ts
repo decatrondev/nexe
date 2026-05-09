@@ -95,6 +95,71 @@ export interface UpdateProfileData {
   status?: "online" | "idle" | "dnd" | "offline";
 }
 
+// ---- Guild types ----
+
+export interface Guild {
+  id: string;
+  name: string;
+  description?: string;
+  iconUrl?: string;
+  ownerId: string;
+  isStreamerServer: boolean;
+  memberCount: number;
+  createdAt: string;
+}
+
+export interface Channel {
+  id: string;
+  guildId: string;
+  categoryId?: string;
+  name: string;
+  topic?: string;
+  type: string;
+  position: number;
+  slowmodeSeconds: number;
+  isSubOnly: boolean;
+  isLiveChannel: boolean;
+}
+
+export interface Message {
+  id: string;
+  channelId: string;
+  authorId: string;
+  content: string;
+  type: string;
+  replyToId?: string;
+  editedAt?: string;
+  deleted: boolean;
+  pinned: boolean;
+  createdAt: string;
+}
+
+export interface GuildMember {
+  id: string;
+  guildId: string;
+  userId: string;
+  nickname?: string;
+  joinedAt: string;
+  muted: boolean;
+}
+
+export interface Role {
+  id: string;
+  guildId: string;
+  name: string;
+  color?: string;
+  position: number;
+  permissions: number;
+  isDefault: boolean;
+}
+
+export interface Invite {
+  id: string;
+  guildId: string;
+  channelId: string;
+  code: string;
+}
+
 // ---- API client ----
 
 export const api = {
@@ -132,7 +197,74 @@ export const api = {
     return request<UserProfile>("PATCH", "/users/@me/profile", data);
   },
 
-  getGuilds() {
-    return request<unknown[]>("GET", "/guilds/me");
+  // ---- Guild methods ----
+
+  getMyGuilds() {
+    return request<Guild[]>("GET", "/guilds/me");
+  },
+
+  createGuild(name: string, description: string, isStreamerServer: boolean) {
+    return request<Guild>("POST", "/guilds", {
+      name,
+      description,
+      isStreamerServer,
+    });
+  },
+
+  getGuild(id: string) {
+    return request<Guild>("GET", `/guilds/${id}`);
+  },
+
+  getChannels(guildId: string) {
+    return request<Channel[]>("GET", `/guilds/${guildId}/channels`);
+  },
+
+  createChannel(guildId: string, name: string, type: string) {
+    return request<Channel>("POST", `/guilds/${guildId}/channels`, {
+      name,
+      type,
+    });
+  },
+
+  getRoles(guildId: string) {
+    return request<Role[]>("GET", `/guilds/${guildId}/roles`);
+  },
+
+  getMembers(guildId: string, limit?: number) {
+    const params = limit ? `?limit=${limit}` : "";
+    return request<GuildMember[]>("GET", `/guilds/${guildId}/members${params}`);
+  },
+
+  getMessages(channelId: string, limit?: number, before?: string) {
+    const params = new URLSearchParams();
+    if (limit) params.set("limit", String(limit));
+    if (before) params.set("before", before);
+    const qs = params.toString();
+    return request<Message[]>(
+      "GET",
+      `/channels/${channelId}/messages${qs ? `?${qs}` : ""}`,
+    );
+  },
+
+  sendMessage(channelId: string, content: string) {
+    return request<Message>("POST", `/channels/${channelId}/messages`, {
+      content,
+    });
+  },
+
+  editMessage(messageId: string, content: string) {
+    return request<Message>("PATCH", `/messages/${messageId}`, { content });
+  },
+
+  deleteMessage(messageId: string) {
+    return request<void>("DELETE", `/messages/${messageId}`);
+  },
+
+  createInvite(guildId: string, channelId: string) {
+    return request<Invite>("POST", `/guilds/${guildId}/invites`, { channelId });
+  },
+
+  joinGuild(guildId: string) {
+    return request<void>("POST", `/guilds/${guildId}/join`);
   },
 };
