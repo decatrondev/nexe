@@ -29,8 +29,8 @@ jobs:
         working-directory: services/${{ matrix.service }}
         run: go test ./...
 
-  frontend-packages:
-    name: Frontend — packages
+  frontend:
+    name: Frontend — build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,9 +41,9 @@ jobs:
         with:
           node-version: "20"
 
-      - run: pnpm install --filter @nexe/types --filter @nexe/ui --filter @nexe/config
-        working-directory: .
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
 
       - name: Build desktop
         working-directory: apps/desktop
-        run: pnpm install && pnpm build
+        run: pnpm build
