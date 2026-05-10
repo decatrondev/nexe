@@ -33,11 +33,17 @@ func (r *MessageRepository) Create(ctx context.Context, msg *model.Message) erro
 		embedsJSON = []byte("[]")
 	}
 
+	// Bridge messages have no Nexe author — pass NULL for author_id
+	var authorParam interface{} = msg.AuthorID
+	if msg.AuthorID == "" {
+		authorParam = nil
+	}
+
 	err = tx.QueryRowContext(ctx,
 		`INSERT INTO messages (channel_id, author_id, content, type, reply_to_id, thread_id, embeds, mention_everyone, bridge_source, bridge_author, bridge_author_id)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		 RETURNING id, created_at`,
-		msg.ChannelID, msg.AuthorID, msg.Content, msg.Type,
+		msg.ChannelID, authorParam, msg.Content, msg.Type,
 		msg.ReplyToID, msg.ThreadID, string(embedsJSON), msg.MentionEveryone,
 		msg.BridgeSource, msg.BridgeAuthor, msg.BridgeAuthorID,
 	).Scan(&msg.ID, &msg.CreatedAt)
