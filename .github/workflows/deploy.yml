@@ -24,6 +24,8 @@ jobs:
           script_stop: true
           script: |
             set -e
+            export CI=true
+
             cd /var/www/html/nexe
             git pull origin main
 
@@ -31,6 +33,7 @@ jobs:
             for svc in gateway guilds messaging presence; do
               echo "Building $svc..."
               cd /var/www/html/nexe/services/$svc
+              set -a && source .env 2>/dev/null; set +a
               go build -o bin/$svc ./cmd/main.go
             done
 
