@@ -153,7 +153,7 @@ func main() {
 	mux.Handle("PUT /guilds/{id}/members/{uid}/auto-roles/{rid}", guildsProxy(gp))
 	mux.Handle("DELETE /guilds/{id}/members/{uid}/auto-roles/{rid}", guildsProxy(gp))
 	mux.Handle("POST /guilds/{id}/twitch/sync", authMiddleware(http.HandlerFunc(twitchHandler.SyncTwitchRoles)))
-	mux.Handle("POST /guilds/{id}/bridge", guildsProxy(gp))
+	mux.Handle("POST /guilds/{id}/bridge", authMiddleware(http.HandlerFunc(twitchHandler.EnableBridge)))
 	mux.Handle("DELETE /guilds/{id}/bridge", guildsProxy(gp))
 	mux.Handle("POST /twitch/bridge/send", authMiddleware(http.HandlerFunc(twitchHandler.SendToTwitchChat)))
 	mux.Handle("POST /guilds/{id}/twitch/sync-all", authMiddleware(http.HandlerFunc(twitchHandler.SyncAllMembers)))

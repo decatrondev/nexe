@@ -909,6 +909,82 @@ func (h *TwitchHandler) SetupEventSub(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// EnableBridge sets up the bridge channel and registers EventSub for chat messages.
+func (h *TwitchHandler) EnableBridge(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r)
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "not authenticated")
+		return
+	}
+
+	guildID := r.PathValue("id")
+
+	// Read body
+	bodyBytes, _ := io.ReadAll(r.Body)
+	r.Body.Close()
+
+	var body struct {
+		ChannelID string `json:"channelId"`
+	}
+	json.Unmarshal(bodyBytes, &body)
+
+	// Proxy to guilds service to save bridge_channel_id
+	proxyReq, _ := http.NewRequest("POST", h.guildsURL+"/guilds/"+guildID+"/bridge", bytes.NewReader(bodyBytes))
+	proxyReq.Header.Set("Content-Type", "application/json")
+	proxyReq.Header.Set("X-User-ID", claims.Subject)
+	proxyReq.Header.Set("X-Username", claims.Username)
+
+	resp, err := http.DefaultClient.Do(proxyReq)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "proxy_error", "service unavailable")
+		return
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode >= 400 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(resp.StatusCode)
+		w.Write(respBody)
+		return
+	}
+
+	// Get guild info for broadcaster Twitch ID
+	guildResp, err := http.Get(h.guildsURL + "/guilds/" + guildID)
+	if err == nil {
+		defer guildResp.Body.Close()
+		var guild struct {
+			StreamerTwitchID *string `json:"streamerTwitchId"`
+		}
+		json.NewDecoder(guildResp.Body).Decode(&guild)
+
+		if guild.StreamerTwitchID != nil {
+			twitchID := *guild.StreamerTwitchID
+
+			// Cache bridge mapping in Redis
+			h.rdb.HSet(r.Context(), "nexe:bridge:twitch:"+twitchID, map[string]interface{}{
+				"guildId":   guildID,
+				"channelId": body.ChannelID,
+			})
+
+			// Register EventSub for channel.chat.message
+			callbackURL := h.baseURL + "/twitch/webhook"
+			err := h.twitch.SubscribeEventSub(r.Context(), "channel.chat.message", "1",
+				map[string]string{"broadcaster_user_id": twitchID, "user_id": twitchID},
+				callbackURL, h.eventSubSecret)
+			if err != nil {
+				slog.Error("failed to subscribe to chat events", "error", err, "twitchId", twitchID)
+			} else {
+				slog.Info("chat bridge EventSub registered", "twitchId", twitchID, "guildId", guildID)
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(respBody)
+}
+
 // handleChatMessage processes incoming Twitch chat messages and bridges them to Nexe.
 func (h *TwitchHandler) handleChatMessage(ctx context.Context, event json.RawMessage) {
 	var chatEvent struct {
@@ -975,16 +1051,13 @@ type bridgeGuildInfo struct {
 
 // findBridgeGuild finds a guild that has a bridge configured for this Twitch broadcaster.
 func (h *TwitchHandler) findBridgeGuild(ctx context.Context, twitchID string) (*bridgeGuildInfo, error) {
-	// Check Redis cache first
+	// Check Redis cache
 	cacheKey := "nexe:bridge:twitch:" + twitchID
 	data, err := h.rdb.HGetAll(ctx, cacheKey).Result()
 	if err == nil && data["guildId"] != "" && data["channelId"] != "" {
 		return &bridgeGuildInfo{guildID: data["guildId"], bridgeChannelID: data["channelId"]}, nil
 	}
-
-	// Query all guilds to find bridge (this is called rarely, cached after first hit)
-	// In production this would be a direct DB query, but we use the guilds service HTTP API
-	return nil, nil // Cache miss — bridge will be cached when SetBridgeChannel is called
+	return nil, nil
 }
 
 // SendToTwitchChat sends a message from Nexe to Twitch chat.
