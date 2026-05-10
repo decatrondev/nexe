@@ -131,7 +131,12 @@ export default function HomePage() {
           api.syncTwitchRoles(d.guildId).catch(() => {});
         }
 
-        // Reload members if we're viewing this guild
+        // If I just joined, reload my guild list
+        if (d.userId === currentUser?.id) {
+          useGuildStore.getState().loadGuilds();
+        }
+
+        // Reload members if we're viewing this guild + resolve new member's username
         const activeGuild = useGuildStore.getState().activeGuildId;
         if (activeGuild === d.guildId) {
           api.getMembers(d.guildId, 100).then((members) => {
@@ -139,6 +144,16 @@ export default function HomePage() {
               members: { ...s.members, [d.guildId]: Array.isArray(members) ? members : [] },
             }));
           }).catch(() => {});
+
+          // Resolve username for the new member
+          const { usernames } = useGuildStore.getState();
+          if (!usernames[d.userId]) {
+            api.getProfile(d.userId).then((p) => {
+              useGuildStore.setState((s) => ({
+                usernames: { ...s.usernames, [d.userId]: p?.displayName || p?.username || "User" },
+              }));
+            }).catch(() => {});
+          }
         }
       });
 
