@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api, type AppNotification } from "../lib/api";
 import { useGuildStore } from "../stores/guild";
 
@@ -7,7 +7,6 @@ export default function NotificationBell() {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const panelRef = useRef<HTMLDivElement>(null);
   const usernames = useGuildStore((s) => s.usernames);
   const guilds = useGuildStore((s) => s.guilds);
   const setActiveGuild = useGuildStore((s) => s.setActiveGuild);
@@ -53,16 +52,14 @@ export default function NotificationBell() {
     }
   }, []);
 
-  // Close panel on outside click
+  // Close panel on Escape
   useEffect(() => {
     if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
     };
-    const t = setTimeout(() => document.addEventListener("mousedown", handler), 10);
-    return () => { clearTimeout(t); document.removeEventListener("mousedown", handler); };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
   }, [open]);
 
   async function togglePanel() {
@@ -111,15 +108,6 @@ export default function NotificationBell() {
     }
   }
 
-  function typeColor(type: string) {
-    switch (type) {
-      case "mention": return "text-nexe-400";
-      case "everyone": return "text-yellow-400";
-      case "reply": return "text-blue-400";
-      default: return "text-slate-400";
-    }
-  }
-
   function timeAgo(iso: string): string {
     const ms = Date.now() - new Date(iso).getTime();
     const mins = Math.floor(ms / 60000);
@@ -131,84 +119,124 @@ export default function NotificationBell() {
   }
 
   return (
-    <div className="relative" ref={panelRef}>
+    <>
       <button
         onClick={togglePanel}
-        className="relative flex h-8 w-8 items-center justify-center rounded-full bg-dark-700 text-slate-300 transition-colors hover:bg-dark-600 hover:text-white"
+        className="relative flex h-7 w-7 items-center justify-center rounded text-slate-400 transition-colors hover:text-slate-200"
         title="Notifications"
       >
-        <svg viewBox="0 0 24 24" className="h-4.5 w-4.5 fill-current">
+        <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
           <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" />
         </svg>
         {unreadCount > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+          <span className="absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-red-500 px-0.5 text-[9px] font-bold text-white">
             {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         )}
       </button>
 
+      {/* Full-screen overlay panel */}
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-2 w-80 overflow-hidden rounded-lg border border-dark-700 bg-dark-800 shadow-2xl">
-          {/* Header */}
-          <div className="flex items-center justify-between border-b border-dark-700 px-4 py-3">
-            <h3 className="text-sm font-semibold text-slate-100">Notifications</h3>
-            {unreadCount > 0 && (
-              <button
-                onClick={markAllRead}
-                className="text-xs text-nexe-400 hover:text-nexe-300"
-              >
-                Mark all read
-              </button>
-            )}
-          </div>
+        <div className="fixed inset-0 z-50 flex items-start justify-center" onClick={() => setOpen(false)}>
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/40" />
 
-          {/* List */}
-          <div className="max-h-96 overflow-y-auto">
-            {loading ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-dark-600 border-t-nexe-400" />
-              </div>
-            ) : notifications.length === 0 ? (
-              <div className="py-8 text-center text-sm text-slate-500">
-                No notifications
-              </div>
-            ) : (
-              notifications.map((notif) => (
-                <button
-                  key={notif.id}
-                  onClick={() => handleClick(notif)}
-                  className={`flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-dark-700 ${
-                    !notif.read ? "bg-dark-750" : ""
-                  }`}
-                >
-                  {/* Type badge */}
-                  <span className={`mt-0.5 shrink-0 text-xs font-bold ${typeColor(notif.type)}`}>
-                    {typeIcon(notif.type)}
+          {/* Panel */}
+          <div
+            className="relative mt-14 w-full max-w-md overflow-hidden rounded-xl border border-dark-700 bg-dark-850 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-dark-700 px-5 py-3.5">
+              <div className="flex items-center gap-2.5">
+                <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current text-nexe-400">
+                  <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" />
+                </svg>
+                <h3 className="text-sm font-semibold text-slate-100">Notifications</h3>
+                {unreadCount > 0 && (
+                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500/20 px-1.5 text-[11px] font-semibold text-red-400">
+                    {unreadCount}
                   </span>
-
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-medium text-slate-200">
-                        {usernames[notif.authorId || ""] || "Someone"}
-                      </span>
-                      <span className="text-[10px] text-slate-600">
-                        {timeAgo(notif.createdAt)}
-                      </span>
-                      {!notif.read && (
-                        <div className="ml-auto h-2 w-2 shrink-0 rounded-full bg-nexe-500" />
-                      )}
-                    </div>
-                    <p className="mt-0.5 truncate text-xs text-slate-400">{notif.content}</p>
-                    <p className="mt-0.5 text-[10px] text-slate-600">
-                      {guilds.find((g) => g.id === notif.guildId)?.name || "Server"}
-                    </p>
-                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {unreadCount > 0 && (
+                  <button
+                    onClick={markAllRead}
+                    className="rounded-md px-2.5 py-1 text-xs font-medium text-nexe-400 transition-colors hover:bg-nexe-500/10 hover:text-nexe-300"
+                  >
+                    Mark all read
+                  </button>
+                )}
+                <button
+                  onClick={() => setOpen(false)}
+                  className="flex h-6 w-6 items-center justify-center rounded text-slate-500 transition-colors hover:text-slate-300"
+                >
+                  <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                  </svg>
                 </button>
-              ))
-            )}
+              </div>
+            </div>
+
+            {/* Notification list */}
+            <div className="max-h-[60vh] overflow-y-auto">
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-dark-600 border-t-nexe-400" />
+                </div>
+              ) : notifications.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-12">
+                  <svg viewBox="0 0 24 24" className="mb-3 h-10 w-10 fill-current text-dark-600">
+                    <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z" />
+                  </svg>
+                  <p className="text-sm text-slate-500">No notifications yet</p>
+                  <p className="mt-1 text-xs text-slate-600">Mentions and replies will show up here</p>
+                </div>
+              ) : (
+                notifications.map((notif) => (
+                  <button
+                    key={notif.id}
+                    onClick={() => handleClick(notif)}
+                    className={`flex w-full items-start gap-3 border-b border-dark-800 px-5 py-3.5 text-left transition-colors hover:bg-dark-800 ${
+                      !notif.read ? "bg-nexe-500/5" : ""
+                    }`}
+                  >
+                    {/* Type icon */}
+                    <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
+                      notif.type === "mention" ? "bg-nexe-500/15 text-nexe-400" :
+                      notif.type === "everyone" ? "bg-yellow-500/15 text-yellow-400" :
+                      notif.type === "reply" ? "bg-blue-500/15 text-blue-400" :
+                      notif.type === "role_mention" ? "bg-purple-500/15 text-purple-400" :
+                      "bg-dark-700 text-slate-400"
+                    }`}>
+                      <span className="text-xs font-bold">{typeIcon(notif.type)}</span>
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-slate-200">
+                          {usernames[notif.authorId || ""] || "Someone"}
+                        </span>
+                        <span className="text-[11px] text-slate-600">
+                          {timeAgo(notif.createdAt)}
+                        </span>
+                        {!notif.read && (
+                          <div className="ml-auto h-2 w-2 shrink-0 rounded-full bg-nexe-500" />
+                        )}
+                      </div>
+                      <p className="mt-0.5 text-sm leading-snug text-slate-400 line-clamp-2">{notif.content}</p>
+                      <p className="mt-1 text-[11px] text-slate-600">
+                        {guilds.find((g) => g.id === notif.guildId)?.name || "Server"}
+                      </p>
+                    </div>
+                  </button>
+                ))
+              )}
+            </div>
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }
