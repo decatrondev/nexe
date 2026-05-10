@@ -60,14 +60,6 @@ func (s *PresenceService) SetPresence(ctx context.Context, userID string, update
 	}
 
 	slog.Debug("presence updated", "userId", userID, "status", update.Status)
-
-	// Publish presence update to guilds — invisible shows as "offline" to others
-	broadcastStatus := update.Status
-	if broadcastStatus == "invisible" {
-		broadcastStatus = "offline"
-	}
-	go s.events.PublishPresenceUpdate(ctx, userID, broadcastStatus)
-
 	return nil
 }
 

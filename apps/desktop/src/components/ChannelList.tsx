@@ -17,6 +17,7 @@ const statusColors: Record<string, string> = {
   idle: "bg-yellow-500",
   dnd: "bg-red-500",
   offline: "bg-slate-500",
+  invisible: "bg-slate-500",
 };
 
 const EMPTY_CHANNELS: Channel[] = [];
@@ -302,7 +303,7 @@ export default function ChannelList() {
               {user?.displayName || user?.username || "User"}
             </p>
             <p className="truncate text-xs capitalize text-slate-500">
-              {userStatus === "dnd" ? "Do Not Disturb" : userStatus}
+              {userStatus === "dnd" ? "Do Not Disturb" : userStatus === "invisible" ? "Invisible" : userStatus}
             </p>
           </div>
           <button

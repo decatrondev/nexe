@@ -175,7 +175,7 @@ func main() {
 	// Proxy to presence service (authenticated)
 	pp := http.HandlerFunc(proxyHandler.ProxyPresence)
 	mux.Handle("GET /users/{id}/presence", guildsProxy(pp))
-	mux.Handle("PATCH /users/@me/presence", guildsProxy(pp))
+	mux.Handle("PATCH /users/@me/presence", authMiddleware(http.HandlerFunc(wsHandler.HandlePresenceUpdate)))
 	mux.Handle("PATCH /users/@me/status", guildsProxy(pp))
 	mux.Handle("POST /users/@me/heartbeat", guildsProxy(pp))
 	mux.Handle("POST /users/@me/offline", guildsProxy(pp))

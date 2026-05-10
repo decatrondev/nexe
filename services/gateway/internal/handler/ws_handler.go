@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/decatrondev/nexe/services/gateway/internal/middleware"
 	"github.com/decatrondev/nexe/services/gateway/internal/service"
 	"github.com/gorilla/websocket"
 	"github.com/redis/go-redis/v9"
@@ -185,13 +186,17 @@ func (h *WSHandler) subscribeClientToGuilds(client *WSClient) {
 		}
 	}
 
-	// Now send heartbeat — this must happen AFTER guild tracking so the
-	// PRESENCE_UPDATE event reaches all guild members
+	// Send heartbeat + broadcast presence to all guilds
 	h.mu.RLock()
 	isFirstConn := len(h.userConns[client.userID]) == 1
 	h.mu.RUnlock()
 	if isFirstConn {
 		h.sendPresenceHeartbeat(client.userID)
+		// Fetch current status and broadcast to all guilds
+		status := h.getUserPresenceStatus(client.userID)
+		if status != "" {
+			h.broadcastPresenceToGuilds(client.userID, status, guildIDs)
+		}
 	}
 }
 
@@ -479,6 +484,89 @@ func (h *WSHandler) removeClient(client *WSClient) {
 			}(gid, client.userID)
 		}
 	}
+}
+
+// HandlePresenceUpdate proxies the presence PATCH and broadcasts PRESENCE_UPDATE to guilds.
+func (h *WSHandler) HandlePresenceUpdate(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r)
+	if claims == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Read the body to extract status
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	r.Body.Close()
+
+	var statusReq struct {
+		Status string `json:"status"`
+	}
+	json.Unmarshal(bodyBytes, &statusReq)
+
+	// Proxy to presence service with the body
+	proxyReq, err := http.NewRequestWithContext(r.Context(), "PATCH", h.presenceURL+"/users/@me/presence", strings.NewReader(string(bodyBytes)))
+	if err != nil {
+		http.Error(w, "proxy error", http.StatusBadGateway)
+		return
+	}
+	proxyReq.Header.Set("Content-Type", "application/json")
+	proxyReq.Header.Set("X-User-ID", claims.Subject)
+	proxyReq.Header.Set("X-Username", claims.Username)
+
+	resp, err := http.DefaultClient.Do(proxyReq)
+	if err != nil {
+		http.Error(w, "service unavailable", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Copy response back
+	for k, v := range resp.Header {
+		w.Header()[k] = v
+	}
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+
+	// If successful, broadcast presence update to all guilds
+	if resp.StatusCode < 300 && statusReq.Status != "" {
+		broadcastStatus := statusReq.Status
+		if broadcastStatus == "invisible" {
+			broadcastStatus = "offline"
+		}
+
+		h.mu.RLock()
+		var guildIDs []string
+		for gid, members := range h.guildSubs {
+			if members[claims.Subject] {
+				guildIDs = append(guildIDs, gid)
+			}
+		}
+		h.mu.RUnlock()
+
+		if len(guildIDs) > 0 {
+			h.broadcastPresenceToGuilds(claims.Subject, broadcastStatus, guildIDs)
+		}
+	}
+}
+
+// getUserPresenceStatus fetches the current status from the presence service.
+func (h *WSHandler) getUserPresenceStatus(userID string) string {
+	resp, err := http.Get(h.presenceURL + "/users/" + userID + "/presence")
+	if err != nil {
+		return "online"
+	}
+	defer resp.Body.Close()
+	var p struct {
+		Status string `json:"status"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&p) == nil && p.Status != "" {
+		return p.Status
+	}
+	return "online"
 }
 
 // sendPresenceHeartbeat calls the presence heartbeat endpoint which restores preferred status.
