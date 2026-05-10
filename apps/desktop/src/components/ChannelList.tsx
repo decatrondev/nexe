@@ -277,9 +277,22 @@ export default function ChannelList() {
                   setShowStatusMenu(false);
                   try {
                     await api.updatePresence(status);
+                    const typedStatus = status as "online" | "idle" | "dnd" | "offline";
                     useAuthStore.setState((s) => ({
-                      user: s.user ? { ...s.user, status: status as "online" | "idle" | "dnd" | "offline" } : null,
+                      user: s.user ? { ...s.user, status: typedStatus } : null,
                     }));
+                    // Save to localStorage so it persists on refresh
+                    const currentUser = useAuthStore.getState().user;
+                    if (currentUser) {
+                      localStorage.setItem("user", JSON.stringify(currentUser));
+                    }
+                    // Also update presenceMap so member list reflects it
+                    const userId = currentUser?.id;
+                    if (userId) {
+                      useGuildStore.setState((s) => ({
+                        presenceMap: { ...s.presenceMap, [userId]: status },
+                      }));
+                    }
                   } catch (err) {
                     console.error("Failed to update status:", err);
                   }

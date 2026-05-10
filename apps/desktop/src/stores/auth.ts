@@ -79,9 +79,15 @@ export const useAuthStore = create<AuthState>((set) => ({
         if (rt) api.setRefreshToken(rt);
 
         const me = await api.getMe();
+        const restored = me ?? user;
+
+        // Restore status from localStorage if available (presence is separate from user DB)
+        if (restored && user.status) {
+          restored.status = user.status;
+        }
 
         set({
-          user: me ?? user,
+          user: restored,
           token: localStorage.getItem("token") ?? token,
           refreshToken: localStorage.getItem("refreshToken") ?? rt,
           isAuthenticated: true,

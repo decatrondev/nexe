@@ -271,23 +271,30 @@ export default function HomePage() {
       let isIdle = false;
       const IDLE_DELAY = 5 * 60 * 1000; // 5 minutes
 
+      const setStatus = (status: string) => {
+        api.updatePresence(status).catch(() => {});
+        useAuthStore.setState((s) => ({
+          user: s.user ? { ...s.user, status: status as "online" | "idle" | "dnd" | "offline" } : null,
+        }));
+        const uid = useAuthStore.getState().user?.id;
+        if (uid) {
+          useGuildStore.setState((s) => ({
+            presenceMap: { ...s.presenceMap, [uid]: status },
+          }));
+        }
+      };
+
       const resetIdle = () => {
         if (isIdle) {
           isIdle = false;
-          api.updatePresence("online").catch(() => {});
-          useAuthStore.setState((s) => ({
-            user: s.user ? { ...s.user, status: "online" } : null,
-          }));
+          setStatus("online");
         }
         if (idleTimeout) clearTimeout(idleTimeout);
         idleTimeout = setTimeout(() => {
           const currentStatus = useAuthStore.getState().user?.status;
           if (currentStatus === "online") {
             isIdle = true;
-            api.updatePresence("idle").catch(() => {});
-            useAuthStore.setState((s) => ({
-              user: s.user ? { ...s.user, status: "idle" } : null,
-            }));
+            setStatus("idle");
           }
         }, IDLE_DELAY);
       };
