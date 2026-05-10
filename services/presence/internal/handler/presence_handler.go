@@ -163,16 +163,13 @@ func (h *PresenceHandler) GetGuildOnline(w http.ResponseWriter, r *http.Request)
 
 func (h *PresenceHandler) TrackGuildOnline(w http.ResponseWriter, r *http.Request) {
 	guildID := r.PathValue("id")
-
-	var body struct {
-		UserID string `json:"userId"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.UserID == "" {
+	userID := r.Header.Get("X-User-ID")
+	if userID == "" {
 		writeError(w, http.StatusBadRequest, "invalid_body", "userId is required")
 		return
 	}
 
-	if err := h.svc.TrackGuildOnline(r.Context(), guildID, body.UserID); err != nil {
+	if err := h.svc.TrackGuildOnline(r.Context(), guildID, userID); err != nil {
 		writeError(w, http.StatusInternalServerError, "track_error", err.Error())
 		return
 	}
@@ -182,16 +179,13 @@ func (h *PresenceHandler) TrackGuildOnline(w http.ResponseWriter, r *http.Reques
 
 func (h *PresenceHandler) UntrackGuildOnline(w http.ResponseWriter, r *http.Request) {
 	guildID := r.PathValue("id")
-
-	var body struct {
-		UserID string `json:"userId"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.UserID == "" {
+	userID := r.Header.Get("X-User-ID")
+	if userID == "" {
 		writeError(w, http.StatusBadRequest, "invalid_body", "userId is required")
 		return
 	}
 
-	if err := h.svc.UntrackGuildOnline(r.Context(), guildID, body.UserID); err != nil {
+	if err := h.svc.UntrackGuildOnline(r.Context(), guildID, userID); err != nil {
 		writeError(w, http.StatusInternalServerError, "untrack_error", err.Error())
 		return
 	}

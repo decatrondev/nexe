@@ -162,7 +162,7 @@ export interface User {
   email: string;
   displayName?: string;
   avatarUrl?: string;
-  status?: "online" | "idle" | "dnd" | "offline";
+  status?: "online" | "idle" | "dnd" | "offline" | "invisible";
   twitchId?: string;
   twitchLogin?: string;
 }
@@ -196,14 +196,14 @@ export interface UserProfile {
   socialLinks: SocialLink[];
   createdAt: string;
   updatedAt: string;
-  status?: "online" | "idle" | "dnd" | "offline";
+  status?: "online" | "idle" | "dnd" | "offline" | "invisible";
 }
 
 export interface UpdateProfileData {
   displayName?: string;
   bio?: string;
   avatarUrl?: string;
-  status?: "online" | "idle" | "dnd" | "offline";
+  status?: "online" | "idle" | "dnd" | "offline" | "invisible";
   socialLinks?: SocialLink[];
 }
 

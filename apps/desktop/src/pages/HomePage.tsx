@@ -259,6 +259,13 @@ export default function HomePage() {
         useGuildStore.setState((s) => ({
           presenceMap: { ...s.presenceMap, [d.userId]: d.status },
         }));
+        // If it's our own presence, sync the auth store too
+        const me = useAuthStore.getState().user;
+        if (me && d.userId === me.id) {
+          useAuthStore.setState((s) => ({
+            user: s.user ? { ...s.user, status: d.status as "online" | "idle" | "dnd" | "offline" } : null,
+          }));
+        }
       });
 
       // Presence heartbeat every 60s

@@ -469,7 +469,7 @@ func (h *WSHandler) removeClient(client *WSClient) {
 
 	// Mark offline, untrack from guilds, and broadcast (only on last connection)
 	if isLastConn {
-		go h.setUserPresence(client.userID, "offline")
+		go h.markUserOffline(client.userID)
 		for _, gid := range guildIDs {
 			go func(guildID, userID string) {
 				req, _ := http.NewRequest("POST", h.presenceURL+"/guilds/"+guildID+"/untrack", strings.NewReader(`{}`))
@@ -550,6 +550,34 @@ func (h *WSHandler) HandlePresenceUpdate(w http.ResponseWriter, r *http.Request)
 		if len(guildIDs) > 0 {
 			h.broadcastPresenceToGuilds(claims.Subject, broadcastStatus, guildIDs)
 		}
+	}
+}
+
+// markUserOffline calls the presence service's offline endpoint (doesn't touch preferred status).
+func (h *WSHandler) markUserOffline(userID string) {
+	req, err := http.NewRequest("POST", h.presenceURL+"/users/@me/offline", nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("X-User-ID", userID)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		slog.Error("failed to mark offline", "error", err, "userId", userID)
+		return
+	}
+	resp.Body.Close()
+
+	// Broadcast offline to all guilds
+	h.mu.RLock()
+	var guildIDs []string
+	for gid, members := range h.guildSubs {
+		if members[userID] {
+			guildIDs = append(guildIDs, gid)
+		}
+	}
+	h.mu.RUnlock()
+	if len(guildIDs) > 0 {
+		h.broadcastPresenceToGuilds(userID, "offline", guildIDs)
 	}
 }
 
