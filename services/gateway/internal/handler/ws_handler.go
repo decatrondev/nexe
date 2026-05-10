@@ -49,23 +49,25 @@ type WSClient struct {
 }
 
 type WSHandler struct {
-	jwt       *service.JWTService
-	rdb       *redis.Client
-	guildsURL string
-	clients   map[uint64]*WSClient            // connID → client
-	userConns map[string]map[uint64]bool       // userID → set of connIDs
-	guildSubs map[string]map[string]bool       // guildID → set of userIDs
-	mu        sync.RWMutex
+	jwt         *service.JWTService
+	rdb         *redis.Client
+	guildsURL   string
+	presenceURL string
+	clients     map[uint64]*WSClient            // connID → client
+	userConns   map[string]map[uint64]bool       // userID → set of connIDs
+	guildSubs   map[string]map[string]bool       // guildID → set of userIDs
+	mu          sync.RWMutex
 }
 
-func NewWSHandler(jwt *service.JWTService, rdb *redis.Client, guildsURL string) *WSHandler {
+func NewWSHandler(jwt *service.JWTService, rdb *redis.Client, guildsURL, presenceURL string) *WSHandler {
 	return &WSHandler{
-		jwt:       jwt,
-		rdb:       rdb,
-		guildsURL: guildsURL,
-		clients:   make(map[uint64]*WSClient),
-		userConns: make(map[string]map[uint64]bool),
-		guildSubs: make(map[string]map[string]bool),
+		jwt:         jwt,
+		rdb:         rdb,
+		guildsURL:   guildsURL,
+		presenceURL: presenceURL,
+		clients:     make(map[uint64]*WSClient),
+		userConns:   make(map[string]map[uint64]bool),
+		guildSubs:   make(map[string]map[string]bool),
 	}
 }
 
@@ -121,6 +123,14 @@ func (h *WSHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 	go h.subscribeClientToGuilds(client)
 	go h.writePump(client)
 	go h.readPump(client)
+
+	// Mark user online (only on first connection)
+	h.mu.RLock()
+	isFirstConn := len(h.userConns[client.userID]) == 1
+	h.mu.RUnlock()
+	if isFirstConn {
+		go h.setUserPresence(client.userID, "online")
+	}
 }
 
 func (h *WSHandler) subscribeClientToGuilds(client *WSClient) {
@@ -168,6 +178,22 @@ func (h *WSHandler) subscribeClientToGuilds(client *WSClient) {
 	h.mu.Unlock()
 
 	slog.Info("client subscribed to guilds", "userId", client.userID, "guildCount", len(guildIDs))
+
+	// Track user as online in all their guilds (presence service)
+	for _, gid := range guildIDs {
+		go func(guildID string) {
+			req, err := http.NewRequest("POST", h.presenceURL+"/guilds/"+guildID+"/track", strings.NewReader(`{}`))
+			if err != nil {
+				return
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-User-ID", client.userID)
+			resp, err := http.DefaultClient.Do(req)
+			if err == nil {
+				resp.Body.Close()
+			}
+		}(gid)
+	}
 }
 
 // BroadcastToGuild sends an event to all connected clients in a guild,
@@ -413,7 +439,6 @@ func (h *WSHandler) removeClient(client *WSClient) {
 	// Remove from guild subscriptions
 	for _, gid := range client.guildIDs {
 		if members, ok := h.guildSubs[gid]; ok {
-			// Only remove user from guild if this was their last connection
 			if conns := h.userConns[client.userID]; len(conns) <= 1 {
 				delete(members, client.userID)
 				if len(members) == 0 {
@@ -424,15 +449,77 @@ func (h *WSHandler) removeClient(client *WSClient) {
 	}
 	// Remove connection
 	delete(h.clients, client.id)
+	isLastConn := false
 	if conns, ok := h.userConns[client.userID]; ok {
 		delete(conns, client.id)
 		if len(conns) == 0 {
 			delete(h.userConns, client.userID)
+			isLastConn = true
 		}
 	}
+	guildIDs := make([]string, len(client.guildIDs))
+	copy(guildIDs, client.guildIDs)
 	h.mu.Unlock()
 	close(client.send)
 	slog.Info("ws client disconnected", "connId", client.id, "userId", client.userID)
+
+	// Mark offline, untrack from guilds, and broadcast (only on last connection)
+	if isLastConn {
+		go h.setUserPresence(client.userID, "offline")
+		for _, gid := range guildIDs {
+			go func(guildID, userID string) {
+				req, _ := http.NewRequest("POST", h.presenceURL+"/guilds/"+guildID+"/untrack", strings.NewReader(`{}`))
+				if req != nil {
+					req.Header.Set("Content-Type", "application/json")
+					req.Header.Set("X-User-ID", userID)
+					resp, err := http.DefaultClient.Do(req)
+					if err == nil {
+						resp.Body.Close()
+					}
+				}
+			}(gid, client.userID)
+		}
+	}
+}
+
+// setUserPresence calls the presence service to update status.
+func (h *WSHandler) setUserPresence(userID, status string) {
+	body := strings.NewReader(`{"status":"` + status + `"}`)
+	req, err := http.NewRequest("PATCH", h.presenceURL+"/users/@me/presence", body)
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", userID)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		slog.Error("failed to set presence", "error", err, "userId", userID, "status", status)
+		return
+	}
+	resp.Body.Close()
+	slog.Debug("presence set", "userId", userID, "status", status)
+
+	// Also broadcast to all guilds the user is in
+	h.mu.RLock()
+	var guildIDs []string
+	for gid, members := range h.guildSubs {
+		if members[userID] {
+			guildIDs = append(guildIDs, gid)
+		}
+	}
+	h.mu.RUnlock()
+	if len(guildIDs) > 0 {
+		h.broadcastPresenceToGuilds(userID, status, guildIDs)
+	}
+}
+
+// broadcastPresenceToGuilds sends PRESENCE_UPDATE to all guilds the user is in.
+func (h *WSHandler) broadcastPresenceToGuilds(userID, status string, guildIDs []string) {
+	data, _ := json.Marshal(map[string]string{"userId": userID, "status": status})
+	wsMsg, _ := json.Marshal(WSMessage{Op: 0, T: "PRESENCE_UPDATE", D: data})
+	for _, gid := range guildIDs {
+		h.BroadcastToGuild(gid, wsMsg, "")
+	}
 }
 
 func (h *WSHandler) ClientCount() int {

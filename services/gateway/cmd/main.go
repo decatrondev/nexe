@@ -53,7 +53,7 @@ func main() {
 
 	// Handlers
 	authHandler := handler.NewAuthHandler(authSvc)
-	wsHandler := handler.NewWSHandler(jwtSvc, rdb, cfg.GuildsURL)
+	wsHandler := handler.NewWSHandler(jwtSvc, rdb, cfg.GuildsURL, cfg.PresenceURL)
 	profileHandler := handler.NewProfileHandler(profileRepo)
 	twitchHandler := handler.NewTwitchHandler(twitchSvc, userRepo, authSvc, jwtSvc, rdb, cfg.TwitchEventSubSecret, cfg.BaseURL, cfg.FrontendURL)
 	botHandler := handler.NewBotHandler(botRepo, jwtSvc)

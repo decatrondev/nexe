@@ -401,6 +401,14 @@ export const api = {
     return request<void>("PATCH", "/users/@me/presence", { status });
   },
 
+  presenceHeartbeat() {
+    return request<void>("POST", "/users/@me/heartbeat");
+  },
+
+  getBulkPresence(userIds: string[]) {
+    return request<{ userId: string; status: string }[]>("POST", "/users/bulk-presence", { userIds });
+  },
+
   getBadges(userId: string) {
     return request<UserBadge[]>("GET", `/users/${userId}/badges`);
   },

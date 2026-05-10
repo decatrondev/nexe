@@ -18,6 +18,7 @@ interface GuildState {
   memberRoles: Record<string, string[]>;
   messages: Record<string, Message[]>;
   usernames: Record<string, string>;
+  presenceMap: Record<string, string>; // userId → status (online/idle/dnd/offline)
   loading: boolean;
   loadingGuilds: boolean;
   hasMoreMessages: Record<string, boolean>;
@@ -61,6 +62,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
   memberRoles: {},
   messages: {},
   usernames: {},
+  presenceMap: {},
   loading: false,
   loadingGuilds: false,
   hasMoreMessages: {},
@@ -77,6 +79,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
       memberRoles: {},
       messages: {},
       usernames: {},
+      presenceMap: {},
       loading: false,
       loadingGuilds: false,
       hasMoreMessages: {},
@@ -162,6 +165,20 @@ export const useGuildStore = create<GuildState>((set, get) => ({
       const firstText = channelList.find((c) => c.type === "text");
       if (firstText) {
         await get().setActiveChannel(firstText.id);
+      }
+
+      // Load presence for members (non-blocking)
+      const memberIds = memberList.map((m) => m.userId);
+      if (memberIds.length > 0) {
+        api.getBulkPresence(memberIds).then((presences) => {
+          if (presences && get().activeGuildId === guildId) {
+            const map: Record<string, string> = { ...get().presenceMap };
+            for (const p of presences) {
+              map[p.userId] = p.status;
+            }
+            set({ presenceMap: map });
+          }
+        }).catch(() => {});
       }
 
       // Load voice states for this guild (non-blocking)

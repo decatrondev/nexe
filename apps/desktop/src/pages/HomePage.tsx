@@ -253,6 +253,50 @@ export default function HomePage() {
         const notif = data as AppNotification;
         window.dispatchEvent(new CustomEvent("nexe:notification", { detail: notif }));
       });
+
+      nexeWS.on("PRESENCE_UPDATE", (data) => {
+        const d = data as { userId: string; status: string };
+        useGuildStore.setState((s) => ({
+          presenceMap: { ...s.presenceMap, [d.userId]: d.status },
+        }));
+      });
+
+      // Presence heartbeat every 60s
+      setInterval(() => {
+        api.presenceHeartbeat().catch(() => {});
+      }, 60000);
+
+      // Auto-idle after 5 minutes of inactivity
+      let idleTimeout: ReturnType<typeof setTimeout> | null = null;
+      let isIdle = false;
+      const IDLE_DELAY = 5 * 60 * 1000; // 5 minutes
+
+      const resetIdle = () => {
+        if (isIdle) {
+          isIdle = false;
+          api.updatePresence("online").catch(() => {});
+          useAuthStore.setState((s) => ({
+            user: s.user ? { ...s.user, status: "online" } : null,
+          }));
+        }
+        if (idleTimeout) clearTimeout(idleTimeout);
+        idleTimeout = setTimeout(() => {
+          const currentStatus = useAuthStore.getState().user?.status;
+          if (currentStatus === "online") {
+            isIdle = true;
+            api.updatePresence("idle").catch(() => {});
+            useAuthStore.setState((s) => ({
+              user: s.user ? { ...s.user, status: "idle" } : null,
+            }));
+          }
+        }, IDLE_DELAY);
+      };
+
+      window.addEventListener("mousemove", resetIdle);
+      window.addEventListener("keydown", resetIdle);
+      window.addEventListener("click", resetIdle);
+      resetIdle();
+
     }
 
     return () => {

@@ -18,11 +18,15 @@ const (
 )
 
 type PresenceService struct {
-	rdb *redis.Client
+	rdb    *redis.Client
+	events *EventPublisher
 }
 
 func NewPresenceService(rdb *redis.Client) *PresenceService {
-	return &PresenceService{rdb: rdb}
+	return &PresenceService{
+		rdb:    rdb,
+		events: NewEventPublisher(rdb),
+	}
 }
 
 func (s *PresenceService) SetPresence(ctx context.Context, userID string, update model.StatusUpdate) error {
@@ -47,6 +51,10 @@ func (s *PresenceService) SetPresence(ctx context.Context, userID string, update
 	}
 
 	slog.Debug("presence updated", "userId", userID, "status", update.Status)
+
+	// Publish presence update to guilds
+	go s.events.PublishPresenceUpdate(ctx, userID, update.Status)
+
 	return nil
 }
 

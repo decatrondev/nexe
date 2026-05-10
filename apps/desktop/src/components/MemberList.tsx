@@ -59,6 +59,7 @@ export default function MemberList() {
   const roles = (activeGuildId ? allRoles[activeGuildId] : undefined) ?? EMPTY_ROLES;
   const memberRoles = useGuildStore((s) => s.memberRoles);
   const usernames = useGuildStore((s) => s.usernames);
+  const presenceMap = useGuildStore((s) => s.presenceMap);
 
   const [profilePopover, setProfilePopover] = useState<{ userId: string; x: number; y: number } | null>(null);
   const [fullProfileUserId, setFullProfileUserId] = useState<string | null>(null);
@@ -184,7 +185,12 @@ export default function MemberList() {
                           </span>
                         )}
                       </div>
-                      <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-dark-850 bg-green-500" />
+                      <div className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-dark-850 ${
+                        presenceMap[member.userId] === "idle" ? "bg-yellow-500" :
+                        presenceMap[member.userId] === "dnd" ? "bg-red-500" :
+                        presenceMap[member.userId] === "offline" ? "bg-slate-500" :
+                        "bg-green-500"
+                      }`} />
                     </div>
                     <div className="min-w-0 flex-1 text-left">
                       <div className="flex items-center gap-1.5">
