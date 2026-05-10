@@ -59,6 +59,40 @@ func (s *MessageService) SendMessage(ctx context.Context, channelID, authorID, c
 	return msg, nil
 }
 
+// SendBridgeMessage creates a message from an external platform (Twitch, Kick, etc).
+func (s *MessageService) SendBridgeMessage(ctx context.Context, channelID, content string, bridgeSource, bridgeAuthor, bridgeAuthorID *string) (*model.Message, error) {
+	if strings.TrimSpace(content) == "" {
+		return nil, fmt.Errorf("message content cannot be empty")
+	}
+
+	msg := &model.Message{
+		ChannelID:      channelID,
+		Content:        content,
+		Type:           "bridge",
+		BridgeSource:   bridgeSource,
+		BridgeAuthor:   bridgeAuthor,
+		BridgeAuthorID: bridgeAuthorID,
+	}
+
+	if err := s.messages.Create(ctx, msg); err != nil {
+		return nil, fmt.Errorf("send bridge message: %w", err)
+	}
+
+	slog.Debug("bridge message created", "id", msg.ID, "channel", channelID, "source", bridgeSource)
+
+	if s.events != nil {
+		go func() {
+			guildID, err := s.messages.GetChannelGuildID(context.Background(), channelID)
+			if err != nil {
+				return
+			}
+			s.events.Publish(context.Background(), guildID, channelID, EventMessageCreate, "", msg)
+		}()
+	}
+
+	return msg, nil
+}
+
 // GetMessage retrieves a single message by ID.
 func (s *MessageService) GetMessage(ctx context.Context, id string) (*model.Message, error) {
 	msg, err := s.messages.GetByID(ctx, id)

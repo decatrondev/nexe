@@ -231,6 +231,7 @@ export interface Guild {
   ownerId: string;
   isStreamerServer: boolean;
   streamerTwitchId?: string;
+  bridgeChannelId?: string;
   memberCount: number;
   createdAt: string;
 }
@@ -259,6 +260,9 @@ export interface Message {
   deleted: boolean;
   pinned: boolean;
   createdAt: string;
+  bridgeSource?: string;
+  bridgeAuthor?: string;
+  bridgeAuthorId?: string;
 }
 
 export interface GuildMember {
@@ -684,6 +688,20 @@ export const api = {
 
   setNotificationPreference(guildId: string, level: string, channelId?: string) {
     return request<NotificationPreference>("PUT", `/notifications/preferences/${guildId}`, { level, channelId });
+  },
+
+  // ---- Bridge methods ----
+
+  setBridgeChannel(guildId: string, channelId: string) {
+    return request<void>("POST", `/guilds/${guildId}/bridge`, { channelId });
+  },
+
+  clearBridgeChannel(guildId: string) {
+    return request<void>("DELETE", `/guilds/${guildId}/bridge`);
+  },
+
+  sendToBridge(guildId: string, channelId: string, message: string, username: string) {
+    return request<void>("POST", "/twitch/bridge/send", { guildId, channelId, message, username });
   },
 
   // ---- Voice methods ----

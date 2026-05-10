@@ -55,7 +55,7 @@ func main() {
 	authHandler := handler.NewAuthHandler(authSvc)
 	wsHandler := handler.NewWSHandler(jwtSvc, rdb, cfg.GuildsURL, cfg.PresenceURL)
 	profileHandler := handler.NewProfileHandler(profileRepo)
-	twitchHandler := handler.NewTwitchHandler(twitchSvc, userRepo, authSvc, jwtSvc, rdb, cfg.TwitchEventSubSecret, cfg.BaseURL, cfg.FrontendURL)
+	twitchHandler := handler.NewTwitchHandler(twitchSvc, userRepo, authSvc, jwtSvc, rdb, cfg.TwitchEventSubSecret, cfg.BaseURL, cfg.FrontendURL, cfg.MessagingURL, cfg.GuildsURL)
 	botHandler := handler.NewBotHandler(botRepo, jwtSvc)
 	proxyHandler := handler.NewProxyHandler(cfg.GuildsURL, cfg.MessagingURL, cfg.PresenceURL, cfg.VoiceURL, cfg.NotificationsURL)
 
@@ -153,6 +153,9 @@ func main() {
 	mux.Handle("PUT /guilds/{id}/members/{uid}/auto-roles/{rid}", guildsProxy(gp))
 	mux.Handle("DELETE /guilds/{id}/members/{uid}/auto-roles/{rid}", guildsProxy(gp))
 	mux.Handle("POST /guilds/{id}/twitch/sync", authMiddleware(http.HandlerFunc(twitchHandler.SyncTwitchRoles)))
+	mux.Handle("POST /guilds/{id}/bridge", guildsProxy(gp))
+	mux.Handle("DELETE /guilds/{id}/bridge", guildsProxy(gp))
+	mux.Handle("POST /twitch/bridge/send", authMiddleware(http.HandlerFunc(twitchHandler.SendToTwitchChat)))
 	mux.Handle("POST /guilds/{id}/twitch/sync-all", authMiddleware(http.HandlerFunc(twitchHandler.SyncAllMembers)))
 
 	// Proxy to messaging service (authenticated)

@@ -1034,3 +1034,28 @@ func (s *GuildService) logModAction(ctx context.Context, guildID, modID, targetI
 		slog.Error("failed to log moderation action", "error", err, "action", action, "guild_id", guildID)
 	}
 }
+
+func (s *GuildService) SetBridgeChannel(ctx context.Context, guildID, channelID, userID string) error {
+	guild, err := s.guilds.GetByID(ctx, guildID)
+	if err != nil || guild == nil {
+		return fmt.Errorf("guild not found")
+	}
+	if guild.OwnerID != userID {
+		return fmt.Errorf("only the owner can configure the bridge")
+	}
+	if guild.StreamerTwitchID == nil || *guild.StreamerTwitchID == "" {
+		return fmt.Errorf("twitch integration must be enabled first")
+	}
+	return s.guilds.SetBridgeChannel(ctx, guildID, channelID)
+}
+
+func (s *GuildService) ClearBridgeChannel(ctx context.Context, guildID, userID string) error {
+	guild, err := s.guilds.GetByID(ctx, guildID)
+	if err != nil || guild == nil {
+		return fmt.Errorf("guild not found")
+	}
+	if guild.OwnerID != userID {
+		return fmt.Errorf("only the owner can configure the bridge")
+	}
+	return s.guilds.ClearBridgeChannel(ctx, guildID)
+}

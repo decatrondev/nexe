@@ -106,11 +106,26 @@ func (h *MessageHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 	channelID := r.PathValue("id")
 
 	var body struct {
-		Content   string  `json:"content"`
-		ReplyToID *string `json:"replyToId"`
+		Content        string  `json:"content"`
+		ReplyToID      *string `json:"replyToId"`
+		Type           string  `json:"type"`
+		BridgeSource   *string `json:"bridgeSource"`
+		BridgeAuthor   *string `json:"bridgeAuthor"`
+		BridgeAuthorID *string `json:"bridgeAuthorId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+
+	// Bridge messages have special handling
+	if body.Type == "bridge" && body.BridgeSource != nil {
+		msg, err := h.svc.SendBridgeMessage(r.Context(), channelID, body.Content, body.BridgeSource, body.BridgeAuthor, body.BridgeAuthorID)
+		if err != nil {
+			classifyError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, msg)
 		return
 	}
 

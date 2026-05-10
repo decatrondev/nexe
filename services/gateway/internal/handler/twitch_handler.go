@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -29,6 +30,8 @@ type TwitchHandler struct {
 	eventSubSecret string
 	baseURL        string
 	frontendURL    string
+	messagingURL   string
+	guildsURL      string
 }
 
 func NewTwitchHandler(
@@ -37,7 +40,7 @@ func NewTwitchHandler(
 	auth *service.AuthService,
 	jwt *service.JWTService,
 	rdb *redis.Client,
-	eventSubSecret, baseURL, frontendURL string,
+	eventSubSecret, baseURL, frontendURL, messagingURL, guildsURL string,
 ) *TwitchHandler {
 	return &TwitchHandler{
 		twitch:         twitch,
@@ -48,6 +51,8 @@ func NewTwitchHandler(
 		eventSubSecret: eventSubSecret,
 		baseURL:        baseURL,
 		frontendURL:    frontendURL,
+		messagingURL:   messagingURL,
+		guildsURL:      guildsURL,
 	}
 }
 
@@ -368,6 +373,8 @@ func (h *TwitchHandler) EventSubWebhook(w http.ResponseWriter, r *http.Request) 
 			h.handleFollow(r.Context(), notification.Event)
 		case "channel.subscribe":
 			h.handleSubscribe(r.Context(), notification.Event)
+		case "channel.chat.message":
+			h.handleChatMessage(r.Context(), notification.Event)
 		}
 
 		w.WriteHeader(http.StatusNoContent)
@@ -877,6 +884,7 @@ func (h *TwitchHandler) SetupEventSub(w http.ResponseWriter, r *http.Request) {
 		{"stream.offline", "1", map[string]string{"broadcaster_user_id": twitchID}},
 		{"channel.follow", "2", map[string]string{"broadcaster_user_id": twitchID, "moderator_user_id": twitchID}},
 		{"channel.subscribe", "1", map[string]string{"broadcaster_user_id": twitchID}},
+		{"channel.chat.message", "1", map[string]string{"broadcaster_user_id": twitchID, "user_id": twitchID}},
 	}
 
 	var errors []string
@@ -899,4 +907,162 @@ func (h *TwitchHandler) SetupEventSub(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]string{"message": "eventsub subscriptions created"},
 	})
+}
+
+// handleChatMessage processes incoming Twitch chat messages and bridges them to Nexe.
+func (h *TwitchHandler) handleChatMessage(ctx context.Context, event json.RawMessage) {
+	var chatEvent struct {
+		BroadcasterUserID    string `json:"broadcaster_user_id"`
+		BroadcasterUserLogin string `json:"broadcaster_user_login"`
+		ChatterUserID        string `json:"chatter_user_id"`
+		ChatterUserLogin     string `json:"chatter_user_login"`
+		ChatterUserName      string `json:"chatter_user_name"`
+		MessageID            string `json:"message_id"`
+		Message              struct {
+			Text string `json:"text"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(event, &chatEvent); err != nil {
+		slog.Error("failed to parse chat message event", "error", err)
+		return
+	}
+
+	// Don't bridge messages from the bot/streamer account itself (avoid loops)
+	if chatEvent.ChatterUserID == chatEvent.BroadcasterUserID {
+		return
+	}
+
+	broadcasterTwitchID := chatEvent.BroadcasterUserID
+
+	// Find the guild with this broadcaster's Twitch integration + bridge channel
+	guildData, err := h.findBridgeGuild(ctx, broadcasterTwitchID)
+	if err != nil || guildData == nil {
+		return // no guild has a bridge for this broadcaster
+	}
+
+	// Create bridge message via messaging service
+	msgBody, _ := json.Marshal(map[string]interface{}{
+		"content":        chatEvent.Message.Text,
+		"type":           "bridge",
+		"bridgeSource":   "twitch",
+		"bridgeAuthor":   chatEvent.ChatterUserName,
+		"bridgeAuthorId": chatEvent.ChatterUserID,
+	})
+
+	req, err := http.NewRequestWithContext(ctx, "POST",
+		h.messagingURL+"/channels/"+guildData.bridgeChannelID+"/messages", bytes.NewReader(msgBody))
+	if err != nil {
+		slog.Error("failed to create bridge message request", "error", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", "bridge-bot") // system user
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		slog.Error("failed to send bridge message", "error", err)
+		return
+	}
+	resp.Body.Close()
+
+	slog.Debug("twitch chat bridged", "from", chatEvent.ChatterUserLogin, "text", chatEvent.Message.Text)
+}
+
+type bridgeGuildInfo struct {
+	guildID         string
+	bridgeChannelID string
+}
+
+// findBridgeGuild finds a guild that has a bridge configured for this Twitch broadcaster.
+func (h *TwitchHandler) findBridgeGuild(ctx context.Context, twitchID string) (*bridgeGuildInfo, error) {
+	// Check Redis cache first
+	cacheKey := "nexe:bridge:twitch:" + twitchID
+	data, err := h.rdb.HGetAll(ctx, cacheKey).Result()
+	if err == nil && data["guildId"] != "" && data["channelId"] != "" {
+		return &bridgeGuildInfo{guildID: data["guildId"], bridgeChannelID: data["channelId"]}, nil
+	}
+
+	// Query all guilds to find bridge (this is called rarely, cached after first hit)
+	// In production this would be a direct DB query, but we use the guilds service HTTP API
+	return nil, nil // Cache miss — bridge will be cached when SetBridgeChannel is called
+}
+
+// SendToTwitchChat sends a message from Nexe to Twitch chat.
+func (h *TwitchHandler) SendToTwitchChat(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r)
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "not authenticated")
+		return
+	}
+
+	var body struct {
+		GuildID   string `json:"guildId"`
+		ChannelID string `json:"channelId"`
+		Message   string `json:"message"`
+		Username  string `json:"username"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "invalid request body")
+		return
+	}
+
+	// Get the guild to find broadcaster twitch ID
+	resp, err := http.Get(h.guildsURL + "/guilds/" + body.GuildID)
+	if err != nil || resp.StatusCode != 200 {
+		writeError(w, http.StatusBadRequest, "guild_error", "failed to fetch guild")
+		return
+	}
+	defer resp.Body.Close()
+
+	var guild struct {
+		StreamerTwitchID *string `json:"streamerTwitchId"`
+		BridgeChannelID  *string `json:"bridgeChannelId"`
+	}
+	json.NewDecoder(resp.Body).Decode(&guild)
+
+	if guild.StreamerTwitchID == nil || guild.BridgeChannelID == nil || *guild.BridgeChannelID != body.ChannelID {
+		writeError(w, http.StatusBadRequest, "no_bridge", "this channel is not a bridge channel")
+		return
+	}
+
+	// Get broadcaster token to send chat
+	broadcasterToken := h.getValidBroadcasterToken(r.Context(), *guild.StreamerTwitchID)
+	if broadcasterToken == "" {
+		writeError(w, http.StatusBadRequest, "token_error", "failed to get broadcaster token")
+		return
+	}
+
+	// Format message with username prefix
+	chatMsg := fmt.Sprintf("[%s] %s", body.Username, body.Message)
+	if len(chatMsg) > 500 {
+		chatMsg = chatMsg[:500]
+	}
+
+	// Send to Twitch chat via Helix API
+	chatBody, _ := json.Marshal(map[string]string{
+		"broadcaster_id": *guild.StreamerTwitchID,
+		"sender_id":      *guild.StreamerTwitchID,
+		"message":        chatMsg,
+	})
+
+	chatReq, _ := http.NewRequest("POST", "https://api.twitch.tv/helix/chat/messages", bytes.NewReader(chatBody))
+	chatReq.Header.Set("Authorization", "Bearer "+broadcasterToken)
+	chatReq.Header.Set("Client-Id", h.twitch.GetClientID())
+	chatReq.Header.Set("Content-Type", "application/json")
+
+	chatResp, err := http.DefaultClient.Do(chatReq)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "twitch_error", "failed to send to Twitch")
+		return
+	}
+	defer chatResp.Body.Close()
+
+	if chatResp.StatusCode >= 400 {
+		respBody, _ := io.ReadAll(chatResp.Body)
+		slog.Error("twitch chat send failed", "status", chatResp.StatusCode, "body", string(respBody))
+		writeError(w, http.StatusBadGateway, "twitch_error", "Twitch rejected the message")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

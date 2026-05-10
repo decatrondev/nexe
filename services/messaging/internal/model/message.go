@@ -8,6 +8,9 @@ type Message struct {
 	AuthorID        string          `json:"authorId"`
 	Content         string          `json:"content"`
 	Type            string          `json:"type"`
+	BridgeSource    *string         `json:"bridgeSource,omitempty"`
+	BridgeAuthor    *string         `json:"bridgeAuthor,omitempty"`
+	BridgeAuthorID  *string         `json:"bridgeAuthorId,omitempty"`
 	ReplyToID       *string         `json:"replyToId,omitempty"`
 	ThreadID        *string         `json:"threadId,omitempty"`
 	EditedAt        *time.Time      `json:"editedAt,omitempty"`

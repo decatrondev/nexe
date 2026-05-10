@@ -34,11 +34,12 @@ func (r *MessageRepository) Create(ctx context.Context, msg *model.Message) erro
 	}
 
 	err = tx.QueryRowContext(ctx,
-		`INSERT INTO messages (channel_id, author_id, content, type, reply_to_id, thread_id, embeds, mention_everyone)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		`INSERT INTO messages (channel_id, author_id, content, type, reply_to_id, thread_id, embeds, mention_everyone, bridge_source, bridge_author, bridge_author_id)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		 RETURNING id, created_at`,
 		msg.ChannelID, msg.AuthorID, msg.Content, msg.Type,
 		msg.ReplyToID, msg.ThreadID, string(embedsJSON), msg.MentionEveryone,
+		msg.BridgeSource, msg.BridgeAuthor, msg.BridgeAuthorID,
 	).Scan(&msg.ID, &msg.CreatedAt)
 	if err != nil {
 		return fmt.Errorf("message create insert: %w", err)
@@ -63,12 +64,15 @@ func (r *MessageRepository) GetByID(ctx context.Context, id string) (*model.Mess
 	var msg model.Message
 	err := r.db.QueryRowContext(ctx,
 		`SELECT id, channel_id, author_id, content, type, reply_to_id, thread_id,
-		        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at
+		        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at,
+		        bridge_source, bridge_author, bridge_author_id,
+		        bridge_source, bridge_author, bridge_author_id
 		 FROM messages WHERE id = $1`, id,
 	).Scan(
 		&msg.ID, &msg.ChannelID, &msg.AuthorID, &msg.Content, &msg.Type,
 		&msg.ReplyToID, &msg.ThreadID, &msg.EditedAt, &msg.Deleted,
 		&msg.Pinned, &msg.PinnedBy, scanJSON(&msg.Embeds), &msg.MentionEveryone, &msg.CreatedAt,
+		&msg.BridgeSource, &msg.BridgeAuthor, &msg.BridgeAuthorID,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -103,7 +107,8 @@ func (r *MessageRepository) ListByChannel(ctx context.Context, channelID string,
 	if before != nil {
 		rows, err = r.db.QueryContext(ctx,
 			`SELECT id, channel_id, author_id, content, type, reply_to_id, thread_id,
-			        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at
+			        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at,
+		        bridge_source, bridge_author, bridge_author_id
 			 FROM messages
 			 WHERE channel_id = $1 AND deleted = false AND created_at < (SELECT created_at FROM messages WHERE id = $2)
 			 ORDER BY created_at DESC
@@ -113,7 +118,8 @@ func (r *MessageRepository) ListByChannel(ctx context.Context, channelID string,
 	} else {
 		rows, err = r.db.QueryContext(ctx,
 			`SELECT id, channel_id, author_id, content, type, reply_to_id, thread_id,
-			        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at
+			        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at,
+		        bridge_source, bridge_author, bridge_author_id
 			 FROM messages
 			 WHERE channel_id = $1 AND deleted = false
 			 ORDER BY created_at DESC
@@ -134,6 +140,7 @@ func (r *MessageRepository) ListByChannel(ctx context.Context, channelID string,
 			&msg.ID, &msg.ChannelID, &msg.AuthorID, &msg.Content, &msg.Type,
 			&msg.ReplyToID, &msg.ThreadID, &msg.EditedAt, &msg.Deleted,
 			&msg.Pinned, &msg.PinnedBy, scanJSON(&msg.Embeds), &msg.MentionEveryone, &msg.CreatedAt,
+			&msg.BridgeSource, &msg.BridgeAuthor, &msg.BridgeAuthorID,
 		); err != nil {
 			return nil, fmt.Errorf("message list by channel scan: %w", err)
 		}
@@ -242,7 +249,8 @@ func (r *MessageRepository) Unpin(ctx context.Context, messageID string) error {
 func (r *MessageRepository) ListPins(ctx context.Context, channelID string) ([]model.Message, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, channel_id, author_id, content, type, reply_to_id, thread_id,
-		        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at
+		        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at,
+		        bridge_source, bridge_author, bridge_author_id
 		 FROM messages
 		 WHERE channel_id = $1 AND pinned = true AND deleted = false
 		 ORDER BY pinned_at DESC`,
@@ -261,6 +269,7 @@ func (r *MessageRepository) ListPins(ctx context.Context, channelID string) ([]m
 			&msg.ID, &msg.ChannelID, &msg.AuthorID, &msg.Content, &msg.Type,
 			&msg.ReplyToID, &msg.ThreadID, &msg.EditedAt, &msg.Deleted,
 			&msg.Pinned, &msg.PinnedBy, scanJSON(&msg.Embeds), &msg.MentionEveryone, &msg.CreatedAt,
+			&msg.BridgeSource, &msg.BridgeAuthor, &msg.BridgeAuthorID,
 		); err != nil {
 			return nil, fmt.Errorf("message list pins scan: %w", err)
 		}
@@ -316,7 +325,8 @@ func (r *MessageRepository) Search(ctx context.Context, channelID, query string,
 
 	sqlQuery := fmt.Sprintf(
 		`SELECT id, channel_id, author_id, content, type, reply_to_id, thread_id,
-		        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at
+		        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at,
+		        bridge_source, bridge_author, bridge_author_id
 		 FROM messages
 		 WHERE %s
 		 ORDER BY ts_rank(search_vector, plainto_tsquery('english', $2)) DESC
@@ -338,6 +348,7 @@ func (r *MessageRepository) Search(ctx context.Context, channelID, query string,
 			&msg.ID, &msg.ChannelID, &msg.AuthorID, &msg.Content, &msg.Type,
 			&msg.ReplyToID, &msg.ThreadID, &msg.EditedAt, &msg.Deleted,
 			&msg.Pinned, &msg.PinnedBy, scanJSON(&msg.Embeds), &msg.MentionEveryone, &msg.CreatedAt,
+			&msg.BridgeSource, &msg.BridgeAuthor, &msg.BridgeAuthorID,
 		); err != nil {
 			return nil, fmt.Errorf("message search scan: %w", err)
 		}

@@ -61,6 +61,10 @@ func (h *GuildHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /guilds/{id}/members/{uid}/auto-roles/{rid}", h.AssignAutoRole)
 	mux.HandleFunc("DELETE /guilds/{id}/members/{uid}/auto-roles/{rid}", h.RemoveAutoRole)
 
+	// Bridge
+	mux.HandleFunc("POST /guilds/{id}/bridge", h.SetBridgeChannel)
+	mux.HandleFunc("DELETE /guilds/{id}/bridge", h.ClearBridgeChannel)
+
 	// Moderation
 	mux.HandleFunc("POST /guilds/{id}/bans", h.BanMember)
 	mux.HandleFunc("DELETE /guilds/{id}/bans/{uid}", h.UnbanMember)
@@ -903,4 +907,36 @@ func (h *GuildHandler) ListModLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, logs)
+}
+
+func (h *GuildHandler) SetBridgeChannel(w http.ResponseWriter, r *http.Request) {
+	guildID := r.PathValue("id")
+	userID := r.Header.Get("X-User-ID")
+
+	var body struct {
+		ChannelID string `json:"channelId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ChannelID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_body", "channelId is required")
+		return
+	}
+
+	if err := h.svc.SetBridgeChannel(r.Context(), guildID, body.ChannelID, userID); err != nil {
+		writeError(w, http.StatusBadRequest, "bridge_error", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "bridgeChannelId": body.ChannelID})
+}
+
+func (h *GuildHandler) ClearBridgeChannel(w http.ResponseWriter, r *http.Request) {
+	guildID := r.PathValue("id")
+	userID := r.Header.Get("X-User-ID")
+
+	if err := h.svc.ClearBridgeChannel(r.Context(), guildID, userID); err != nil {
+		writeError(w, http.StatusBadRequest, "bridge_error", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }

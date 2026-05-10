@@ -11,6 +11,7 @@ type Guild struct {
 	OwnerID          string   `json:"ownerId"`
 	IsStreamerServer  bool     `json:"isStreamerServer"`
 	StreamerTwitchID *string  `json:"streamerTwitchId,omitempty"`
+	BridgeChannelID  *string  `json:"bridgeChannelId,omitempty"`
 	MemberCount      int      `json:"memberCount"`
 	Features         []string `json:"features"`
 	CreatedAt        time.Time `json:"createdAt"`

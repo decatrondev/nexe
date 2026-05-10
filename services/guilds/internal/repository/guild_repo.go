@@ -64,11 +64,11 @@ func (r *GuildRepository) GetByID(ctx context.Context, id string) (*model.Guild,
 	var g model.Guild
 	err := r.db.QueryRowContext(ctx,
 		`SELECT id, name, description, icon_url, banner_url, owner_id,
-		        is_streamer_server, streamer_twitch_id, member_count, features, created_at, updated_at
+		        is_streamer_server, streamer_twitch_id, bridge_channel_id, member_count, features, created_at, updated_at
 		 FROM guilds WHERE id = $1`, id,
 	).Scan(
 		&g.ID, &g.Name, &g.Description, &g.IconUrl, &g.BannerUrl, &g.OwnerID,
-		&g.IsStreamerServer, &g.StreamerTwitchID, &g.MemberCount, pqJSONArray(&g.Features), &g.CreatedAt, &g.UpdatedAt,
+		&g.IsStreamerServer, &g.StreamerTwitchID, &g.BridgeChannelID, &g.MemberCount, pqJSONArray(&g.Features), &g.CreatedAt, &g.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -139,7 +139,7 @@ func (r *GuildRepository) ListByUser(ctx context.Context, userID string) ([]mode
 		var g model.Guild
 		if err := rows.Scan(
 			&g.ID, &g.Name, &g.Description, &g.IconUrl, &g.BannerUrl, &g.OwnerID,
-			&g.IsStreamerServer, &g.StreamerTwitchID, &g.MemberCount, pqJSONArray(&g.Features), &g.CreatedAt, &g.UpdatedAt,
+			&g.IsStreamerServer, &g.StreamerTwitchID, &g.BridgeChannelID, &g.MemberCount, pqJSONArray(&g.Features), &g.CreatedAt, &g.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("guild list by user scan: %w", err)
 		}
@@ -166,4 +166,18 @@ func (r *GuildRepository) ClearStreamerTwitchID(ctx context.Context, guildID str
 		return fmt.Errorf("guild clear streamer twitch id: %w", err)
 	}
 	return nil
+}
+
+func (r *GuildRepository) SetBridgeChannel(ctx context.Context, guildID, channelID string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE guilds SET bridge_channel_id = $1, updated_at = NOW() WHERE id = $2`,
+		channelID, guildID)
+	return err
+}
+
+func (r *GuildRepository) ClearBridgeChannel(ctx context.Context, guildID string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE guilds SET bridge_channel_id = NULL, updated_at = NOW() WHERE id = $1`,
+		guildID)
+	return err
 }

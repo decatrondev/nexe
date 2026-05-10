@@ -388,6 +388,11 @@ export default function ChatArea() {
     setSendError(null);
     try {
       await sendMessage(content, replyTo?.id);
+      // If this is a bridge channel, also send to Twitch
+      const guild = guilds.find((g) => g.id === activeGuildId);
+      if (guild?.bridgeChannelId && guild.bridgeChannelId === activeChannelId && currentUser) {
+        api.sendToBridge(guild.id, guild.bridgeChannelId, content, currentUser.displayName || currentUser.username).catch(() => {});
+      }
       setInput("");
       setReplyTo(null);
       if (slowmodeSeconds > 0) {
@@ -752,9 +757,13 @@ export default function ChatArea() {
             ) : (
               messages.map((msg, idx) => {
                 const prevMsg = idx > 0 ? messages[idx - 1] : null;
-                const isGrouped = prevMsg?.authorId === msg.authorId;
-                const authorName = usernames[msg.authorId] || "Unknown";
-                const color = getRoleColor(msg.authorId, memberRolesMap, guildRoles) || userColor(msg.authorId);
+                const isBridge = msg.type === "bridge" && msg.bridgeSource;
+                const isGrouped = isBridge
+                  ? prevMsg?.type === "bridge" && prevMsg?.bridgeAuthorId === msg.bridgeAuthorId
+                  : prevMsg?.authorId === msg.authorId && prevMsg?.type !== "bridge";
+                const authorName = isBridge ? (msg.bridgeAuthor || "Unknown") : (usernames[msg.authorId] || "Unknown");
+                const bridgeColor = msg.bridgeSource === "twitch" ? "#9146FF" : msg.bridgeSource === "kick" ? "#53FC18" : msg.bridgeSource === "youtube" ? "#FF0000" : undefined;
+                const color = isBridge ? (bridgeColor || "#9146FF") : (getRoleColor(msg.authorId, memberRolesMap, guildRoles) || userColor(msg.authorId));
                 const isEditing = editingId === msg.id;
                 const replyRef = msg.replyToId ? messages.find((m) => m.id === msg.replyToId) : null;
                 const reactions = messageReactions[msg.id] || [];
@@ -795,13 +804,27 @@ export default function ChatArea() {
 
                       {!isGrouped && (
                         <div className="flex items-baseline gap-2">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setProfilePopover({ userId: msg.authorId, x: e.clientX, y: e.clientY }); }}
-                            className="text-sm font-semibold hover:underline"
-                            style={{ color }}
-                          >
-                            {authorName}
-                          </button>
+                          {isBridge ? (
+                            <span className="flex items-center gap-1.5">
+                              <span
+                                className="rounded px-1 py-px text-[9px] font-bold uppercase text-white"
+                                style={{ backgroundColor: bridgeColor }}
+                              >
+                                {msg.bridgeSource}
+                              </span>
+                              <span className="text-sm font-semibold" style={{ color }}>
+                                {authorName}
+                              </span>
+                            </span>
+                          ) : (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setProfilePopover({ userId: msg.authorId, x: e.clientX, y: e.clientY }); }}
+                              className="text-sm font-semibold hover:underline"
+                              style={{ color }}
+                            >
+                              {authorName}
+                            </button>
+                          )}
                           <span className="text-xs text-slate-500">{formatTimestamp(msg.createdAt)}</span>
                           {msg.editedAt && (
                             <span className="text-xs text-slate-600" title={`Edited ${formatTimestamp(msg.editedAt)}`}>(edited)</span>
