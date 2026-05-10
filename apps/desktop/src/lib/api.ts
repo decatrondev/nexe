@@ -313,6 +313,23 @@ export interface ReactionGroup {
   users: string[];
 }
 
+export interface VoiceState {
+  userId: string;
+  guildId: string;
+  channelId: string;
+  muted: boolean;
+  deafened: boolean;
+  selfMute: boolean;
+  selfDeaf: boolean;
+  speaking: boolean;
+}
+
+export interface VoiceJoinResponse {
+  token: string;
+  url: string;
+  participants: VoiceState[];
+}
+
 // ---- API client ----
 
 export const api = {
@@ -605,5 +622,32 @@ export const api = {
     const params = new URLSearchParams({ q: query });
     if (limit) params.set("limit", String(limit));
     return request<Message[]>("GET", `/channels/${channelId}/search?${params}`);
+  },
+
+  // ---- Voice methods ----
+
+  joinVoice(guildId: string, channelId: string) {
+    return request<VoiceJoinResponse>("POST", "/voice/join", { guildId, channelId });
+  },
+
+  leaveVoice() {
+    return request<void>("POST", "/voice/leave");
+  },
+
+  updateVoiceState(selfMute?: boolean, selfDeaf?: boolean) {
+    return request<VoiceState>("PATCH", "/voice/state", { selfMute, selfDeaf });
+  },
+
+  getMyVoiceState() {
+    return request<VoiceState | null>("GET", "/voice/state/@me");
+  },
+
+  getVoiceParticipants(channelId: string, guildId?: string) {
+    const params = guildId ? `?guildId=${guildId}` : "";
+    return request<VoiceState[]>("GET", `/voice/channel/${channelId}/participants${params}`);
+  },
+
+  getGuildVoiceStates(guildId: string) {
+    return request<VoiceState[]>("GET", `/voice/guild/${guildId}/states`);
   },
 };

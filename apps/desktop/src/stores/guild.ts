@@ -163,6 +163,15 @@ export const useGuildStore = create<GuildState>((set, get) => ({
       if (firstText) {
         await get().setActiveChannel(firstText.id);
       }
+
+      // Load voice states for this guild (non-blocking)
+      api.getGuildVoiceStates(guildId).then((states) => {
+        if (states && get().activeGuildId === guildId) {
+          import("./voice").then(({ useVoiceStore }) => {
+            useVoiceStore.getState().updateParticipants(states);
+          });
+        }
+      }).catch(() => {});
     } catch (err) {
       console.error("Failed to load guild data:", err);
       if (get().activeGuildId === guildId) {

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { api, type User } from "../lib/api";
 import { useGuildStore } from "./guild";
+import { useVoiceStore } from "./voice";
 
 interface AuthState {
   user: User | null;
@@ -57,6 +58,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     localStorage.removeItem("refreshToken");
     localStorage.removeItem("user");
     useGuildStore.getState().reset();
+    useVoiceStore.getState().reset();
     set({
       user: null,
       token: null,

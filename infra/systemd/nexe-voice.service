@@ -1,0 +1,19 @@
+[Unit]
+Description=Nexe Voice Service
+After=network.target redis.service livekit.service
+Wants=redis.service livekit.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/www/html/nexe/services/voice
+EnvironmentFile=/var/www/html/nexe/services/voice/.env
+ExecStart=/var/www/html/nexe/services/voice/bin/voice
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nexe-voice
+
+[Install]
+WantedBy=multi-user.target

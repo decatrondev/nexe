@@ -30,7 +30,7 @@ jobs:
             git pull origin main
 
             # Build Go services
-            for svc in gateway guilds messaging presence; do
+            for svc in gateway guilds messaging presence voice; do
               echo "Building $svc..."
               cd /var/www/html/nexe/services/$svc
               set -a && source .env 2>/dev/null; set +a
@@ -48,6 +48,6 @@ jobs:
             npx next build
 
             # Restart services
-            systemctl restart nexe-gateway nexe-guilds nexe-messaging nexe-presence nexe-web
+            systemctl restart nexe-gateway nexe-guilds nexe-messaging nexe-presence nexe-voice nexe-web
 
             echo "Deploy complete!"

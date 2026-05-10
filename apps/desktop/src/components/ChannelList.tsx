@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useGuildStore } from "../stores/guild";
 import { useAuthStore } from "../stores/auth";
+import { useVoiceStore } from "../stores/voice";
 import { hasPermission, computePermissions, Permissions } from "../lib/permissions";
 import { type Channel, api } from "../lib/api";
 import { FREE_TIER_LIMITS } from "../lib/limits";
@@ -8,6 +9,7 @@ import CreateChannelModal from "./CreateChannelModal";
 import ServerSettingsModal from "./ServerSettingsModal";
 import InviteModal from "./InviteModal";
 import UserSettingsModal from "./UserSettingsModal";
+import VoicePanel from "./VoicePanel";
 
 const statusColors: Record<string, string> = {
   online: "bg-green-500",
@@ -64,6 +66,14 @@ export default function ChannelList() {
     });
   }
 
+  const voiceChannelId = useVoiceStore((s) => s.channelId);
+  const voiceConnected = useVoiceStore((s) => s.connected);
+  const voiceConnecting = useVoiceStore((s) => s.connecting);
+  const voiceParticipants = useVoiceStore((s) => s.participants);
+  const voiceSpeaking = useVoiceStore((s) => s.speakingUsers);
+  const joinVoice = useVoiceStore((s) => s.joinChannel);
+  const usernames = useGuildStore((s) => s.usernames);
+
   function renderSection(
     title: string,
     sectionChannels: typeof channels,
@@ -87,29 +97,91 @@ export default function ChannelList() {
         </button>
 
         {!isCollapsed &&
-          sectionChannels.map((ch) => (
-            <button
-              key={ch.id}
-              className={`group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors ${
-                activeChannelId === ch.id
-                  ? "bg-dark-700/50 text-white"
-                  : "text-slate-400 hover:bg-dark-800 hover:text-slate-200"
-              }`}
-              onClick={() => setActiveChannel(ch.id)}
-            >
-              {icon === "text" ? (
+          sectionChannels.map((ch) => {
+            if (icon === "voice") {
+              const isInThisChannel = voiceChannelId === ch.id && (voiceConnected || voiceConnecting);
+              const channelParticipants = voiceParticipants.filter((p) => p.channelId === ch.id);
+
+              return (
+                <div key={ch.id}>
+                  <button
+                    className={`group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors ${
+                      isInThisChannel
+                        ? "bg-dark-700/50 text-white"
+                        : "text-slate-400 hover:bg-dark-800 hover:text-slate-200"
+                    }`}
+                    onClick={() => {
+                      if (!isInThisChannel && activeGuildId) {
+                        joinVoice(activeGuildId, ch.id);
+                      }
+                    }}
+                  >
+                    {/* Volume/speaker icon */}
+                    <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 fill-current text-slate-500">
+                      <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-3.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+                    </svg>
+                    <span className="truncate">{ch.name}</span>
+                    {isInThisChannel && voiceConnecting && (
+                      <div className="ml-auto h-3 w-3 animate-spin rounded-full border border-slate-600 border-t-nexe-400" />
+                    )}
+                  </button>
+                  {/* Show participants in this voice channel */}
+                  {channelParticipants.length > 0 && (
+                    <div className="ml-6 space-y-0.5 py-0.5">
+                      {channelParticipants.map((p) => {
+                        const isSpeaking = voiceSpeaking.has(p.userId);
+                        return (
+                          <div
+                            key={p.userId}
+                            className="flex items-center gap-1.5 rounded px-2 py-0.5 text-xs text-slate-400"
+                          >
+                            <div
+                              className={`flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-semibold text-white transition-all ${
+                                isSpeaking
+                                  ? "ring-2 ring-green-500 bg-green-600"
+                                  : "bg-dark-600"
+                              }`}
+                            >
+                              {(usernames[p.userId] || "U").charAt(0).toUpperCase()}
+                            </div>
+                            <span className={`truncate ${isSpeaking ? "text-slate-200" : ""}`}>
+                              {usernames[p.userId] || "User"}
+                            </span>
+                            {p.selfMute && (
+                              <svg viewBox="0 0 24 24" className="h-3 w-3 shrink-0 fill-current text-red-400">
+                                <path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z" />
+                              </svg>
+                            )}
+                            {p.selfDeaf && (
+                              <svg viewBox="0 0 24 24" className="h-3 w-3 shrink-0 fill-current text-red-400">
+                                <path d="M4.34 2.93L2.93 4.34 7.29 8.7 7 9H3v6h4l5 5v-6.59l4.18 4.18c-.65.49-1.38.88-2.18 1.11v2.06a8.94 8.94 0 0 0 3.61-1.75l2.05 2.05 1.41-1.41L4.34 2.93zM19 12c0 .82-.15 1.61-.41 2.34l1.53 1.53c.56-1.17.88-2.48.88-3.87 0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zm-7-8l-1.88 1.88L12 7.76zm4.5 8A4.5 4.5 0 0 0 14 7.97v1.79l2.48 2.48c.01-.08.02-.16.02-.24z" />
+                              </svg>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            // Text channel
+            return (
+              <button
+                key={ch.id}
+                className={`group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors ${
+                  activeChannelId === ch.id
+                    ? "bg-dark-700/50 text-white"
+                    : "text-slate-400 hover:bg-dark-800 hover:text-slate-200"
+                }`}
+                onClick={() => setActiveChannel(ch.id)}
+              >
                 <span className="text-lg leading-none text-slate-500">#</span>
-              ) : (
-                <svg
-                  viewBox="0 0 24 24"
-                  className="h-4 w-4 shrink-0 fill-current text-slate-500"
-                >
-                  <path d="M12 3a1 1 0 0 0-.707.293l-7 7a1 1 0 0 0 0 1.414l7 7A1 1 0 0 0 13 18v-4.28c3.526.36 5.47 2.03 6.136 3.636a1 1 0 0 0 1.864-.728C20.143 14.07 17.368 11 13 10.29V6a1 1 0 0 0-1-1z" />
-                </svg>
-              )}
-              <span className="truncate">{ch.name}</span>
-            </button>
-          ))}
+                <span className="truncate">{ch.name}</span>
+              </button>
+            );
+          })}
       </div>
     );
   }
@@ -179,6 +251,9 @@ export default function ChannelList() {
             </>
           )}
         </div>
+
+        {/* Voice connection panel */}
+        <VoicePanel />
 
         {/* User info bar */}
         <div className="flex shrink-0 items-center gap-2 border-t border-dark-950 bg-dark-950/50 px-2 py-2">

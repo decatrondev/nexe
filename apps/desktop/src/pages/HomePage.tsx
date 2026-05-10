@@ -7,8 +7,9 @@ import CreateGuildModal from "../components/CreateGuildModal";
 import JoinServerModal from "../components/JoinServerModal";
 import { useGuildStore } from "../stores/guild";
 import { useAuthStore } from "../stores/auth";
+import { useVoiceStore } from "../stores/voice";
 import { nexeWS } from "../lib/websocket";
-import { api, type Message } from "../lib/api";
+import { api, type Message, type VoiceState } from "../lib/api";
 
 function WelcomeScreen({ onCreateServer }: { onCreateServer: () => void }) {
   return (
@@ -241,6 +242,11 @@ export default function HomePage() {
             memberRoles: { ...s.memberRoles, [d.userId]: d.roleIds! },
           }));
         }
+      });
+
+      nexeWS.on("VOICE_STATE_UPDATE", (data) => {
+        const state = data as VoiceState;
+        useVoiceStore.getState().handleVoiceStateUpdate(state);
       });
     }
 

@@ -57,7 +57,7 @@ func main() {
 	profileHandler := handler.NewProfileHandler(profileRepo)
 	twitchHandler := handler.NewTwitchHandler(twitchSvc, userRepo, authSvc, jwtSvc, rdb, cfg.TwitchEventSubSecret, cfg.BaseURL, cfg.FrontendURL)
 	botHandler := handler.NewBotHandler(botRepo, jwtSvc)
-	proxyHandler := handler.NewProxyHandler(cfg.GuildsURL, cfg.MessagingURL, cfg.PresenceURL)
+	proxyHandler := handler.NewProxyHandler(cfg.GuildsURL, cfg.MessagingURL, cfg.PresenceURL, cfg.VoiceURL)
 
 	// Middleware
 	authMiddleware := middleware.Auth(jwtSvc)
@@ -184,6 +184,15 @@ func main() {
 	mux.Handle("POST /guilds/{id}/track", guildsProxy(pp))
 	mux.Handle("POST /guilds/{id}/untrack", guildsProxy(pp))
 	mux.Handle("POST /users/bulk-presence", guildsProxy(pp))
+
+	// Proxy to voice service (authenticated)
+	vp := http.HandlerFunc(proxyHandler.ProxyVoice)
+	mux.Handle("POST /voice/join", guildsProxy(vp))
+	mux.Handle("POST /voice/leave", guildsProxy(vp))
+	mux.Handle("PATCH /voice/state", guildsProxy(vp))
+	mux.Handle("GET /voice/state/@me", guildsProxy(vp))
+	mux.Handle("GET /voice/channel/{channelId}/participants", guildsProxy(vp))
+	mux.Handle("GET /voice/guild/{guildId}/states", guildsProxy(vp))
 
 	// WebSocket
 	mux.HandleFunc("GET /ws", wsHandler.HandleWS)
