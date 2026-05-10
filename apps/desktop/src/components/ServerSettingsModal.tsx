@@ -1405,6 +1405,9 @@ function TwitchTab({ guildId }: { guildId: string }) {
             </div>
           </div>
 
+          {/* Chat Bridge */}
+          <BridgeSection guildId={guildId} />
+
           {/* Info note */}
           <div className="rounded-lg border border-dark-700 bg-dark-800/50 px-4 py-3">
             <p className="text-xs text-slate-400">
@@ -1447,6 +1450,112 @@ function TwitchTab({ guildId }: { guildId: string }) {
         </div>
       )}
     </>
+  );
+}
+
+// ---- Chat Bridge Section ----
+
+function BridgeSection({ guildId }: { guildId: string }) {
+  const guild = useGuildStore((s) => s.guilds.find((g) => g.id === guildId));
+  const allChannels = useGuildStore((s) => s.channels);
+  const channels = allChannels[guildId] ?? [];
+  const textChannels = channels.filter((c) => c.type === "text");
+  const hasBridge = !!guild?.bridgeChannelId;
+  const bridgeChannel = channels.find((c) => c.id === guild?.bridgeChannelId);
+
+  const [selectedChannel, setSelectedChannel] = useState(guild?.bridgeChannelId || "");
+  const [loading, setLoading] = useState(false);
+  const [feedback, setFeedback] = useState("");
+
+  async function handleSetBridge() {
+    if (!selectedChannel) return;
+    setLoading(true);
+    setFeedback("");
+    try {
+      await api.setBridgeChannel(guildId, selectedChannel);
+      await useGuildStore.getState().loadGuilds();
+      setFeedback("Chat bridge enabled!");
+    } catch (err) {
+      setFeedback(err instanceof Error ? err.message : "Failed to set bridge");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleClearBridge() {
+    setLoading(true);
+    setFeedback("");
+    try {
+      await api.clearBridgeChannel(guildId);
+      await useGuildStore.getState().loadGuilds();
+      setSelectedChannel("");
+      setFeedback("Chat bridge disabled.");
+    } catch (err) {
+      setFeedback(err instanceof Error ? err.message : "Failed to clear bridge");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div>
+      <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-300">
+        Chat Bridge
+      </h3>
+      <div className="rounded-lg border border-dark-700 bg-dark-800/50 p-4">
+        <p className="mb-3 text-xs text-slate-400">
+          Bridge a text channel with your Twitch chat. Messages from Twitch viewers appear in the channel, and messages from Nexe users are sent to Twitch.
+        </p>
+
+        {hasBridge ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 rounded-lg bg-[#9146FF]/10 border border-[#9146FF]/20 px-3 py-2">
+              <span className="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase text-white" style={{ backgroundColor: "#9146FF" }}>
+                TWITCH
+              </span>
+              <span className="text-sm text-slate-200">
+                #{bridgeChannel?.name || "unknown"}
+              </span>
+              <svg viewBox="0 0 24 24" className="ml-1 h-4 w-4 text-green-400 fill-current">
+                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+              </svg>
+            </div>
+            <button
+              onClick={handleClearBridge}
+              disabled={loading}
+              className="rounded-lg bg-dark-700 px-3 py-1.5 text-xs font-medium text-slate-300 transition-colors hover:bg-dark-600 disabled:opacity-50"
+            >
+              {loading ? "Disabling..." : "Disable Bridge"}
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <select
+              value={selectedChannel}
+              onChange={(e) => setSelectedChannel(e.target.value)}
+              className="w-full rounded-lg border border-dark-600 bg-dark-900 px-3 py-2 text-sm text-slate-200 outline-none focus:border-[#9146FF]"
+            >
+              <option value="">Select a channel...</option>
+              {textChannels.map((ch) => (
+                <option key={ch.id} value={ch.id}>#{ch.name}</option>
+              ))}
+            </select>
+            <button
+              onClick={handleSetBridge}
+              disabled={loading || !selectedChannel}
+              className="rounded-lg px-4 py-2 text-sm font-semibold text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              style={{ backgroundColor: "#9146FF" }}
+            >
+              {loading ? "Enabling..." : "Enable Chat Bridge"}
+            </button>
+          </div>
+        )}
+
+        {feedback && (
+          <p className="mt-2 text-xs text-slate-400">{feedback}</p>
+        )}
+      </div>
+    </div>
   );
 }
 
