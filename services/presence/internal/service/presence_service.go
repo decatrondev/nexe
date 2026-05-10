@@ -109,26 +109,32 @@ func (s *PresenceService) GetPresence(ctx context.Context, userID string) (*mode
 }
 
 func (s *PresenceService) Heartbeat(ctx context.Context, userID string) error {
+	// Always check preferred status and restore it
+	preferred, _ := s.rdb.Get(ctx, preferredKeyPrefix+userID).Result()
+
 	key := presenceKeyPrefix + userID
-	exists, err := s.rdb.Exists(ctx, key).Result()
-	if err != nil {
-		return fmt.Errorf("heartbeat check: %w", err)
+	currentStatus, _ := s.rdb.HGet(ctx, key, "status").Result()
+
+	// Determine the correct status:
+	// - If preferred exists (DND/invisible), use it
+	// - If current is "offline" or empty, set to "online"
+	// - Otherwise keep current
+	targetStatus := currentStatus
+	if preferred != "" {
+		targetStatus = preferred
+	} else if currentStatus == "" || currentStatus == "offline" {
+		targetStatus = "online"
 	}
 
-	if exists == 0 {
-		// Restore preferred status if user had one (e.g. DND)
-		status := "online"
-		preferred, err := s.rdb.Get(ctx, preferredKeyPrefix+userID).Result()
-		if err == nil && preferred != "" {
-			status = preferred
-		}
-		return s.SetPresence(ctx, userID, model.StatusUpdate{Status: status})
+	if currentStatus != targetStatus || currentStatus == "" {
+		return s.SetPresence(ctx, userID, model.StatusUpdate{Status: targetStatus})
 	}
 
+	// Just refresh TTL
 	pipe := s.rdb.Pipeline()
 	pipe.HSet(ctx, key, "lastSeen", time.Now().UTC().Format(time.RFC3339))
 	pipe.Expire(ctx, key, presenceTTL)
-	_, err = pipe.Exec(ctx)
+	_, err := pipe.Exec(ctx)
 	return err
 }
 
