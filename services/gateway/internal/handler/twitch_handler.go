@@ -967,15 +967,20 @@ func (h *TwitchHandler) EnableBridge(w http.ResponseWriter, r *http.Request) {
 				"channelId": body.ChannelID,
 			})
 
-			// Register EventSub for channel.chat.message
-			callbackURL := h.baseURL + "/twitch/webhook"
-			err := h.twitch.SubscribeEventSub(r.Context(), "channel.chat.message", "1",
-				map[string]string{"broadcaster_user_id": twitchID, "user_id": twitchID},
-				callbackURL, h.eventSubSecret)
-			if err != nil {
-				slog.Error("failed to subscribe to chat events", "error", err, "twitchId", twitchID)
+			// Register EventSub for channel.chat.message — requires USER token, not app token
+			broadcasterToken := h.getValidBroadcasterToken(r.Context(), twitchID)
+			if broadcasterToken == "" {
+				slog.Error("no broadcaster token for chat bridge", "twitchId", twitchID)
 			} else {
-				slog.Info("chat bridge EventSub registered", "twitchId", twitchID, "guildId", guildID)
+				callbackURL := h.baseURL + "/twitch/webhook"
+				err := h.twitch.SubscribeEventSubWithToken(r.Context(), broadcasterToken, "channel.chat.message", "1",
+					map[string]string{"broadcaster_user_id": twitchID, "user_id": twitchID},
+					callbackURL, h.eventSubSecret)
+				if err != nil {
+					slog.Error("failed to subscribe to chat events", "error", err, "twitchId", twitchID)
+				} else {
+					slog.Info("chat bridge EventSub registered", "twitchId", twitchID, "guildId", guildID)
+				}
 			}
 		}
 	}
@@ -1003,8 +1008,12 @@ func (h *TwitchHandler) handleChatMessage(ctx context.Context, event json.RawMes
 		return
 	}
 
-	// Don't bridge messages from the bot/streamer account itself (avoid loops)
-	if chatEvent.ChatterUserID == chatEvent.BroadcasterUserID {
+	// Don't bridge messages that originated from Nexe (avoid loops)
+	// Messages sent from Nexe to Twitch will have the broadcaster as the chatter
+	// We use a Redis flag to track messages we sent
+	loopKey := "nexe:bridge:sent:" + chatEvent.MessageID
+	exists, _ := h.rdb.Exists(ctx, loopKey).Result()
+	if exists > 0 {
 		return
 	}
 

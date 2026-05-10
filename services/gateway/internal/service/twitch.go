@@ -189,6 +189,42 @@ func (s *TwitchService) GetStreamByUserID(ctx context.Context, twitchUserID stri
 }
 
 // SubscribeEventSub creates an EventSub subscription
+// SubscribeEventSubWithToken creates an EventSub subscription using a specific token (user or app).
+func (s *TwitchService) SubscribeEventSubWithToken(ctx context.Context, token, subType, version string, condition map[string]string, callbackURL, secret string) error {
+	body := map[string]interface{}{
+		"type":    subType,
+		"version": version,
+		"condition": condition,
+		"transport": map[string]string{
+			"method":   "webhook",
+			"callback": callbackURL,
+			"secret":   secret,
+		},
+	}
+
+	bodyJSON, _ := json.Marshal(body)
+	req, _ := http.NewRequestWithContext(ctx, "POST",
+		"https://api.twitch.tv/helix/eventsub/subscriptions",
+		strings.NewReader(string(bodyJSON)))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Client-Id", s.clientID)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("subscribe eventsub: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 202 && resp.StatusCode != 200 && resp.StatusCode != 409 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("eventsub error (%d): %s", resp.StatusCode, string(respBody))
+	}
+
+	slog.Info("eventsub subscribed", "type", subType)
+	return nil
+}
+
 func (s *TwitchService) SubscribeEventSub(ctx context.Context, subType, version string, condition map[string]string, callbackURL, secret string) error {
 	token, err := s.GetAppToken(ctx)
 	if err != nil {
