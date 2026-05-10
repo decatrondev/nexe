@@ -13,12 +13,14 @@ import (
 type MessageService struct {
 	messages  *repository.MessageRepository
 	reactions *repository.ReactionRepository
+	events    *EventPublisher
 }
 
-func NewMessageService(messages *repository.MessageRepository, reactions *repository.ReactionRepository) *MessageService {
+func NewMessageService(messages *repository.MessageRepository, reactions *repository.ReactionRepository, events *EventPublisher) *MessageService {
 	return &MessageService{
 		messages:  messages,
 		reactions: reactions,
+		events:    events,
 	}
 }
 
@@ -41,6 +43,19 @@ func (s *MessageService) SendMessage(ctx context.Context, channelID, authorID, c
 	}
 
 	slog.Debug("message sent", "id", msg.ID, "channel", channelID, "author", authorID)
+
+	// Publish MESSAGE_CREATE event to Redis.
+	if s.events != nil {
+		go func() {
+			guildID, err := s.messages.GetChannelGuildID(context.Background(), channelID)
+			if err != nil {
+				slog.Error("failed to resolve guild for event", "error", err, "channel", channelID)
+				return
+			}
+			s.events.Publish(context.Background(), guildID, channelID, EventMessageCreate, authorID, msg)
+		}()
+	}
+
 	return msg, nil
 }
 
@@ -97,6 +112,25 @@ func (s *MessageService) EditMessage(ctx context.Context, messageID, authorID, n
 	}
 
 	slog.Debug("message edited", "id", messageID, "author", authorID)
+
+	// Publish MESSAGE_UPDATE event to Redis.
+	if s.events != nil {
+		go func() {
+			guildID, err := s.messages.GetChannelGuildID(context.Background(), msg.ChannelID)
+			if err != nil {
+				slog.Error("failed to resolve guild for event", "error", err, "channel", msg.ChannelID)
+				return
+			}
+			// Re-fetch the updated message to include the edited_at timestamp.
+			updated, err := s.messages.GetByID(context.Background(), messageID)
+			if err != nil || updated == nil {
+				slog.Error("failed to fetch updated message for event", "error", err, "id", messageID)
+				return
+			}
+			s.events.Publish(context.Background(), guildID, msg.ChannelID, EventMessageUpdate, authorID, updated)
+		}()
+	}
+
 	return nil
 }
 
@@ -116,6 +150,22 @@ func (s *MessageService) DeleteMessage(ctx context.Context, messageID, requester
 	}
 
 	slog.Debug("message deleted", "id", messageID, "by", requesterID)
+
+	// Publish MESSAGE_DELETE event to Redis.
+	if s.events != nil {
+		go func() {
+			guildID, err := s.messages.GetChannelGuildID(context.Background(), msg.ChannelID)
+			if err != nil {
+				slog.Error("failed to resolve guild for event", "error", err, "channel", msg.ChannelID)
+				return
+			}
+			s.events.Publish(context.Background(), guildID, msg.ChannelID, EventMessageDelete, requesterID, map[string]string{
+				"id":        messageID,
+				"channelId": msg.ChannelID,
+			})
+		}()
+	}
+
 	return nil
 }
 

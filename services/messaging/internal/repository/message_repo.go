@@ -487,6 +487,19 @@ func (a *pqStringArray) Scan(src interface{}) error {
 	}
 }
 
+// GetChannelGuildID looks up the guild_id for a given channel.
+// The channels table lives in the same database (managed by the guilds service).
+func (r *MessageRepository) GetChannelGuildID(ctx context.Context, channelID string) (string, error) {
+	var guildID string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT guild_id FROM channels WHERE id = $1`, channelID,
+	).Scan(&guildID)
+	if err != nil {
+		return "", fmt.Errorf("get channel guild_id: %w", err)
+	}
+	return guildID, nil
+}
+
 func (a *pqStringArray) parseArray(s string) error {
 	if len(s) < 2 || s[0] != '{' || s[len(s)-1] != '}' {
 		*a = nil

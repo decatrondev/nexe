@@ -4,8 +4,11 @@ import ChannelList from "../components/ChannelList";
 import ChatArea from "../components/ChatArea";
 import MemberList from "../components/MemberList";
 import CreateGuildModal from "../components/CreateGuildModal";
+import JoinServerModal from "../components/JoinServerModal";
 import { useGuildStore } from "../stores/guild";
 import { useAuthStore } from "../stores/auth";
+import { nexeWS } from "../lib/websocket";
+import { api, type Message } from "../lib/api";
 
 function WelcomeScreen({ onCreateServer }: { onCreateServer: () => void }) {
   return (
@@ -35,7 +38,20 @@ export default function HomePage() {
   const activeGuildId = useGuildStore((s) => s.activeGuildId);
   const loading = useGuildStore((s) => s.loading);
   const user = useAuthStore((s) => s.user);
+  const token = useAuthStore((s) => s.token);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
+
+  // Detect ?invite=CODE in URL or localStorage (saved before login redirect)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("invite") || localStorage.getItem("pendingInvite");
+    if (code) {
+      setInviteCode(code);
+      localStorage.removeItem("pendingInvite");
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
 
   useEffect(() => {
     loadGuilds();
@@ -45,6 +61,161 @@ export default function HomePage() {
         usernames: { ...s.usernames, [user.id]: user.displayName || user.username },
       }));
     }
+
+    // Connect WebSocket
+    if (token) {
+      nexeWS.connect(token);
+
+      nexeWS.on("MESSAGE_CREATE", (data) => {
+        const msg = data as Message;
+        useGuildStore.setState((s) => {
+          const channelMsgs = s.messages[msg.channelId] || [];
+          if (channelMsgs.some((m) => m.id === msg.id)) return s;
+          return {
+            messages: {
+              ...s.messages,
+              [msg.channelId]: [...channelMsgs, msg],
+            },
+          };
+        });
+        // Resolve username if unknown
+        const { usernames } = useGuildStore.getState();
+        if (!usernames[msg.authorId]) {
+          api.getProfile(msg.authorId).then((p) => {
+            useGuildStore.setState((s) => ({
+              usernames: {
+                ...s.usernames,
+                [msg.authorId]: p?.displayName || p?.username || "User",
+              },
+            }));
+          }).catch(() => {});
+        }
+      });
+
+      nexeWS.on("MESSAGE_UPDATE", (data) => {
+        const msg = data as Message;
+        useGuildStore.setState((s) => {
+          const channelMsgs = s.messages[msg.channelId];
+          if (!channelMsgs) return s;
+          return {
+            messages: {
+              ...s.messages,
+              [msg.channelId]: channelMsgs.map((m) =>
+                m.id === msg.id ? msg : m,
+              ),
+            },
+          };
+        });
+      });
+
+      nexeWS.on("MESSAGE_DELETE", (data) => {
+        const { id, channelId } = data as { id: string; channelId: string };
+        useGuildStore.setState((s) => {
+          const channelMsgs = s.messages[channelId];
+          if (!channelMsgs) return s;
+          return {
+            messages: {
+              ...s.messages,
+              [channelId]: channelMsgs.filter((m) => m.id !== id),
+            },
+          };
+        });
+      });
+
+      nexeWS.on("GUILD_MEMBER_ADD", (data) => {
+        const d = data as { userId: string; guildId: string };
+        const currentUser = useAuthStore.getState().user;
+
+        // If I just joined a server with Twitch integration, sync my roles
+        if (d.userId === currentUser?.id && currentUser?.twitchId) {
+          api.syncTwitchRoles(d.guildId).catch(() => {});
+        }
+
+        // Reload members if we're viewing this guild
+        const activeGuild = useGuildStore.getState().activeGuildId;
+        if (activeGuild === d.guildId) {
+          api.getMembers(d.guildId, 100).then((members) => {
+            useGuildStore.setState((s) => ({
+              members: { ...s.members, [d.guildId]: Array.isArray(members) ? members : [] },
+            }));
+          }).catch(() => {});
+        }
+      });
+
+      nexeWS.on("GUILD_MEMBER_REMOVE", (data) => {
+        const d = data as { userId: string; guildId: string };
+        const currentUser = useAuthStore.getState().user;
+        if (d.userId === currentUser?.id) {
+          // Current user was kicked/banned — remove guild from list
+          useGuildStore.setState((s) => ({
+            guilds: s.guilds.filter((g) => g.id !== d.guildId),
+            activeGuildId:
+              s.activeGuildId === d.guildId ? null : s.activeGuildId,
+            activeChannelId:
+              s.activeGuildId === d.guildId ? null : s.activeChannelId,
+          }));
+        } else {
+          // Another member was kicked/banned — remove from member list
+          useGuildStore.setState((s) => {
+            const guildMembers = s.members[d.guildId];
+            if (!guildMembers) return s;
+            return {
+              members: {
+                ...s.members,
+                [d.guildId]: guildMembers.filter(
+                  (m) => m.userId !== d.userId,
+                ),
+              },
+            };
+          });
+        }
+      });
+
+      nexeWS.on("GUILD_BAN_REMOVE", (_data) => {
+        // Unban event — no immediate UI action needed since the user
+        // is not currently a member. Could be used for mod log updates.
+      });
+
+      nexeWS.on("GUILD_ROLE_CREATE", (data) => {
+        const d = data as { guildId: string; [key: string]: any };
+        api.getRoles(d.guildId).then((roles) => {
+          useGuildStore.setState((s) => ({
+            roles: { ...s.roles, [d.guildId]: Array.isArray(roles) ? roles : [] },
+          }));
+        }).catch(() => {});
+      });
+
+      nexeWS.on("GUILD_ROLE_UPDATE", (data) => {
+        const d = data as { guildId: string };
+        api.getRoles(d.guildId).then((roles) => {
+          useGuildStore.setState((s) => ({
+            roles: { ...s.roles, [d.guildId]: Array.isArray(roles) ? roles : [] },
+          }));
+        }).catch(() => {});
+      });
+
+      nexeWS.on("GUILD_ROLE_DELETE", (data) => {
+        const d = data as { roleId: string; guildId: string };
+        useGuildStore.setState((s) => {
+          const guildRoles = s.roles[d.guildId];
+          if (!guildRoles) return s;
+          return { roles: { ...s.roles, [d.guildId]: guildRoles.filter((r) => r.id !== d.roleId) } };
+        });
+      });
+
+      nexeWS.on("GUILD_MEMBER_UPDATE", (data) => {
+        const d = data as { userId: string; guildId: string; roleIds?: string[] };
+        if (d.roleIds) {
+          useGuildStore.setState((s) => ({
+            memberRoles: { ...s.memberRoles, [d.userId]: d.roleIds! },
+          }));
+        }
+      });
+    }
+
+    return () => {
+      nexeWS.disconnect();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -66,6 +237,13 @@ export default function HomePage() {
 
       {showCreateModal && (
         <CreateGuildModal onClose={() => setShowCreateModal(false)} />
+      )}
+
+      {inviteCode && (
+        <JoinServerModal
+          initialCode={inviteCode}
+          onClose={() => setInviteCode(null)}
+        />
       )}
     </div>
   );

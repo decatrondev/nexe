@@ -1,0 +1,19 @@
+[Unit]
+Description=Nexe Guilds Service
+After=network.target postgresql.service redis.service
+Wants=postgresql.service redis.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/www/html/nexe/services/guilds
+EnvironmentFile=/var/www/html/nexe/services/guilds/.env
+ExecStart=/var/www/html/nexe/services/guilds/bin/guilds
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nexe-guilds
+
+[Install]
+WantedBy=multi-user.target

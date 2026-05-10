@@ -1,0 +1,17 @@
+[Unit]
+Description=Nexe Web (Next.js)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/www/html/nexe/apps/web
+ExecStart=/usr/bin/npx next start -p 3013
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nexe-web
+
+[Install]
+WantedBy=multi-user.target

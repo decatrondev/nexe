@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/lib/pq"
+
 	"github.com/decatrondev/nexe/services/guilds/internal/model"
 )
 
@@ -108,9 +110,13 @@ func (r *MemberRepository) GetByGuildAndUser(ctx context.Context, guildID, userI
 
 func (r *MemberRepository) ListByGuild(ctx context.Context, guildID string, limit, offset int) ([]model.GuildMember, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, guild_id, user_id, nickname, joined_at, muted, muted_until
-		 FROM guild_members WHERE guild_id = $1
-		 ORDER BY joined_at
+		`SELECT gm.id, gm.guild_id, gm.user_id, gm.nickname, gm.joined_at, gm.muted, gm.muted_until,
+		        COALESCE(array_agg(mr.role_id) FILTER (WHERE mr.role_id IS NOT NULL), '{}')
+		 FROM guild_members gm
+		 LEFT JOIN member_roles mr ON mr.member_id = gm.id
+		 WHERE gm.guild_id = $1
+		 GROUP BY gm.id, gm.guild_id, gm.user_id, gm.nickname, gm.joined_at, gm.muted, gm.muted_until
+		 ORDER BY gm.joined_at
 		 LIMIT $2 OFFSET $3`,
 		guildID, limit, offset,
 	)
@@ -122,10 +128,12 @@ func (r *MemberRepository) ListByGuild(ctx context.Context, guildID string, limi
 	var members []model.GuildMember
 	for rows.Next() {
 		var m model.GuildMember
+		var roleIds pq.StringArray
 		if err := rows.Scan(&m.ID, &m.GuildID, &m.UserID, &m.Nickname,
-			&m.JoinedAt, &m.Muted, &m.MutedUntil); err != nil {
+			&m.JoinedAt, &m.Muted, &m.MutedUntil, &roleIds); err != nil {
 			return nil, fmt.Errorf("member list by guild scan: %w", err)
 		}
+		m.RoleIds = roleIds
 		members = append(members, m)
 	}
 	return members, rows.Err()

@@ -28,6 +28,10 @@ func NewTwitchService(clientID, clientSecret, redirectURI string) *TwitchService
 	}
 }
 
+func (s *TwitchService) GetClientID() string {
+	return s.clientID
+}
+
 // GetAuthURL returns the Twitch OAuth2 authorization URL
 func (s *TwitchService) GetAuthURL(state string) string {
 	params := url.Values{
@@ -64,6 +68,34 @@ func (s *TwitchService) ExchangeCode(ctx context.Context, code string) (*TwitchT
 	var token TwitchTokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&token); err != nil {
 		return nil, fmt.Errorf("decode token: %w", err)
+	}
+
+	return &token, nil
+}
+
+// RefreshToken refreshes an expired Twitch access token using a refresh token.
+func (s *TwitchService) RefreshToken(ctx context.Context, refreshToken string) (*TwitchTokenResponse, error) {
+	data := url.Values{
+		"client_id":     {s.clientID},
+		"client_secret": {s.clientSecret},
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refreshToken},
+	}
+
+	resp, err := http.PostForm("https://id.twitch.tv/oauth2/token", data)
+	if err != nil {
+		return nil, fmt.Errorf("refresh token: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("twitch refresh error (%d): %s", resp.StatusCode, string(body))
+	}
+
+	var token TwitchTokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&token); err != nil {
+		return nil, fmt.Errorf("decode refresh token: %w", err)
 	}
 
 	return &token, nil
@@ -195,6 +227,173 @@ func (s *TwitchService) SubscribeEventSub(ctx context.Context, subType, version 
 
 	slog.Info("eventsub subscribed", "type", subType)
 	return nil
+}
+
+// CheckFollower checks if userID follows broadcasterID.
+// Requires the broadcaster's user token (moderator:read:followers scope).
+func (s *TwitchService) CheckFollower(ctx context.Context, broadcasterID, userID string, broadcasterToken ...string) (bool, error) {
+	var token string
+	if len(broadcasterToken) > 0 && broadcasterToken[0] != "" {
+		token = broadcasterToken[0]
+	} else {
+		var err error
+		token, err = s.GetAppToken(ctx)
+		if err != nil {
+			return false, err
+		}
+	}
+
+	req, _ := http.NewRequestWithContext(ctx, "GET",
+		fmt.Sprintf("https://api.twitch.tv/helix/channels/followers?broadcaster_id=%s&user_id=%s", broadcasterID, userID), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Client-Id", s.clientID)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("check follower: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Total int `json:"total"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result)
+	return result.Total > 0, nil
+}
+
+// CheckSubscription checks if userID is subscribed to broadcasterID and returns the tier ("1000", "2000", "3000") or empty.
+func (s *TwitchService) CheckSubscription(ctx context.Context, broadcasterID, userID string) (bool, string, error) {
+	token, err := s.GetAppToken(ctx)
+	if err != nil {
+		return false, "", err
+	}
+
+	req, _ := http.NewRequestWithContext(ctx, "GET",
+		fmt.Sprintf("https://api.twitch.tv/helix/subscriptions/user?broadcaster_id=%s&user_id=%s", broadcasterID, userID), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Client-Id", s.clientID)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false, "", fmt.Errorf("check subscription: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 404 {
+		return false, "", nil
+	}
+
+	var result struct {
+		Data []struct {
+			Tier string `json:"tier"`
+		} `json:"data"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result)
+
+	if len(result.Data) == 0 {
+		return false, "", nil
+	}
+	return true, result.Data[0].Tier, nil
+}
+
+// CheckModerator checks if userID is a moderator for broadcasterID.
+func (s *TwitchService) CheckModerator(ctx context.Context, broadcasterID, userID string) (bool, error) {
+	token, err := s.GetAppToken(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	req, _ := http.NewRequestWithContext(ctx, "GET",
+		fmt.Sprintf("https://api.twitch.tv/helix/moderation/moderators?broadcaster_id=%s&user_id=%s", broadcasterID, userID), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Client-Id", s.clientID)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("check moderator: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Data []struct {
+			UserID string `json:"user_id"`
+		} `json:"data"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result)
+	return len(result.Data) > 0, nil
+}
+
+// CheckVIP checks if userID is a VIP for broadcasterID.
+func (s *TwitchService) CheckVIP(ctx context.Context, broadcasterID, userID string) (bool, error) {
+	token, err := s.GetAppToken(ctx)
+	if err != nil {
+		return false, err
+	}
+
+	req, _ := http.NewRequestWithContext(ctx, "GET",
+		fmt.Sprintf("https://api.twitch.tv/helix/channels/vips?broadcaster_id=%s&user_id=%s", broadcasterID, userID), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Client-Id", s.clientID)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("check vip: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Data []struct {
+			UserID string `json:"user_id"`
+		} `json:"data"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result)
+	return len(result.Data) > 0, nil
+}
+
+// TwitchRoleSyncResult holds the results of a Twitch role sync check.
+type TwitchRoleSyncResult struct {
+	IsFollower  bool   `json:"isFollower"`
+	IsSubscriber bool  `json:"isSubscriber"`
+	SubTier     string `json:"subTier,omitempty"`
+	IsMod       bool   `json:"isMod"`
+	IsVIP       bool   `json:"isVip"`
+}
+
+// CheckUserTwitchStatus checks all Twitch statuses for a user against a broadcaster.
+// broadcasterAccessToken is optional — needed for follower checks (moderator:read:followers scope).
+func (s *TwitchService) CheckUserTwitchStatus(ctx context.Context, broadcasterID, userTwitchID, broadcasterAccessToken string) (*TwitchRoleSyncResult, error) {
+	result := &TwitchRoleSyncResult{}
+
+	// Check follower — needs broadcaster's user token
+	isFollower, err := s.CheckFollower(ctx, broadcasterID, userTwitchID, broadcasterAccessToken)
+	if err != nil {
+		slog.Warn("twitch check follower failed", "error", err)
+	}
+	result.IsFollower = isFollower
+
+	// Check subscription
+	isSub, tier, err := s.CheckSubscription(ctx, broadcasterID, userTwitchID)
+	if err != nil {
+		slog.Warn("twitch check subscription failed", "error", err)
+	}
+	result.IsSubscriber = isSub
+	result.SubTier = tier
+
+	// Check moderator
+	isMod, err := s.CheckModerator(ctx, broadcasterID, userTwitchID)
+	if err != nil {
+		slog.Warn("twitch check moderator failed", "error", err)
+	}
+	result.IsMod = isMod
+
+	// Check VIP
+	isVIP, err := s.CheckVIP(ctx, broadcasterID, userTwitchID)
+	if err != nil {
+		slog.Warn("twitch check vip failed", "error", err)
+	}
+	result.IsVIP = isVIP
+
+	return result, nil
 }
 
 // Types

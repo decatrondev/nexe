@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { useGuildStore } from "../stores/guild";
 
 interface CreateChannelModalProps {
@@ -13,6 +13,14 @@ export default function CreateChannelModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const createChannel = useGuildStore((s) => s.createChannel);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -32,8 +40,8 @@ export default function CreateChannelModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="w-full max-w-md rounded-2xl bg-dark-850 p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl bg-dark-850 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
         <h2 className="mb-4 text-xl font-bold text-slate-100">
           Create Channel
         </h2>

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/decatrondev/nexe/services/guilds/internal/model"
 	"github.com/decatrondev/nexe/services/guilds/internal/service"
 )
 
@@ -55,6 +54,12 @@ func (h *GuildHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /guilds/{id}/invites", h.CreateInvite)
 	mux.HandleFunc("POST /invites/{code}/use", h.UseInvite)
 	mux.HandleFunc("GET /guilds/{id}/invites", h.ListInvites)
+
+	// Twitch Integration
+	mux.HandleFunc("POST /guilds/{id}/twitch/enable", h.EnableTwitchIntegration)
+	mux.HandleFunc("POST /guilds/{id}/twitch/disable", h.DisableTwitchIntegration)
+	mux.HandleFunc("PUT /guilds/{id}/members/{uid}/auto-roles/{rid}", h.AssignAutoRole)
+	mux.HandleFunc("DELETE /guilds/{id}/members/{uid}/auto-roles/{rid}", h.RemoveAutoRole)
 
 	// Moderation
 	mux.HandleFunc("POST /guilds/{id}/bans", h.BanMember)
@@ -279,14 +284,16 @@ func (h *GuildHandler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
 	}
-	if body.GuildID == "" {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "guildId is required")
+
+	// Fetch current channel to merge partial updates
+	ch, err := h.svc.GetChannel(r.Context(), channelID)
+	if err != nil || ch == nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "channel not found")
 		return
 	}
 
-	ch := &model.Channel{
-		ID:      channelID,
-		GuildID: body.GuildID,
+	if body.GuildID != "" {
+		ch.GuildID = body.GuildID
 	}
 	if body.Name != nil {
 		ch.Name = *body.Name
@@ -445,14 +452,16 @@ func (h *GuildHandler) UpdateRole(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
 		return
 	}
-	if body.GuildID == "" {
-		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "guildId is required")
+
+	// Fetch current role to merge partial updates
+	role, err := h.svc.GetRole(r.Context(), roleID)
+	if err != nil || role == nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "role not found")
 		return
 	}
 
-	role := &model.Role{
-		ID:      roleID,
-		GuildID: body.GuildID,
+	if body.GuildID != "" {
+		role.GuildID = body.GuildID
 	}
 	if body.Name != nil {
 		role.Name = *body.Name
@@ -667,6 +676,96 @@ func (h *GuildHandler) ListInvites(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, invites)
+}
+
+// ---------------------------------------------------------------------------
+// Twitch Integration handlers
+// ---------------------------------------------------------------------------
+
+func (h *GuildHandler) EnableTwitchIntegration(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	guildID := r.PathValue("id")
+
+	var body struct {
+		TwitchID string `json:"twitchId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+	if strings.TrimSpace(body.TwitchID) == "" {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "twitchId is required")
+		return
+	}
+
+	roles, err := h.svc.EnableTwitchIntegration(r.Context(), guildID, userID, body.TwitchID)
+	if err != nil {
+		classifyError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"roles": roles,
+	})
+}
+
+func (h *GuildHandler) AssignAutoRole(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	guildID := r.PathValue("id")
+	targetUID := r.PathValue("uid")
+	roleID := r.PathValue("rid")
+
+	// Only allow self-assignment or system calls
+	if userID != targetUID {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "auto-roles can only be self-assigned via sync")
+		return
+	}
+
+	if err := h.svc.AssignAutoRole(r.Context(), guildID, targetUID, roleID); err != nil {
+		classifyError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *GuildHandler) RemoveAutoRole(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	guildID := r.PathValue("id")
+	targetUID := r.PathValue("uid")
+	roleID := r.PathValue("rid")
+
+	if userID != targetUID {
+		writeError(w, http.StatusForbidden, "FORBIDDEN", "auto-roles can only be self-removed via sync")
+		return
+	}
+
+	if err := h.svc.RemoveAutoRole(r.Context(), guildID, targetUID, roleID); err != nil {
+		classifyError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *GuildHandler) DisableTwitchIntegration(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	guildID := r.PathValue("id")
+
+	if err := h.svc.DisableTwitchIntegration(r.Context(), guildID, userID); err != nil {
+		classifyError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ---------------------------------------------------------------------------

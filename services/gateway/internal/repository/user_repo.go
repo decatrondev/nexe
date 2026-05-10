@@ -31,6 +31,7 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*model.User, e
 	return r.scanUser(r.db.QueryRowContext(ctx, `
 		SELECT u.id, u.username, u.email, u.email_verified, u.password_hash,
 		       u.twitch_id, u.twitch_login, u.twitch_display_name,
+		       u.twitch_access_token, u.twitch_refresh_token,
 		       u.status, u.custom_status_text, u.custom_status_emoji,
 		       COALESCE(ut.tier, 'free'), u.flags, u.disabled, u.created_at, u.updated_at
 		FROM users u
@@ -42,6 +43,7 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*model.U
 	return r.scanUser(r.db.QueryRowContext(ctx, `
 		SELECT u.id, u.username, u.email, u.email_verified, u.password_hash,
 		       u.twitch_id, u.twitch_login, u.twitch_display_name,
+		       u.twitch_access_token, u.twitch_refresh_token,
 		       u.status, u.custom_status_text, u.custom_status_emoji,
 		       COALESCE(ut.tier, 'free'), u.flags, u.disabled, u.created_at, u.updated_at
 		FROM users u
@@ -53,6 +55,7 @@ func (r *UserRepository) GetByUsername(ctx context.Context, username string) (*m
 	return r.scanUser(r.db.QueryRowContext(ctx, `
 		SELECT u.id, u.username, u.email, u.email_verified, u.password_hash,
 		       u.twitch_id, u.twitch_login, u.twitch_display_name,
+		       u.twitch_access_token, u.twitch_refresh_token,
 		       u.status, u.custom_status_text, u.custom_status_emoji,
 		       COALESCE(ut.tier, 'free'), u.flags, u.disabled, u.created_at, u.updated_at
 		FROM users u
@@ -64,6 +67,7 @@ func (r *UserRepository) GetByTwitchID(ctx context.Context, twitchID string) (*m
 	return r.scanUser(r.db.QueryRowContext(ctx, `
 		SELECT u.id, u.username, u.email, u.email_verified, u.password_hash,
 		       u.twitch_id, u.twitch_login, u.twitch_display_name,
+		       u.twitch_access_token, u.twitch_refresh_token,
 		       u.status, u.custom_status_text, u.custom_status_emoji,
 		       COALESCE(ut.tier, 'free'), u.flags, u.disabled, u.created_at, u.updated_at
 		FROM users u
@@ -122,6 +126,7 @@ func (r *UserRepository) scanUser(row *sql.Row) (*model.User, error) {
 	err := row.Scan(
 		&u.ID, &u.Username, &u.Email, &u.EmailVerified, &u.PasswordHash,
 		&u.TwitchID, &u.TwitchLogin, &u.TwitchDisplayName,
+		&u.TwitchAccessToken, &u.TwitchRefreshToken,
 		&u.Status, &u.CustomStatusText, &u.CustomStatusEmoji,
 		&u.Tier, &u.Flags, &u.Disabled, &u.CreatedAt, &u.UpdatedAt,
 	)

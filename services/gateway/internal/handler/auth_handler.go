@@ -218,15 +218,38 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"data": map[string]interface{}{
-			"id":       claims.Subject,
-			"username": claims.Username,
-			"email":    claims.Email,
-			"tier":     claims.Tier,
-			"twitchId": claims.TwitchID,
-		},
-	})
+	// Fetch fresh data from DB (not just JWT claims) so linked accounts show up
+	user, err := h.auth.GetUserByID(r.Context(), claims.Subject)
+	if err != nil || user == nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"data": map[string]interface{}{
+				"id":       claims.Subject,
+				"username": claims.Username,
+				"email":    claims.Email,
+				"tier":     claims.Tier,
+				"twitchId": claims.TwitchID,
+			},
+		})
+		return
+	}
+
+	resp := map[string]interface{}{
+		"id":       user.ID,
+		"username": user.Username,
+		"email":    user.Email,
+		"tier":     user.Tier,
+	}
+	if user.TwitchID != nil && *user.TwitchID != "" {
+		resp["twitchId"] = *user.TwitchID
+	}
+	if user.TwitchLogin != nil && *user.TwitchLogin != "" {
+		resp["twitchLogin"] = *user.TwitchLogin
+	}
+	if user.TwitchDisplayName != nil && *user.TwitchDisplayName != "" {
+		resp["twitchDisplayName"] = *user.TwitchDisplayName
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": resp})
 }
 
 func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {

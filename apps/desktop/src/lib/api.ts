@@ -1,11 +1,21 @@
-const API_URL = import.meta.env.DEV
-  ? "http://161.132.53.175:8090"
-  : "https://nexeapi.decatron.net";
+const API_URL =
+  typeof window !== "undefined" && window.location.protocol === "https:"
+    ? "https://nexeapi.decatron.net"
+    : "http://161.132.53.175:8090";
+
+const REQUEST_TIMEOUT = 15_000; // 15 seconds
 
 let accessToken: string | null = null;
+let refreshToken: string | null = null;
+let isRefreshing = false;
+let refreshPromise: Promise<boolean> | null = null;
 
 function setToken(token: string | null) {
   accessToken = token;
+}
+
+function setRefreshToken(token: string | null) {
+  refreshToken = token;
 }
 
 function headers(extra?: Record<string, string>): Record<string, string> {
@@ -23,30 +33,96 @@ interface ApiErrorResponse {
   error?: { code: string; message: string };
 }
 
+async function tryRefreshToken(): Promise<boolean> {
+  if (!refreshToken) return false;
+
+  // Deduplicate concurrent refresh attempts
+  if (isRefreshing && refreshPromise) {
+    return refreshPromise;
+  }
+
+  isRefreshing = true;
+  refreshPromise = (async () => {
+    try {
+      const res = await fetch(`${API_URL}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      if (!res.ok) return false;
+
+      const json = await res.json();
+      const data = json?.data ?? json;
+      if (data?.accessToken && data?.refreshToken) {
+        accessToken = data.accessToken;
+        refreshToken = data.refreshToken;
+        localStorage.setItem("token", data.accessToken);
+        localStorage.setItem("refreshToken", data.refreshToken);
+        return true;
+      }
+      return false;
+    } catch {
+      return false;
+    } finally {
+      isRefreshing = false;
+      refreshPromise = null;
+    }
+  })();
+
+  return refreshPromise;
+}
+
+function clearAuth() {
+  accessToken = null;
+  refreshToken = null;
+  localStorage.removeItem("token");
+  localStorage.removeItem("refreshToken");
+  localStorage.removeItem("user");
+}
+
 async function request<T>(
   method: string,
   path: string,
   body?: unknown,
   extraHeaders?: Record<string, string>,
 ): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, {
-    method,
-    headers: headers(extraHeaders),
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, {
+      method,
+      headers: headers(extraHeaders),
+      body: body ? JSON.stringify(body) : undefined,
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("Request timed out");
+    }
+    throw new Error("Network error — check your connection");
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  // Handle 401 — try refresh before giving up
+  if (res.status === 401 && path !== "/auth/login" && path !== "/auth/refresh" && accessToken) {
+    const refreshed = await tryRefreshToken();
+    if (refreshed) {
+      // Retry the original request with new token
+      return request<T>(method, path, body, extraHeaders);
+    }
+    // Refresh failed — clear auth
+    clearAuth();
+    throw new Error("Session expired — please log in again");
+  }
 
   if (!res.ok) {
     const err = (await res.json().catch(() => ({}))) as ApiErrorResponse;
-
-    // Auto-logout on 401 (expired/invalid token) — only once
-    if (res.status === 401 && path !== "/auth/login" && path !== "/users/@me" && accessToken) {
-      accessToken = null;
-      localStorage.removeItem("token");
-      localStorage.removeItem("refreshToken");
-      localStorage.removeItem("user");
-    }
-
-    throw new Error(err.error?.message || `Request failed: ${res.status}`);
+    throw new Error(err.error?.message || `Request failed (${res.status})`);
   }
 
   if (res.status === 204) {
@@ -86,14 +162,39 @@ export interface User {
   displayName?: string;
   avatarUrl?: string;
   status?: "online" | "idle" | "dnd" | "offline";
+  twitchId?: string;
+  twitchLogin?: string;
+}
+
+export interface StreamStatus {
+  live: boolean;
+  linked: boolean;
+  title?: string;
+  game?: string;
+  viewers?: number;
+  startedAt?: string;
+  thumbnail?: string;
+}
+
+export interface SocialLink {
+  platform: string;
+  url: string;
+  verified?: boolean;
 }
 
 export interface UserProfile {
-  id: string;
+  userId: string;
   username: string;
   displayName?: string;
   avatarUrl?: string;
+  bannerUrl?: string;
   bio?: string;
+  accentColor?: string;
+  level: number;
+  totalXp: number;
+  socialLinks: SocialLink[];
+  createdAt: string;
+  updatedAt: string;
   status?: "online" | "idle" | "dnd" | "offline";
 }
 
@@ -113,6 +214,7 @@ export interface Guild {
   iconUrl?: string;
   ownerId: string;
   isStreamerServer: boolean;
+  streamerTwitchId?: string;
   memberCount: number;
   createdAt: string;
 }
@@ -148,6 +250,7 @@ export interface GuildMember {
   guildId: string;
   userId: string;
   nickname?: string;
+  roleIds: string[];
   joinedAt: string;
   muted: boolean;
 }
@@ -159,6 +262,8 @@ export interface Role {
   color?: string;
   position: number;
   permissions: number;
+  mentionable: boolean;
+  hoisted: boolean;
   isDefault: boolean;
 }
 
@@ -169,10 +274,33 @@ export interface Invite {
   code: string;
 }
 
+export interface Ban {
+  userId: string;
+  reason?: string;
+  bannedAt: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  guildId: string;
+  moderatorId: string;
+  targetId: string;
+  action: string;
+  reason?: string;
+  createdAt: string;
+}
+
+export interface ReactionGroup {
+  emoji: string;
+  count: number;
+  users: string[];
+}
+
 // ---- API client ----
 
 export const api = {
   setToken,
+  setRefreshToken,
 
   register(username: string, email: string, password: string) {
     return request<RegisterResponse>("POST", "/auth/register", {
@@ -198,8 +326,8 @@ export const api = {
     return request<LoginResponse>("POST", "/auth/login", { email, password });
   },
 
-  refresh(refreshToken: string) {
-    return request<RefreshResponse>("POST", "/auth/refresh", { refreshToken });
+  refresh(rt: string) {
+    return request<RefreshResponse>("POST", "/auth/refresh", { refreshToken: rt });
   },
 
   getMe() {
@@ -269,6 +397,13 @@ export const api = {
     });
   },
 
+  sendMessageWithReply(channelId: string, content: string, replyToId: string) {
+    return request<Message>("POST", `/channels/${channelId}/messages`, {
+      content,
+      replyToId,
+    });
+  },
+
   editMessage(messageId: string, content: string) {
     return request<Message>("PATCH", `/messages/${messageId}`, { content });
   },
@@ -283,5 +418,163 @@ export const api = {
 
   joinGuild(guildId: string) {
     return request<void>("POST", `/guilds/${guildId}/join`);
+  },
+
+  joinByInvite(code: string) {
+    return request<void>("POST", `/invites/${code}/use`);
+  },
+
+  updateGuild(id: string, data: { name?: string; description?: string }) {
+    return request<Guild>("PATCH", `/guilds/${id}`, data);
+  },
+
+  deleteGuild(id: string) {
+    return request<void>("DELETE", `/guilds/${id}`);
+  },
+
+  updateChannel(id: string, data: { name?: string; topic?: string }) {
+    return request<Channel>("PATCH", `/channels/${id}`, data);
+  },
+
+  deleteChannel(id: string) {
+    return request<void>("DELETE", `/channels/${id}`);
+  },
+
+  leaveGuild(id: string) {
+    return request<void>("DELETE", `/guilds/${id}/members/@me`);
+  },
+
+  // ---- Role methods ----
+
+  createRole(guildId: string, data: { name: string; color?: string; permissions?: number }) {
+    return request<Role>("POST", `/guilds/${guildId}/roles`, data);
+  },
+
+  updateRole(roleId: string, data: { guildId: string; name?: string; color?: string; permissions?: number; hoisted?: boolean; mentionable?: boolean }) {
+    return request<Role>("PATCH", `/roles/${roleId}`, data);
+  },
+
+  deleteRole(roleId: string) {
+    return request<void>("DELETE", `/roles/${roleId}`);
+  },
+
+  assignRole(guildId: string, userId: string, roleId: string) {
+    return request<void>("PUT", `/guilds/${guildId}/members/${userId}/roles/${roleId}`);
+  },
+
+  removeRole(guildId: string, userId: string, roleId: string) {
+    return request<void>("DELETE", `/guilds/${guildId}/members/${userId}/roles/${roleId}`);
+  },
+
+  // ---- Moderation methods ----
+
+  banMember(guildId: string, targetId: string, reason?: string) {
+    return request<void>("POST", `/guilds/${guildId}/bans`, { targetId, reason });
+  },
+
+  unbanMember(guildId: string, userId: string) {
+    return request<void>("DELETE", `/guilds/${guildId}/bans/${userId}`);
+  },
+
+  listBans(guildId: string) {
+    return request<Ban[]>("GET", `/guilds/${guildId}/bans`);
+  },
+
+  kickMember(guildId: string, userId: string) {
+    return request<void>("DELETE", `/guilds/${guildId}/members/${userId}`);
+  },
+
+  timeoutMember(guildId: string, userId: string, duration: number, reason?: string) {
+    return request<void>("POST", `/guilds/${guildId}/members/${userId}/timeout`, { duration, reason });
+  },
+
+  getAuditLog(guildId: string) {
+    return request<AuditLogEntry[]>("GET", `/guilds/${guildId}/audit-log`);
+  },
+
+  // ---- Twitch integration methods ----
+
+  enableTwitchIntegration(guildId: string, twitchId: string) {
+    return request<{ roles: Role[] }>("POST", `/guilds/${guildId}/twitch/enable`, { twitchId });
+  },
+
+  disableTwitchIntegration(guildId: string) {
+    return request<void>("POST", `/guilds/${guildId}/twitch/disable`);
+  },
+
+  syncTwitchRoles(guildId: string) {
+    return request<{ status: any; assigned: string[]; removed: string[]; errors: string[] }>("POST", `/guilds/${guildId}/twitch/sync`);
+  },
+
+  syncAllTwitchRoles(guildId: string) {
+    return request<{ message: string }>("POST", `/guilds/${guildId}/twitch/sync-all`);
+  },
+
+  // ---- Twitch auth methods ----
+
+  registerWithTwitch(
+    username: string,
+    email: string,
+    password: string,
+    twitchId: string,
+    twitchLogin: string,
+    twitchDisplayName: string,
+    twitchEmail: string,
+    twitchAvatar: string,
+  ) {
+    return request<RegisterResponse>("POST", "/auth/register", {
+      username,
+      email,
+      password,
+      twitchId,
+      twitchLogin,
+      twitchDisplayName,
+      twitchEmail,
+      twitchAvatar,
+    });
+  },
+
+  unlinkTwitch() {
+    return request<void>("DELETE", "/auth/twitch/link");
+  },
+
+  getStreamStatus(userId: string) {
+    return request<StreamStatus>("GET", `/users/${userId}/stream`);
+  },
+
+  // ---- Reaction methods ----
+
+  addReaction(messageId: string, emoji: string) {
+    return request<void>("PUT", `/messages/${messageId}/reactions/${encodeURIComponent(emoji)}/@me`);
+  },
+
+  removeReaction(messageId: string, emoji: string) {
+    return request<void>("DELETE", `/messages/${messageId}/reactions/${encodeURIComponent(emoji)}/@me`);
+  },
+
+  getReactions(messageId: string) {
+    return request<ReactionGroup[]>("GET", `/messages/${messageId}/reactions`);
+  },
+
+  // ---- Pin methods ----
+
+  pinMessage(messageId: string) {
+    return request<void>("PUT", `/messages/${messageId}/pin`);
+  },
+
+  unpinMessage(messageId: string) {
+    return request<void>("DELETE", `/messages/${messageId}/pin`);
+  },
+
+  getPinnedMessages(channelId: string) {
+    return request<Message[]>("GET", `/channels/${channelId}/pins`);
+  },
+
+  // ---- Search methods ----
+
+  searchMessages(channelId: string, query: string, limit?: number) {
+    const params = new URLSearchParams({ q: query });
+    if (limit) params.set("limit", String(limit));
+    return request<Message[]>("GET", `/channels/${channelId}/search?${params}`);
   },
 };

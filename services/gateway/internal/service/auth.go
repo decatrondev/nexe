@@ -45,6 +45,10 @@ func NewAuthService(
 	}
 }
 
+func (s *AuthService) GetUserByID(ctx context.Context, id string) (*model.User, error) {
+	return s.users.GetByID(ctx, id)
+}
+
 type RegisterInput struct {
 	Username string `json:"username"`
 	Email    string `json:"email"`
@@ -346,6 +350,12 @@ func (s *AuthService) ResetPassword(ctx context.Context, email, code, newPasswor
 
 	slog.Info("password reset successful", "email", email)
 	return nil
+}
+
+// CreateSessionForUser creates a session for a user without requiring password verification.
+// Used for OAuth-based logins (e.g. Twitch).
+func (s *AuthService) CreateSessionForUser(ctx context.Context, user *model.User, ip, userAgent string) (*AuthTokens, error) {
+	return s.createSession(ctx, user, ip, userAgent)
 }
 
 func (s *AuthService) createSession(ctx context.Context, user *model.User, ip, userAgent string) (*AuthTokens, error) {

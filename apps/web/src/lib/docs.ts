@@ -55,6 +55,27 @@ export function getDocList(): DocMeta[] {
     .sort((a, b) => a.title.localeCompare(b.title));
 }
 
+export interface CategorizedDocs {
+  documentation: DocMeta[];
+  roadmap: DocMeta[];
+}
+
+export function getCategorizedDocs(): CategorizedDocs {
+  const all = getDocList();
+  const documentation: DocMeta[] = [];
+  const roadmap: DocMeta[] = [];
+
+  for (const doc of all) {
+    if (doc.name.toUpperCase().startsWith("ROADMAP-")) {
+      roadmap.push(doc);
+    } else {
+      documentation.push(doc);
+    }
+  }
+
+  return { documentation, roadmap };
+}
+
 export function getDoc(slug: string): Doc | null {
   if (!fs.existsSync(DOCS_DIR)) {
     return null;

@@ -61,6 +61,7 @@ type GuildMember struct {
 	GuildID    string     `json:"guildId"`
 	UserID     string     `json:"userId"`
 	Nickname   *string    `json:"nickname,omitempty"`
+	RoleIds    []string   `json:"roleIds"`
 	JoinedAt   time.Time  `json:"joinedAt"`
 	Muted      bool       `json:"muted"`
 	MutedUntil *time.Time `json:"mutedUntil,omitempty"`

@@ -11,6 +11,8 @@ type User struct {
 	TwitchID             *string    `json:"twitchId,omitempty"`
 	TwitchLogin          *string    `json:"twitchLogin,omitempty"`
 	TwitchDisplayName    *string    `json:"twitchDisplayName,omitempty"`
+	TwitchAccessToken    *string    `json:"-"`
+	TwitchRefreshToken   *string    `json:"-"`
 	Status               string     `json:"status"`
 	CustomStatusText     *string    `json:"customStatusText,omitempty"`
 	CustomStatusEmoji    *string    `json:"customStatusEmoji,omitempty"`

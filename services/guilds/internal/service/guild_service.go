@@ -20,6 +20,7 @@ type GuildService struct {
 	members    *repository.MemberRepository
 	invites    *repository.InviteRepository
 	moderation *repository.ModerationRepository
+	events     *EventPublisher
 }
 
 func NewGuildService(
@@ -30,6 +31,7 @@ func NewGuildService(
 	members *repository.MemberRepository,
 	invites *repository.InviteRepository,
 	moderation *repository.ModerationRepository,
+	events *EventPublisher,
 ) *GuildService {
 	return &GuildService{
 		guilds:     guilds,
@@ -39,6 +41,7 @@ func NewGuildService(
 		members:    members,
 		invites:    invites,
 		moderation: moderation,
+		events:     events,
 	}
 }
 
@@ -84,6 +87,20 @@ func (s *GuildService) checkPermission(ctx context.Context, guildID, userID stri
 // ---------------------------------------------------------------------------
 
 func (s *GuildService) CreateGuild(ctx context.Context, name, description string, ownerID string, isStreamer bool) (*model.Guild, error) {
+	// Validate name length
+	if len(name) < 2 || len(name) > 100 {
+		return nil, fmt.Errorf("server name must be between 2 and 100 characters")
+	}
+
+	// Enforce tier limit: max servers owned
+	count, err := s.guilds.CountByOwner(ctx, ownerID)
+	if err != nil {
+		return nil, fmt.Errorf("create guild: %w", err)
+	}
+	if count >= model.FreeTierLimits.MaxServersOwned {
+		return nil, fmt.Errorf("server limit reached: you can own up to %d servers", model.FreeTierLimits.MaxServersOwned)
+	}
+
 	guild := &model.Guild{
 		Name:            name,
 		Description:     description,
@@ -96,7 +113,7 @@ func (s *GuildService) CreateGuild(ctx context.Context, name, description string
 	}
 
 	// Add owner as first member
-	_, err := s.members.Add(ctx, guild.ID, ownerID)
+	_, err = s.members.Add(ctx, guild.ID, ownerID)
 	if err != nil {
 		return nil, fmt.Errorf("create guild add owner: %w", err)
 	}
@@ -157,9 +174,24 @@ func (s *GuildService) ListUserGuilds(ctx context.Context, userID string) ([]mod
 // ---------------------------------------------------------------------------
 
 func (s *GuildService) CreateChannel(ctx context.Context, guildID, name, channelType string, categoryID *string, requesterID string) (*model.Channel, error) {
+	// Validate name length
+	if len(name) < 1 || len(name) > 100 {
+		return nil, fmt.Errorf("channel name must be between 1 and 100 characters")
+	}
+
 	if err := s.checkPermission(ctx, guildID, requesterID, model.PermManageChannels); err != nil {
 		return nil, err
 	}
+
+	// Enforce tier limit: max channels per guild
+	count, err := s.channels.CountByGuild(ctx, guildID)
+	if err != nil {
+		return nil, fmt.Errorf("create channel: %w", err)
+	}
+	if count >= model.FreeTierLimits.MaxChannelsPerGuild {
+		return nil, fmt.Errorf("channel limit reached: maximum %d channels per server", model.FreeTierLimits.MaxChannelsPerGuild)
+	}
+
 	ch := &model.Channel{
 		GuildID:    guildID,
 		Name:       name,
@@ -178,6 +210,14 @@ func (s *GuildService) ListChannels(ctx context.Context, guildID string) ([]mode
 		return nil, fmt.Errorf("list channels: %w", err)
 	}
 	return channels, nil
+}
+
+func (s *GuildService) GetChannel(ctx context.Context, channelID string) (*model.Channel, error) {
+	ch, err := s.channels.GetByID(ctx, channelID)
+	if err != nil {
+		return nil, fmt.Errorf("get channel: %w", err)
+	}
+	return ch, nil
 }
 
 func (s *GuildService) UpdateChannel(ctx context.Context, channel *model.Channel, requesterID string) error {
@@ -238,9 +278,35 @@ func (s *GuildService) ListCategories(ctx context.Context, guildID string) ([]mo
 // ---------------------------------------------------------------------------
 
 func (s *GuildService) CreateRole(ctx context.Context, guildID, name string, permissions int64, color string, requesterID string) (*model.Role, error) {
+	// Validate name length
+	if len(name) < 1 || len(name) > 50 {
+		return nil, fmt.Errorf("role name must be between 1 and 50 characters")
+	}
+
 	if err := s.checkPermission(ctx, guildID, requesterID, model.PermManageRoles); err != nil {
 		return nil, err
 	}
+
+	// Enforce tier limit: max roles per guild
+	count, err := s.roles.CountByGuild(ctx, guildID)
+	if err != nil {
+		return nil, fmt.Errorf("create role: %w", err)
+	}
+	if count >= model.FreeTierLimits.MaxRolesPerGuild {
+		return nil, fmt.Errorf("role limit reached: maximum %d roles per server", model.FreeTierLimits.MaxRolesPerGuild)
+	}
+
+	// Only the owner can create roles with Administrator permission
+	if model.HasPermission(permissions, model.PermAdministrator) {
+		guild, err := s.guilds.GetByID(ctx, guildID)
+		if err != nil {
+			return nil, fmt.Errorf("create role: %w", err)
+		}
+		if guild == nil || guild.OwnerID != requesterID {
+			return nil, fmt.Errorf("only the owner can create roles with Administrator permission")
+		}
+	}
+
 	role := &model.Role{
 		GuildID:     guildID,
 		Name:        name,
@@ -252,6 +318,12 @@ func (s *GuildService) CreateRole(ctx context.Context, guildID, name string, per
 	if err := s.roles.Create(ctx, role); err != nil {
 		return nil, fmt.Errorf("create role: %w", err)
 	}
+
+	go s.events.Publish(context.Background(), guildID, EventGuildRoleCreate, map[string]interface{}{
+		"guildId": guildID,
+		"role":    role,
+	})
+
 	return role, nil
 }
 
@@ -263,13 +335,39 @@ func (s *GuildService) ListRoles(ctx context.Context, guildID string) ([]model.R
 	return roles, nil
 }
 
+func (s *GuildService) GetRole(ctx context.Context, roleID string) (*model.Role, error) {
+	role, err := s.roles.GetByID(ctx, roleID)
+	if err != nil {
+		return nil, fmt.Errorf("get role: %w", err)
+	}
+	return role, nil
+}
+
 func (s *GuildService) UpdateRole(ctx context.Context, role *model.Role, requesterID string) error {
 	if err := s.checkPermission(ctx, role.GuildID, requesterID, model.PermManageRoles); err != nil {
 		return err
 	}
+
+	// Only the owner can set Administrator permission on a role
+	if model.HasPermission(role.Permissions, model.PermAdministrator) {
+		guild, err := s.guilds.GetByID(ctx, role.GuildID)
+		if err != nil {
+			return fmt.Errorf("update role: %w", err)
+		}
+		if guild == nil || guild.OwnerID != requesterID {
+			return fmt.Errorf("only the owner can grant Administrator permission")
+		}
+	}
+
 	if err := s.roles.Update(ctx, role); err != nil {
 		return fmt.Errorf("update role: %w", err)
 	}
+
+	go s.events.Publish(context.Background(), role.GuildID, EventGuildRoleUpdate, map[string]interface{}{
+		"guildId": role.GuildID,
+		"role":    role,
+	})
+
 	return nil
 }
 
@@ -287,6 +385,12 @@ func (s *GuildService) DeleteRole(ctx context.Context, roleID, requesterID strin
 	if err := s.roles.Delete(ctx, roleID); err != nil {
 		return fmt.Errorf("delete role: %w", err)
 	}
+
+	go s.events.Publish(context.Background(), role.GuildID, EventGuildRoleDelete, map[string]string{
+		"roleId":  roleID,
+		"guildId": role.GuildID,
+	})
+
 	return nil
 }
 
@@ -294,6 +398,22 @@ func (s *GuildService) AssignRole(ctx context.Context, guildID, userID, roleID, 
 	if err := s.checkPermission(ctx, guildID, requesterID, model.PermManageRoles); err != nil {
 		return err
 	}
+
+	// Only the owner can assign roles with Administrator permission
+	role, err := s.roles.GetByID(ctx, roleID)
+	if err != nil {
+		return fmt.Errorf("assign role: %w", err)
+	}
+	if role != nil && model.HasPermission(role.Permissions, model.PermAdministrator) {
+		guild, err := s.guilds.GetByID(ctx, guildID)
+		if err != nil {
+			return fmt.Errorf("assign role: %w", err)
+		}
+		if guild == nil || guild.OwnerID != requesterID {
+			return fmt.Errorf("only the owner can assign roles with Administrator permission")
+		}
+	}
+
 	member, err := s.members.GetByGuildAndUser(ctx, guildID, userID)
 	if err != nil {
 		return fmt.Errorf("assign role: %w", err)
@@ -304,6 +424,25 @@ func (s *GuildService) AssignRole(ctx context.Context, guildID, userID, roleID, 
 	if err := s.members.AssignRole(ctx, member.ID, roleID, requesterID); err != nil {
 		return fmt.Errorf("assign role: %w", err)
 	}
+
+	// Publish member update with current role IDs
+	go func() {
+		roles, err := s.members.GetMemberRoles(context.Background(), member.ID)
+		if err != nil {
+			slog.Error("failed to get member roles for event", "error", err)
+			return
+		}
+		roleIDs := make([]string, len(roles))
+		for i, r := range roles {
+			roleIDs[i] = r.ID
+		}
+		s.events.Publish(context.Background(), guildID, EventGuildMemberUpdate, map[string]interface{}{
+			"userId":  userID,
+			"guildId": guildID,
+			"roleIds": roleIDs,
+		})
+	}()
+
 	return nil
 }
 
@@ -321,6 +460,245 @@ func (s *GuildService) RemoveRole(ctx context.Context, guildID, userID, roleID, 
 	if err := s.members.RemoveRole(ctx, member.ID, roleID); err != nil {
 		return fmt.Errorf("remove role: %w", err)
 	}
+
+	// Publish member update with current role IDs
+	go func() {
+		roles, err := s.members.GetMemberRoles(context.Background(), member.ID)
+		if err != nil {
+			slog.Error("failed to get member roles for event", "error", err)
+			return
+		}
+		roleIDs := make([]string, len(roles))
+		for i, r := range roles {
+			roleIDs[i] = r.ID
+		}
+		s.events.Publish(context.Background(), guildID, EventGuildMemberUpdate, map[string]interface{}{
+			"userId":  userID,
+			"guildId": guildID,
+			"roleIds": roleIDs,
+		})
+	}()
+
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Twitch Integration
+// ---------------------------------------------------------------------------
+
+// twitchAutoRoleDef defines a Twitch auto-role to be created.
+type twitchAutoRoleDef struct {
+	Name     string
+	Source   string
+	Color    string
+	Position int
+}
+
+var twitchAutoRoles = []twitchAutoRoleDef{
+	{"Lead Moderator", "twitch_lead_mod", "#00AD03", 7},
+	{"Twitch Mod", "twitch_mod", "#2ECC71", 6},
+	{"Twitch VIP", "twitch_vip", "#E91916", 5},
+	{"Twitch Sub T3", "twitch_sub_t3", "#6610F2", 4},
+	{"Twitch Sub T2", "twitch_sub_t2", "#7B2FFF", 3},
+	{"Twitch Sub T1", "twitch_sub_t1", "#9146FF", 2},
+	{"Twitch Follower", "twitch_follower", "#BF94FF", 1},
+}
+
+// defaultPermsForSource returns the default permissions bitmask for a given auto-role source.
+func defaultPermsForSource(source string) int64 {
+	switch source {
+	case "twitch_lead_mod":
+		return model.PermAdministrator
+	case "twitch_mod":
+		return model.PermKickMembers | model.PermBanMembers | model.PermTimeoutMembers | model.PermManageMessages
+	default:
+		// VIP, subs, follower — same as @everyone (send messages)
+		return model.PermSendMessages
+	}
+}
+
+func (s *GuildService) EnableTwitchIntegration(ctx context.Context, guildID, ownerID, streamerTwitchID string) ([]model.Role, error) {
+	// 1. Verify owner
+	guild, err := s.guilds.GetByID(ctx, guildID)
+	if err != nil {
+		return nil, fmt.Errorf("enable twitch: %w", err)
+	}
+	if guild == nil {
+		return nil, fmt.Errorf("guild not found")
+	}
+	if guild.OwnerID != ownerID {
+		return nil, fmt.Errorf("only the owner can enable Twitch integration")
+	}
+
+	// 2. Update guild with streamer Twitch ID
+	if err := s.guilds.SetStreamerTwitchID(ctx, guildID, streamerTwitchID); err != nil {
+		return nil, fmt.Errorf("enable twitch: %w", err)
+	}
+
+	// 3. Create auto-roles (skip any that already exist)
+	var created []model.Role
+	for _, ar := range twitchAutoRoles {
+		existing, err := s.roles.GetAutoRoleBySource(ctx, guildID, ar.Source)
+		if err != nil {
+			return nil, fmt.Errorf("enable twitch check role: %w", err)
+		}
+		if existing != nil {
+			created = append(created, *existing)
+			continue
+		}
+
+		color := ar.Color
+		source := ar.Source
+		role := &model.Role{
+			GuildID:     guildID,
+			Name:        ar.Name,
+			Color:       &color,
+			Position:    ar.Position,
+			Permissions: defaultPermsForSource(ar.Source),
+			IsAuto:      true,
+			AutoSource:  &source,
+			Hoisted:     true,
+		}
+		if err := s.roles.Create(ctx, role); err != nil {
+			return nil, fmt.Errorf("enable twitch create role %s: %w", ar.Name, err)
+		}
+		created = append(created, *role)
+
+		go s.events.Publish(context.Background(), guildID, EventGuildRoleCreate, map[string]interface{}{
+			"guildId": guildID,
+			"role":    role,
+		})
+	}
+
+	slog.Info("twitch integration enabled", "guild_id", guildID, "twitch_id", streamerTwitchID, "roles_created", len(created))
+	return created, nil
+}
+
+func (s *GuildService) DisableTwitchIntegration(ctx context.Context, guildID, ownerID string) error {
+	// 1. Verify owner
+	guild, err := s.guilds.GetByID(ctx, guildID)
+	if err != nil {
+		return fmt.Errorf("disable twitch: %w", err)
+	}
+	if guild == nil {
+		return fmt.Errorf("guild not found")
+	}
+	if guild.OwnerID != ownerID {
+		return fmt.Errorf("only the owner can disable Twitch integration")
+	}
+
+	// 2. Get auto-roles before deleting (for events)
+	autoRoles, err := s.roles.ListAutoRolesByGuild(ctx, guildID)
+	if err != nil {
+		return fmt.Errorf("disable twitch list roles: %w", err)
+	}
+
+	// 3. Delete all auto-roles
+	if err := s.roles.DeleteAutoRolesByGuild(ctx, guildID); err != nil {
+		return fmt.Errorf("disable twitch delete roles: %w", err)
+	}
+
+	// 4. Clear streamer Twitch ID
+	if err := s.guilds.ClearStreamerTwitchID(ctx, guildID); err != nil {
+		return fmt.Errorf("disable twitch: %w", err)
+	}
+
+	// Publish role delete events
+	for _, role := range autoRoles {
+		go s.events.Publish(context.Background(), guildID, EventGuildRoleDelete, map[string]string{
+			"roleId":  role.ID,
+			"guildId": guildID,
+		})
+	}
+
+	slog.Info("twitch integration disabled", "guild_id", guildID, "roles_removed", len(autoRoles))
+	return nil
+}
+
+// AssignAutoRole assigns an auto-role to a member without requiring ManageRoles permission.
+// Used by the gateway's Twitch sync endpoint.
+func (s *GuildService) AssignAutoRole(ctx context.Context, guildID, userID, roleID string) error {
+	role, err := s.roles.GetByID(ctx, roleID)
+	if err != nil {
+		return fmt.Errorf("assign auto role: %w", err)
+	}
+	if role == nil || !role.IsAuto {
+		return fmt.Errorf("role not found or not an auto-role")
+	}
+	if role.GuildID != guildID {
+		return fmt.Errorf("role does not belong to this guild")
+	}
+
+	member, err := s.members.GetByGuildAndUser(ctx, guildID, userID)
+	if err != nil {
+		return fmt.Errorf("assign auto role: %w", err)
+	}
+	if member == nil {
+		return fmt.Errorf("not a member of this guild")
+	}
+	if err := s.members.AssignRole(ctx, member.ID, roleID, userID); err != nil {
+		return fmt.Errorf("assign auto role: %w", err)
+	}
+
+	go func() {
+		roles, err := s.members.GetMemberRoles(context.Background(), member.ID)
+		if err != nil {
+			return
+		}
+		roleIDs := make([]string, len(roles))
+		for i, r := range roles {
+			roleIDs[i] = r.ID
+		}
+		s.events.Publish(context.Background(), guildID, EventGuildMemberUpdate, map[string]interface{}{
+			"userId":  userID,
+			"guildId": guildID,
+			"roleIds": roleIDs,
+		})
+	}()
+
+	return nil
+}
+
+// RemoveAutoRole removes an auto-role from a member without requiring ManageRoles permission.
+func (s *GuildService) RemoveAutoRole(ctx context.Context, guildID, userID, roleID string) error {
+	role, err := s.roles.GetByID(ctx, roleID)
+	if err != nil {
+		return fmt.Errorf("remove auto role: %w", err)
+	}
+	if role == nil || !role.IsAuto {
+		return fmt.Errorf("role not found or not an auto-role")
+	}
+	if role.GuildID != guildID {
+		return fmt.Errorf("role does not belong to this guild")
+	}
+
+	member, err := s.members.GetByGuildAndUser(ctx, guildID, userID)
+	if err != nil {
+		return fmt.Errorf("remove auto role: %w", err)
+	}
+	if member == nil {
+		return fmt.Errorf("not a member of this guild")
+	}
+	if err := s.members.RemoveRole(ctx, member.ID, roleID); err != nil {
+		return fmt.Errorf("remove auto role: %w", err)
+	}
+
+	go func() {
+		roles, err := s.members.GetMemberRoles(context.Background(), member.ID)
+		if err != nil {
+			return
+		}
+		roleIDs := make([]string, len(roles))
+		for i, r := range roles {
+			roleIDs[i] = r.ID
+		}
+		s.events.Publish(context.Background(), guildID, EventGuildMemberUpdate, map[string]interface{}{
+			"userId":  userID,
+			"guildId": guildID,
+			"roleIds": roleIDs,
+		})
+	}()
+
 	return nil
 }
 
@@ -338,6 +716,15 @@ func (s *GuildService) JoinGuild(ctx context.Context, guildID, userID string) (*
 		return existing, nil
 	}
 
+	// Enforce tier limit: max servers joined
+	count, err := s.guilds.CountMemberships(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("join guild: %w", err)
+	}
+	if count >= model.FreeTierLimits.MaxServersJoined {
+		return nil, fmt.Errorf("server limit reached: you can join up to %d servers", model.FreeTierLimits.MaxServersJoined)
+	}
+
 	// Check if banned
 	ban, err := s.moderation.GetBan(ctx, guildID, userID)
 	if err != nil {
@@ -351,6 +738,13 @@ func (s *GuildService) JoinGuild(ctx context.Context, guildID, userID string) (*
 	if err != nil {
 		return nil, fmt.Errorf("join guild: %w", err)
 	}
+
+	// Publish member join event
+	go s.events.Publish(context.Background(), guildID, "GUILD_MEMBER_ADD", map[string]string{
+		"userId":  userID,
+		"guildId": guildID,
+	})
+
 	return member, nil
 }
 
@@ -472,6 +866,15 @@ func (s *GuildService) BanMember(ctx context.Context, guildID, targetID, modID, 
 		return err
 	}
 
+	// Protect guild owner from being banned
+	guild, err := s.guilds.GetByID(ctx, guildID)
+	if err != nil {
+		return fmt.Errorf("ban member: %w", err)
+	}
+	if guild != nil && guild.OwnerID == targetID {
+		return fmt.Errorf("cannot ban the server owner")
+	}
+
 	// Remove member from guild
 	_ = s.members.Remove(ctx, guildID, targetID)
 
@@ -481,6 +884,14 @@ func (s *GuildService) BanMember(ctx context.Context, guildID, targetID, modID, 
 
 	// Log action
 	s.logModAction(ctx, guildID, modID, targetID, "ban", reason, nil)
+
+	// Publish event for real-time broadcast (fire-and-forget)
+	go s.events.Publish(context.Background(), guildID, EventGuildMemberRemove, map[string]interface{}{
+		"userId":  targetID,
+		"guildId": guildID,
+		"banned":  true,
+	})
+
 	return nil
 }
 
@@ -493,6 +904,13 @@ func (s *GuildService) UnbanMember(ctx context.Context, guildID, targetID, modID
 	}
 
 	s.logModAction(ctx, guildID, modID, targetID, "unban", "", nil)
+
+	// Publish event for real-time broadcast (fire-and-forget)
+	go s.events.Publish(context.Background(), guildID, EventGuildBanRemove, map[string]string{
+		"userId":  targetID,
+		"guildId": guildID,
+	})
+
 	return nil
 }
 
@@ -500,11 +918,28 @@ func (s *GuildService) KickMember(ctx context.Context, guildID, targetID, modID,
 	if err := s.checkPermission(ctx, guildID, modID, model.PermKickMembers); err != nil {
 		return err
 	}
+
+	// Protect guild owner from being kicked
+	guild, err := s.guilds.GetByID(ctx, guildID)
+	if err != nil {
+		return fmt.Errorf("kick member: %w", err)
+	}
+	if guild != nil && guild.OwnerID == targetID {
+		return fmt.Errorf("cannot kick the server owner")
+	}
+
 	if err := s.members.Remove(ctx, guildID, targetID); err != nil {
 		return fmt.Errorf("kick member: %w", err)
 	}
 
 	s.logModAction(ctx, guildID, modID, targetID, "kick", reason, nil)
+
+	// Publish event for real-time broadcast (fire-and-forget)
+	go s.events.Publish(context.Background(), guildID, EventGuildMemberRemove, map[string]string{
+		"userId":  targetID,
+		"guildId": guildID,
+	})
+
 	return nil
 }
 
@@ -512,6 +947,16 @@ func (s *GuildService) TimeoutMember(ctx context.Context, guildID, targetID, mod
 	if err := s.checkPermission(ctx, guildID, modID, model.PermTimeoutMembers); err != nil {
 		return err
 	}
+
+	// Protect guild owner from being timed out
+	guild, err := s.guilds.GetByID(ctx, guildID)
+	if err != nil {
+		return fmt.Errorf("timeout member: %w", err)
+	}
+	if guild != nil && guild.OwnerID == targetID {
+		return fmt.Errorf("cannot timeout the server owner")
+	}
+
 	if err := s.moderation.Timeout(ctx, guildID, targetID, duration); err != nil {
 		return fmt.Errorf("timeout member: %w", err)
 	}

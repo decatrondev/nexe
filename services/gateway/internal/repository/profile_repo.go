@@ -22,12 +22,14 @@ func (r *ProfileRepository) GetByUserID(ctx context.Context, userID string) (*mo
 	var layout, socialLinks, featuredClips, streamSchedule, visibility []byte
 
 	err := r.db.QueryRowContext(ctx, `
-		SELECT user_id, display_name, bio, avatar_url, banner_url,
-		       accent_color, background_url, layout, social_links,
-		       featured_clips, stream_schedule, visibility,
-		       level, total_xp, created_at, updated_at
-		FROM profiles WHERE user_id = $1`, userID,
-	).Scan(&p.UserID, &p.DisplayName, &p.Bio, &p.AvatarUrl, &p.BannerUrl,
+		SELECT p.user_id, u.username, p.display_name, p.bio, p.avatar_url, p.banner_url,
+		       p.accent_color, p.background_url, p.layout, p.social_links,
+		       p.featured_clips, p.stream_schedule, p.visibility,
+		       p.level, p.total_xp, p.created_at, p.updated_at
+		FROM profiles p
+		JOIN users u ON u.id = p.user_id
+		WHERE p.user_id = $1`, userID,
+	).Scan(&p.UserID, &p.Username, &p.DisplayName, &p.Bio, &p.AvatarUrl, &p.BannerUrl,
 		&p.AccentColor, &p.BackgroundUrl, &layout, &socialLinks,
 		&featuredClips, &streamSchedule, &visibility,
 		&p.Level, &p.TotalXP, &p.CreatedAt, &p.UpdatedAt)

@@ -9,14 +9,13 @@ import (
 )
 
 // DefaultEveryonePermissions is the default permission set for the @everyone role.
-const DefaultEveryonePermissions int64 = 0x00000001 | // VIEW_CHANNELS
-	0x00000800 | // SEND_MESSAGES
-	0x00004000 | // EMBED_LINKS
-	0x00008000 | // ATTACH_FILES
-	0x00010000 | // READ_MESSAGE_HISTORY
-	0x00100000 | // CONNECT (voice)
-	0x00200000 | // SPEAK (voice)
-	0x02000000 // CHANGE_NICKNAME
+// Uses bit shifts matching model/permissions.go constants.
+const DefaultEveryonePermissions int64 = model.PermSendMessages | // 1 << 16
+	model.PermEmbedLinks | // 1 << 19
+	model.PermAttachFiles | // 1 << 20
+	model.PermReadMessageHistory | // 1 << 21
+	model.PermAddReactions | // 1 << 24
+	model.PermCreateInvite // 1 << 32
 
 type GuildRepository struct {
 	db *sql.DB
@@ -65,11 +64,11 @@ func (r *GuildRepository) GetByID(ctx context.Context, id string) (*model.Guild,
 	var g model.Guild
 	err := r.db.QueryRowContext(ctx,
 		`SELECT id, name, description, icon_url, banner_url, owner_id,
-		        is_streamer_server, member_count, features, created_at, updated_at
+		        is_streamer_server, streamer_twitch_id, member_count, features, created_at, updated_at
 		 FROM guilds WHERE id = $1`, id,
 	).Scan(
 		&g.ID, &g.Name, &g.Description, &g.IconUrl, &g.BannerUrl, &g.OwnerID,
-		&g.IsStreamerServer, &g.MemberCount, pqJSONArray(&g.Features), &g.CreatedAt, &g.UpdatedAt,
+		&g.IsStreamerServer, &g.StreamerTwitchID, &g.MemberCount, pqJSONArray(&g.Features), &g.CreatedAt, &g.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -103,10 +102,28 @@ func (r *GuildRepository) Delete(ctx context.Context, id string) error {
 	return nil
 }
 
+func (r *GuildRepository) CountByOwner(ctx context.Context, ownerID string) (int, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM guilds WHERE owner_id = $1`, ownerID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("guild count by owner: %w", err)
+	}
+	return count, nil
+}
+
+func (r *GuildRepository) CountMemberships(ctx context.Context, userID string) (int, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM guild_members WHERE user_id = $1`, userID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("guild count memberships: %w", err)
+	}
+	return count, nil
+}
+
 func (r *GuildRepository) ListByUser(ctx context.Context, userID string) ([]model.Guild, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT g.id, g.name, g.description, g.icon_url, g.banner_url, g.owner_id,
-		        g.is_streamer_server, g.member_count, g.features, g.created_at, g.updated_at
+		        g.is_streamer_server, g.streamer_twitch_id, g.member_count, g.features, g.created_at, g.updated_at
 		 FROM guilds g
 		 JOIN guild_members gm ON gm.guild_id = g.id
 		 WHERE gm.user_id = $1
@@ -122,11 +139,31 @@ func (r *GuildRepository) ListByUser(ctx context.Context, userID string) ([]mode
 		var g model.Guild
 		if err := rows.Scan(
 			&g.ID, &g.Name, &g.Description, &g.IconUrl, &g.BannerUrl, &g.OwnerID,
-			&g.IsStreamerServer, &g.MemberCount, pqJSONArray(&g.Features), &g.CreatedAt, &g.UpdatedAt,
+			&g.IsStreamerServer, &g.StreamerTwitchID, &g.MemberCount, pqJSONArray(&g.Features), &g.CreatedAt, &g.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("guild list by user scan: %w", err)
 		}
 		guilds = append(guilds, g)
 	}
 	return guilds, rows.Err()
+}
+
+func (r *GuildRepository) SetStreamerTwitchID(ctx context.Context, guildID, twitchID string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE guilds SET streamer_twitch_id = $1, updated_at = NOW() WHERE id = $2`,
+		twitchID, guildID)
+	if err != nil {
+		return fmt.Errorf("guild set streamer twitch id: %w", err)
+	}
+	return nil
+}
+
+func (r *GuildRepository) ClearStreamerTwitchID(ctx context.Context, guildID string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE guilds SET streamer_twitch_id = NULL, updated_at = NOW() WHERE id = $1`,
+		guildID)
+	if err != nil {
+		return fmt.Errorf("guild clear streamer twitch id: %w", err)
+	}
+	return nil
 }

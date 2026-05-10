@@ -21,5 +21,6 @@ export default defineConfig({
     host: host || "0.0.0.0",
     hmr: host ? { protocol: "ws", host, port: 1421 } : undefined,
     watch: { ignored: ["**/src-tauri/**"] },
+    allowedHosts: ["nexeapp.decatron.net", "app.nexe.decatron.net", "localhost"],
   },
 });

@@ -44,10 +44,13 @@ func main() {
 	inviteRepo := repository.NewInviteRepository(db)
 	moderationRepo := repository.NewModerationRepository(db)
 
+	// Event publisher (Redis pub/sub for real-time broadcasting via gateway)
+	eventPublisher := service.NewEventPublisher(rdb)
+
 	// Service
 	guildService := service.NewGuildService(
 		guildRepo, channelRepo, categoryRepo, roleRepo,
-		memberRepo, inviteRepo, moderationRepo,
+		memberRepo, inviteRepo, moderationRepo, eventPublisher,
 	)
 
 	// Handler

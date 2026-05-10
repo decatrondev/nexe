@@ -1,0 +1,19 @@
+[Unit]
+Description=Nexe Gateway Service
+After=network.target postgresql.service redis.service
+Wants=postgresql.service redis.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/www/html/nexe/services/gateway
+EnvironmentFile=/var/www/html/nexe/services/gateway/.env
+ExecStart=/var/www/html/nexe/services/gateway/bin/gateway
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nexe-gateway
+
+[Install]
+WantedBy=multi-user.target

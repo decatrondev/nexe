@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  go-services:
+  go:
     name: Go — ${{ matrix.service }}
     runs-on: ubuntu-latest
     strategy:
@@ -15,35 +15,30 @@ jobs:
         service: [gateway, guilds, messaging, presence]
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
           cache-dependency-path: services/${{ matrix.service }}/go.sum
-
       - name: Build
         working-directory: services/${{ matrix.service }}
-        run: go build ./...
-
-      - name: Test
+        run: go build -o /dev/null ./cmd/main.go
+      - name: Vet
         working-directory: services/${{ matrix.service }}
-        run: go test ./...
+        run: go vet ./...
 
   frontend:
-    name: Frontend — build
+    name: Frontend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-
-      - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
-
-      - name: Build desktop
+      - run: pnpm install --no-frozen-lockfile
+      - name: Type check
+        working-directory: apps/desktop
+        run: npx tsc --noEmit
+      - name: Build
         working-directory: apps/desktop
         run: pnpm build

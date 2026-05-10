@@ -1,5 +1,7 @@
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
 import { useGuildStore } from "../stores/guild";
+import { useAuthStore } from "../stores/auth";
+import { FREE_TIER_LIMITS } from "../lib/limits";
 
 interface CreateGuildModalProps {
   onClose: () => void;
@@ -12,6 +14,19 @@ export default function CreateGuildModal({ onClose }: CreateGuildModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const createGuild = useGuildStore((s) => s.createGuild);
+  const guilds = useGuildStore((s) => s.guilds);
+  const user = useAuthStore((s) => s.user);
+
+  const ownedCount = guilds.filter((g) => g.ownerId === user?.id).length;
+  const atLimit = ownedCount >= FREE_TIER_LIMITS.MAX_SERVERS_OWNED;
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose();
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -29,11 +44,20 @@ export default function CreateGuildModal({ onClose }: CreateGuildModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="w-full max-w-md rounded-2xl bg-dark-850 p-6 shadow-2xl">
-        <h2 className="mb-4 text-xl font-bold text-slate-100">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div className="w-full max-w-md rounded-2xl bg-dark-850 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <h2 className="mb-1 text-xl font-bold text-slate-100">
           Create a Server
         </h2>
+        <p className="mb-4 text-xs text-slate-500">
+          {ownedCount}/{FREE_TIER_LIMITS.MAX_SERVERS_OWNED} servers
+        </p>
+
+        {atLimit && (
+          <div className="mb-4 rounded-lg bg-yellow-500/10 px-4 py-3 text-sm text-yellow-400 border border-yellow-500/20">
+            You've reached the maximum of {FREE_TIER_LIMITS.MAX_SERVERS_OWNED} servers
+          </div>
+        )}
 
         {error && (
           <div className="mb-4 rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400 border border-red-500/20">
@@ -90,7 +114,7 @@ export default function CreateGuildModal({ onClose }: CreateGuildModalProps) {
             </button>
             <button
               type="submit"
-              disabled={loading || !name.trim()}
+              disabled={loading || !name.trim() || atLimit}
               className="flex-1 rounded-lg bg-nexe-500 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-nexe-600 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? "Creating..." : "Create"}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"os"
@@ -52,9 +53,9 @@ func main() {
 
 	// Handlers
 	authHandler := handler.NewAuthHandler(authSvc)
-	wsHandler := handler.NewWSHandler(jwtSvc)
+	wsHandler := handler.NewWSHandler(jwtSvc, rdb, cfg.GuildsURL)
 	profileHandler := handler.NewProfileHandler(profileRepo)
-	twitchHandler := handler.NewTwitchHandler(twitchSvc, userRepo, authSvc, jwtSvc, rdb, cfg.TwitchEventSubSecret, cfg.BaseURL)
+	twitchHandler := handler.NewTwitchHandler(twitchSvc, userRepo, authSvc, jwtSvc, rdb, cfg.TwitchEventSubSecret, cfg.BaseURL, cfg.FrontendURL)
 	botHandler := handler.NewBotHandler(botRepo, jwtSvc)
 	proxyHandler := handler.NewProxyHandler(cfg.GuildsURL, cfg.MessagingURL, cfg.PresenceURL)
 
@@ -146,6 +147,12 @@ func main() {
 	mux.Handle("GET /guilds/{id}/bans", guildsProxy(gp))
 	mux.Handle("POST /guilds/{id}/members/{uid}/timeout", guildsProxy(gp))
 	mux.Handle("GET /guilds/{id}/audit-log", guildsProxy(gp))
+	mux.Handle("POST /guilds/{id}/twitch/enable", guildsProxy(gp))
+	mux.Handle("POST /guilds/{id}/twitch/disable", guildsProxy(gp))
+	mux.Handle("PUT /guilds/{id}/members/{uid}/auto-roles/{rid}", guildsProxy(gp))
+	mux.Handle("DELETE /guilds/{id}/members/{uid}/auto-roles/{rid}", guildsProxy(gp))
+	mux.Handle("POST /guilds/{id}/twitch/sync", authMiddleware(http.HandlerFunc(twitchHandler.SyncTwitchRoles)))
+	mux.Handle("POST /guilds/{id}/twitch/sync-all", authMiddleware(http.HandlerFunc(twitchHandler.SyncAllMembers)))
 
 	// Proxy to messaging service (authenticated)
 	mp := http.HandlerFunc(proxyHandler.ProxyMessaging)
@@ -164,8 +171,24 @@ func main() {
 	mux.Handle("DELETE /messages/{id}/reactions/{emoji}/@me", guildsProxy(mp))
 	mux.Handle("DELETE /messages/{id}/reactions", guildsProxy(mp))
 
+	// Proxy to presence service (authenticated)
+	pp := http.HandlerFunc(proxyHandler.ProxyPresence)
+	mux.Handle("GET /users/{id}/presence", guildsProxy(pp))
+	mux.Handle("PATCH /users/@me/presence", guildsProxy(pp))
+	mux.Handle("PATCH /users/@me/status", guildsProxy(pp))
+	mux.Handle("POST /users/@me/heartbeat", guildsProxy(pp))
+	mux.Handle("POST /users/@me/offline", guildsProxy(pp))
+	mux.Handle("POST /users/{id}/stream-status", guildsProxy(pp))
+	mux.Handle("GET /guilds/{id}/online", guildsProxy(pp))
+	mux.Handle("POST /guilds/{id}/track", guildsProxy(pp))
+	mux.Handle("POST /guilds/{id}/untrack", guildsProxy(pp))
+	mux.Handle("POST /users/bulk-presence", guildsProxy(pp))
+
 	// WebSocket
 	mux.HandleFunc("GET /ws", wsHandler.HandleWS)
+
+	// Start Redis event subscriber for real-time broadcasting
+	go wsHandler.StartRedisSubscriber(context.Background())
 
 	// CORS middleware
 	corsHandler := corsMiddleware(mux)

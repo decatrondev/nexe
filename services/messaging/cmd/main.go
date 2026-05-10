@@ -39,8 +39,11 @@ func main() {
 	messageRepo := repository.NewMessageRepository(db)
 	reactionRepo := repository.NewReactionRepository(db)
 
+	// Event publisher (Redis pub/sub)
+	eventPublisher := service.NewEventPublisher(rdb)
+
 	// Service
-	messageSvc := service.NewMessageService(messageRepo, reactionRepo)
+	messageSvc := service.NewMessageService(messageRepo, reactionRepo, eventPublisher)
 
 	// Handler
 	messageHandler := handler.NewMessageHandler(messageSvc)

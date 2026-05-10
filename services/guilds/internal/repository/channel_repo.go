@@ -75,18 +75,33 @@ func (r *ChannelRepository) ListByGuild(ctx context.Context, guildID string) ([]
 }
 
 func (r *ChannelRepository) Update(ctx context.Context, ch *model.Channel) error {
-	_, err := r.db.ExecContext(ctx,
+	err := r.db.QueryRowContext(ctx,
 		`UPDATE channels
 		 SET category_id = $1, name = $2, topic = $3, type = $4, position = $5,
 		     slowmode_seconds = $6, is_sub_only = $7, is_live_channel = $8, updated_at = NOW()
-		 WHERE id = $9`,
+		 WHERE id = $9
+		 RETURNING id, guild_id, category_id, name, topic, type, position,
+		           slowmode_seconds, is_sub_only, is_live_channel, created_at, updated_at`,
 		ch.CategoryID, ch.Name, ch.Topic, ch.Type, ch.Position,
 		ch.SlowmodeSeconds, ch.IsSubOnly, ch.IsLiveChannel, ch.ID,
+	).Scan(
+		&ch.ID, &ch.GuildID, &ch.CategoryID, &ch.Name, &ch.Topic, &ch.Type,
+		&ch.Position, &ch.SlowmodeSeconds, &ch.IsSubOnly, &ch.IsLiveChannel,
+		&ch.CreatedAt, &ch.UpdatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("channel update: %w", err)
 	}
 	return nil
+}
+
+func (r *ChannelRepository) CountByGuild(ctx context.Context, guildID string) (int, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM channels WHERE guild_id = $1`, guildID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("channel count by guild: %w", err)
+	}
+	return count, nil
 }
 
 func (r *ChannelRepository) Delete(ctx context.Context, id string) error {

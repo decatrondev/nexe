@@ -5,11 +5,15 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: deploy
+  cancel-in-progress: true
+
 jobs:
   deploy:
     name: Deploy to VPS
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: []
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
@@ -17,9 +21,9 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          script_stop: true
           script: |
-            export PATH=$PATH:/snap/bin:/usr/local/bin
-
+            set -e
             cd /var/www/html/nexe
             git pull origin main
 
@@ -31,15 +35,16 @@ jobs:
             done
 
             # Build frontend
-            cd /var/www/html/nexe
+            cd /var/www/html/nexe/apps/desktop
             pnpm install --no-frozen-lockfile
-            cd apps/desktop && pnpm build
-            cd ../web && pnpm build
+            pnpm build
+
+            # Build web
+            cd /var/www/html/nexe/apps/web
+            pnpm install --no-frozen-lockfile
+            npx next build
 
             # Restart services
-            cd /root
-            for svc in nexe-gateway nexe-guilds nexe-messaging nexe-presence nexe-web nexe-desktop; do
-              ./web-services.sh restart $svc
-            done
+            systemctl restart nexe-gateway nexe-guilds nexe-messaging nexe-presence nexe-web
 
             echo "Deploy complete!"

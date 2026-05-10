@@ -1,0 +1,19 @@
+[Unit]
+Description=Nexe Messaging Service
+After=network.target postgresql.service redis.service
+Wants=postgresql.service redis.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/www/html/nexe/services/messaging
+EnvironmentFile=/var/www/html/nexe/services/messaging/.env
+ExecStart=/var/www/html/nexe/services/messaging/bin/messaging
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nexe-messaging
+
+[Install]
+WantedBy=multi-user.target

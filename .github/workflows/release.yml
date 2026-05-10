@@ -1,16 +1,14 @@
-name: Build & Release Desktop
+name: Release
 
 on:
   push:
-    tags:
-      - "v*"
-  workflow_dispatch:
+    tags: ["v*"]
 
 permissions:
   contents: write
 
 jobs:
-  build-desktop:
+  build:
     name: Build — ${{ matrix.platform }}
     strategy:
       fail-fast: false
@@ -25,7 +23,6 @@ jobs:
           - platform: linux
             os: ubuntu-22.04
             args: ""
-
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -47,15 +44,12 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
 
       - uses: pnpm/action-setup@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
 
-      - name: Install root dependencies
-        run: pnpm install --no-frozen-lockfile
-
-      - name: Install desktop dependencies
+      - run: pnpm install --no-frozen-lockfile
+      - name: Install desktop deps
         working-directory: apps/desktop
         run: pnpm install
 
@@ -74,9 +68,9 @@ jobs:
           releaseBody: |
             ## Nexe ${{ github.ref_name }}
 
-            Download the installer for your platform:
-            - **Windows:** `.exe` (installer) or `.msi`
-            - **macOS:** `.dmg` (Universal — Intel + Apple Silicon)
-            - **Linux:** `.deb` (Ubuntu/Debian) or `.AppImage`
+            Download for your platform:
+            - **Windows:** `.exe` or `.msi`
+            - **macOS:** `.dmg` (Universal)
+            - **Linux:** `.deb` or `.AppImage`
           releaseDraft: false
           prerelease: false

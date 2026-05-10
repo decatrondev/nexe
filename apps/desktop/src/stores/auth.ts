@@ -1,11 +1,13 @@
 import { create } from "zustand";
 import { api, type User } from "../lib/api";
+import { useGuildStore } from "./guild";
 
 interface AuthState {
   user: User | null;
   token: string | null;
   refreshToken: string | null;
   isAuthenticated: boolean;
+  authLoading: boolean; // true until loadFromStorage finishes
   login: (email: string, password: string) => Promise<void>;
   register: (
     username: string,
@@ -14,7 +16,7 @@ interface AuthState {
   ) => Promise<{ userId: string; email: string }>;
   verifyEmail: (email: string, code: string) => Promise<void>;
   logout: () => void;
-  loadFromStorage: () => void;
+  loadFromStorage: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -22,10 +24,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   token: null,
   refreshToken: null,
   isAuthenticated: false,
+  authLoading: true, // starts true — don't render routes until checked
 
   async login(email: string, password: string) {
     const res = await api.login(email, password);
     api.setToken(res.accessToken);
+    api.setRefreshToken(res.refreshToken);
     localStorage.setItem("token", res.accessToken);
     localStorage.setItem("refreshToken", res.refreshToken);
     localStorage.setItem("user", JSON.stringify(res.user));
@@ -48,9 +52,11 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout() {
     api.setToken(null);
+    api.setRefreshToken(null);
     localStorage.removeItem("token");
     localStorage.removeItem("refreshToken");
     localStorage.removeItem("user");
+    useGuildStore.getState().reset();
     set({
       user: null,
       token: null,
@@ -61,26 +67,27 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   async loadFromStorage() {
     const token = localStorage.getItem("token");
-    const refreshToken = localStorage.getItem("refreshToken");
+    const rt = localStorage.getItem("refreshToken");
     const userJson = localStorage.getItem("user");
 
     if (token && userJson) {
       try {
         const user = JSON.parse(userJson) as User;
         api.setToken(token);
+        if (rt) api.setRefreshToken(rt);
 
-        // Validate token is still valid
-        await api.getMe();
+        const me = await api.getMe();
 
         set({
-          user,
-          token,
-          refreshToken,
+          user: me ?? user,
+          token: localStorage.getItem("token") ?? token,
+          refreshToken: localStorage.getItem("refreshToken") ?? rt,
           isAuthenticated: true,
+          authLoading: false,
         });
       } catch {
-        // Token expired or invalid — clear everything
         api.setToken(null);
+        api.setRefreshToken(null);
         localStorage.removeItem("token");
         localStorage.removeItem("refreshToken");
         localStorage.removeItem("user");
@@ -89,8 +96,11 @@ export const useAuthStore = create<AuthState>((set) => ({
           token: null,
           refreshToken: null,
           isAuthenticated: false,
+          authLoading: false,
         });
       }
+    } else {
+      set({ authLoading: false });
     }
   },
 }));
