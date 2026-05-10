@@ -124,12 +124,12 @@ func (h *WSHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 	go h.writePump(client)
 	go h.readPump(client)
 
-	// Mark user online (only on first connection)
+	// Mark user online (only on first connection) — uses heartbeat which restores preferred status
 	h.mu.RLock()
 	isFirstConn := len(h.userConns[client.userID]) == 1
 	h.mu.RUnlock()
 	if isFirstConn {
-		go h.setUserPresence(client.userID, "online")
+		go h.sendPresenceHeartbeat(client.userID)
 	}
 }
 
@@ -480,6 +480,21 @@ func (h *WSHandler) removeClient(client *WSClient) {
 			}(gid, client.userID)
 		}
 	}
+}
+
+// sendPresenceHeartbeat calls the presence heartbeat endpoint which restores preferred status.
+func (h *WSHandler) sendPresenceHeartbeat(userID string) {
+	req, err := http.NewRequest("POST", h.presenceURL+"/users/@me/heartbeat", nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("X-User-ID", userID)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		slog.Error("failed to send presence heartbeat", "error", err, "userId", userID)
+		return
+	}
+	resp.Body.Close()
 }
 
 // setUserPresence calls the presence service to update status.

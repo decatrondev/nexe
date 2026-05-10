@@ -12,9 +12,11 @@ import (
 )
 
 const (
-	presenceKeyPrefix = "nexe:presence:"
-	guildOnlinePrefix = "nexe:guild:online:"
-	presenceTTL       = 5 * time.Minute
+	presenceKeyPrefix   = "nexe:presence:"
+	preferredKeyPrefix  = "nexe:presence:preferred:"
+	guildOnlinePrefix   = "nexe:guild:online:"
+	presenceTTL         = 5 * time.Minute
+	preferredTTL        = 30 * 24 * time.Hour // 30 days
 )
 
 type PresenceService struct {
@@ -45,6 +47,13 @@ func (s *PresenceService) SetPresence(ctx context.Context, userID string, update
 	pipe := s.rdb.Pipeline()
 	pipe.HSet(ctx, key, data)
 	pipe.Expire(ctx, key, presenceTTL)
+	// Save preferred status (persists across reconnects) — only for manual changes
+	// "online" is the default, so we only save non-default preferences
+	if update.Status == "dnd" || update.Status == "idle" || update.Status == "offline" {
+		pipe.Set(ctx, preferredKeyPrefix+userID, update.Status, preferredTTL)
+	} else {
+		pipe.Del(ctx, preferredKeyPrefix+userID) // clear preference when going online
+	}
 	_, err := pipe.Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("set presence: %w", err)
@@ -107,7 +116,13 @@ func (s *PresenceService) Heartbeat(ctx context.Context, userID string) error {
 	}
 
 	if exists == 0 {
-		return s.SetPresence(ctx, userID, model.StatusUpdate{Status: "online"})
+		// Restore preferred status if user had one (e.g. DND)
+		status := "online"
+		preferred, err := s.rdb.Get(ctx, preferredKeyPrefix+userID).Result()
+		if err == nil && preferred != "" {
+			status = preferred
+		}
+		return s.SetPresence(ctx, userID, model.StatusUpdate{Status: status})
 	}
 
 	pipe := s.rdb.Pipeline()
@@ -115,6 +130,15 @@ func (s *PresenceService) Heartbeat(ctx context.Context, userID string) error {
 	pipe.Expire(ctx, key, presenceTTL)
 	_, err = pipe.Exec(ctx)
 	return err
+}
+
+// GetPreferredStatus returns the user's saved status preference.
+func (s *PresenceService) GetPreferredStatus(ctx context.Context, userID string) string {
+	preferred, err := s.rdb.Get(ctx, preferredKeyPrefix+userID).Result()
+	if err == nil && preferred != "" {
+		return preferred
+	}
+	return "online"
 }
 
 func (s *PresenceService) SetOffline(ctx context.Context, userID string) error {

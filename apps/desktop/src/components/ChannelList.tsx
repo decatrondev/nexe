@@ -281,13 +281,8 @@ export default function ChannelList() {
                     useAuthStore.setState((s) => ({
                       user: s.user ? { ...s.user, status: typedStatus } : null,
                     }));
-                    // Save to localStorage so it persists on refresh
-                    const currentUser = useAuthStore.getState().user;
-                    if (currentUser) {
-                      localStorage.setItem("user", JSON.stringify(currentUser));
-                    }
-                    // Also update presenceMap so member list reflects it
-                    const userId = currentUser?.id;
+                    // Update presenceMap so member list reflects it immediately
+                    const userId = useAuthStore.getState().user?.id;
                     if (userId) {
                       useGuildStore.setState((s) => ({
                         presenceMap: { ...s.presenceMap, [userId]: status },

@@ -81,9 +81,10 @@ export const useAuthStore = create<AuthState>((set) => ({
         const me = await api.getMe();
         const restored = me ?? user;
 
-        // Restore status from localStorage if available (presence is separate from user DB)
-        if (restored && user.status) {
-          restored.status = user.status;
+        // Status will be set by the WS connection (gateway calls presence heartbeat)
+        // Default to "online" until WS connects and presence updates
+        if (restored) {
+          restored.status = "online";
         }
 
         set({
