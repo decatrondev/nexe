@@ -49,7 +49,7 @@ func (s *PresenceService) SetPresence(ctx context.Context, userID string, update
 	pipe.Expire(ctx, key, presenceTTL)
 	// Save preferred status (persists across reconnects) — only for manual changes
 	// "online" is the default, so we only save non-default preferences
-	if update.Status == "dnd" || update.Status == "idle" || update.Status == "offline" {
+	if update.Status == "dnd" || update.Status == "idle" || update.Status == "offline" || update.Status == "invisible" {
 		pipe.Set(ctx, preferredKeyPrefix+userID, update.Status, preferredTTL)
 	} else {
 		pipe.Del(ctx, preferredKeyPrefix+userID) // clear preference when going online
@@ -61,8 +61,12 @@ func (s *PresenceService) SetPresence(ctx context.Context, userID string, update
 
 	slog.Debug("presence updated", "userId", userID, "status", update.Status)
 
-	// Publish presence update to guilds
-	go s.events.PublishPresenceUpdate(ctx, userID, update.Status)
+	// Publish presence update to guilds — invisible shows as "offline" to others
+	broadcastStatus := update.Status
+	if broadcastStatus == "invisible" {
+		broadcastStatus = "offline"
+	}
+	go s.events.PublishPresenceUpdate(ctx, userID, broadcastStatus)
 
 	return nil
 }
@@ -82,9 +86,13 @@ func (s *PresenceService) GetPresence(ctx context.Context, userID string) (*mode
 		}, nil
 	}
 
+	status := data["status"]
+	if status == "invisible" {
+		status = "offline" // invisible appears as offline to others
+	}
 	presence := &model.UserPresence{
 		UserID:      userID,
-		Status:      data["status"],
+		Status:      status,
 		CustomText:  data["customText"],
 		CustomEmoji: data["customEmoji"],
 	}
@@ -204,9 +212,13 @@ func (s *PresenceService) GetBulkPresence(ctx context.Context, userIDs []string)
 			continue
 		}
 
+		bulkStatus := data["status"]
+		if bulkStatus == "invisible" {
+			bulkStatus = "offline"
+		}
 		p := model.UserPresence{
 			UserID:      uid,
-			Status:      data["status"],
+			Status:      bulkStatus,
 			CustomText:  data["customText"],
 			CustomEmoji: data["customEmoji"],
 		}

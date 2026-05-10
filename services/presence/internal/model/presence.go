@@ -30,8 +30,9 @@ type StreamStatus struct {
 }
 
 var ValidStatuses = map[string]bool{
-	"online":  true,
-	"idle":    true,
-	"dnd":     true,
-	"offline": true,
+	"online":    true,
+	"idle":      true,
+	"dnd":       true,
+	"offline":   true,
+	"invisible": true,
 }

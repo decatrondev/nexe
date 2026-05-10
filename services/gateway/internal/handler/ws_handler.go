@@ -123,14 +123,6 @@ func (h *WSHandler) HandleWS(w http.ResponseWriter, r *http.Request) {
 	go h.subscribeClientToGuilds(client)
 	go h.writePump(client)
 	go h.readPump(client)
-
-	// Mark user online (only on first connection) — uses heartbeat which restores preferred status
-	h.mu.RLock()
-	isFirstConn := len(h.userConns[client.userID]) == 1
-	h.mu.RUnlock()
-	if isFirstConn {
-		go h.sendPresenceHeartbeat(client.userID)
-	}
 }
 
 func (h *WSHandler) subscribeClientToGuilds(client *WSClient) {
@@ -181,18 +173,25 @@ func (h *WSHandler) subscribeClientToGuilds(client *WSClient) {
 
 	// Track user as online in all their guilds (presence service)
 	for _, gid := range guildIDs {
-		go func(guildID string) {
-			req, err := http.NewRequest("POST", h.presenceURL+"/guilds/"+guildID+"/track", strings.NewReader(`{}`))
-			if err != nil {
-				return
-			}
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-User-ID", client.userID)
-			resp, err := http.DefaultClient.Do(req)
-			if err == nil {
-				resp.Body.Close()
-			}
-		}(gid)
+		req, err := http.NewRequest("POST", h.presenceURL+"/guilds/"+gid+"/track", strings.NewReader(`{}`))
+		if err != nil {
+			continue
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-User-ID", client.userID)
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			resp.Body.Close()
+		}
+	}
+
+	// Now send heartbeat — this must happen AFTER guild tracking so the
+	// PRESENCE_UPDATE event reaches all guild members
+	h.mu.RLock()
+	isFirstConn := len(h.userConns[client.userID]) == 1
+	h.mu.RUnlock()
+	if isFirstConn {
+		h.sendPresenceHeartbeat(client.userID)
 	}
 }
 
