@@ -200,6 +200,62 @@ func (h *WSHandler) BroadcastToGuild(guildID string, data []byte, excludeUserID 
 	}
 }
 
+// SendToUser sends data to all connections of a specific user.
+func (h *WSHandler) SendToUser(userID string, data []byte) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	connIDs := h.userConns[userID]
+	for connID := range connIDs {
+		client, ok := h.clients[connID]
+		if !ok {
+			continue
+		}
+		select {
+		case client.send <- data:
+		default:
+			slog.Warn("client send buffer full, dropping notification", "connId", connID, "userId", userID)
+		}
+	}
+}
+
+// StartNotificationSubscriber listens for user-targeted notification events.
+func (h *WSHandler) StartNotificationSubscriber(ctx context.Context) {
+	pubsub := h.rdb.PSubscribe(ctx, "nexe:notifications:user:*")
+	defer pubsub.Close()
+
+	slog.Info("notification subscriber started", "pattern", "nexe:notifications:user:*")
+
+	ch := pubsub.Channel()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg, ok := <-ch:
+			if !ok {
+				return
+			}
+			const prefix = "nexe:notifications:user:"
+			if !strings.HasPrefix(msg.Channel, prefix) {
+				continue
+			}
+			userID := strings.TrimPrefix(msg.Channel, prefix)
+
+			var evt redisEvent
+			if err := json.Unmarshal([]byte(msg.Payload), &evt); err != nil {
+				continue
+			}
+
+			wsMsg := WSMessage{Op: 0, T: evt.Type, D: evt.Data}
+			data, err := json.Marshal(wsMsg)
+			if err != nil {
+				continue
+			}
+			h.SendToUser(userID, data)
+		}
+	}
+}
+
 // StartRedisSubscriber listens for events published to Redis and broadcasts
 // them to the appropriate guild clients.
 func (h *WSHandler) StartRedisSubscriber(ctx context.Context) {

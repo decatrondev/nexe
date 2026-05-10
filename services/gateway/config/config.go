@@ -22,6 +22,7 @@ type Config struct {
 	MessagingURL         string
 	PresenceURL          string
 	VoiceURL             string
+	NotificationsURL     string
 	FrontendURL          string
 }
 
@@ -43,6 +44,7 @@ func Load() *Config {
 		MessagingURL:         getEnv("NEXE_MESSAGING_URL", "http://localhost:8083"),
 		PresenceURL:          getEnv("NEXE_PRESENCE_URL", "http://localhost:8084"),
 		VoiceURL:             getEnv("NEXE_VOICE_URL", "http://localhost:8085"),
+		NotificationsURL:     getEnv("NEXE_NOTIFICATIONS_URL", "http://localhost:8086"),
 		FrontendURL:          getEnv("NEXE_FRONTEND_URL", "https://nexeapp.decatron.net"),
 	}
 }

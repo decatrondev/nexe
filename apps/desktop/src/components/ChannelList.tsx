@@ -10,6 +10,7 @@ import ServerSettingsModal from "./ServerSettingsModal";
 import InviteModal from "./InviteModal";
 import UserSettingsModal from "./UserSettingsModal";
 import VoicePanel from "./VoicePanel";
+import NotificationBell from "./NotificationBell";
 
 const statusColors: Record<string, string> = {
   online: "bg-green-500",
@@ -194,8 +195,10 @@ export default function ChannelList() {
           <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-100">
             {serverName}
           </h2>
+          <div className="flex items-center gap-0.5">
+          <NotificationBell />
           {activeGuildId && (
-            <div className="flex items-center gap-0.5">
+            <>
               <button
                 onClick={() => setShowInvite(true)}
                 className="flex h-6 w-6 items-center justify-center rounded text-slate-400 transition-colors hover:text-slate-200"
@@ -230,8 +233,9 @@ export default function ChannelList() {
                   </svg>
                 </button>
               )}
-            </div>
+            </>
           )}
+          </div>
         </div>
 
         {/* Channel list */}

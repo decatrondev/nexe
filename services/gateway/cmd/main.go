@@ -57,7 +57,7 @@ func main() {
 	profileHandler := handler.NewProfileHandler(profileRepo)
 	twitchHandler := handler.NewTwitchHandler(twitchSvc, userRepo, authSvc, jwtSvc, rdb, cfg.TwitchEventSubSecret, cfg.BaseURL, cfg.FrontendURL)
 	botHandler := handler.NewBotHandler(botRepo, jwtSvc)
-	proxyHandler := handler.NewProxyHandler(cfg.GuildsURL, cfg.MessagingURL, cfg.PresenceURL, cfg.VoiceURL)
+	proxyHandler := handler.NewProxyHandler(cfg.GuildsURL, cfg.MessagingURL, cfg.PresenceURL, cfg.VoiceURL, cfg.NotificationsURL)
 
 	// Middleware
 	authMiddleware := middleware.Auth(jwtSvc)
@@ -185,6 +185,16 @@ func main() {
 	mux.Handle("POST /guilds/{id}/untrack", guildsProxy(pp))
 	mux.Handle("POST /users/bulk-presence", guildsProxy(pp))
 
+	// Proxy to notifications service (authenticated)
+	np := http.HandlerFunc(proxyHandler.ProxyNotifications)
+	mux.Handle("GET /notifications", guildsProxy(np))
+	mux.Handle("GET /notifications/unread-count", guildsProxy(np))
+	mux.Handle("POST /notifications/{id}/read", guildsProxy(np))
+	mux.Handle("POST /notifications/read-all", guildsProxy(np))
+	mux.Handle("DELETE /notifications/{id}", guildsProxy(np))
+	mux.Handle("GET /notifications/preferences/{guildId}", guildsProxy(np))
+	mux.Handle("PUT /notifications/preferences/{guildId}", guildsProxy(np))
+
 	// Proxy to voice service (authenticated)
 	vp := http.HandlerFunc(proxyHandler.ProxyVoice)
 	mux.Handle("POST /voice/join", guildsProxy(vp))
@@ -197,8 +207,9 @@ func main() {
 	// WebSocket
 	mux.HandleFunc("GET /ws", wsHandler.HandleWS)
 
-	// Start Redis event subscriber for real-time broadcasting
+	// Start Redis event subscribers for real-time broadcasting
 	go wsHandler.StartRedisSubscriber(context.Background())
+	go wsHandler.StartNotificationSubscriber(context.Background())
 
 	// CORS middleware
 	corsHandler := corsMiddleware(mux)

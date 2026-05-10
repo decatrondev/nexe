@@ -12,15 +12,17 @@ type ProxyHandler struct {
 	guildsURL    string
 	messagingURL string
 	presenceURL  string
-	voiceURL     string
+	voiceURL          string
+	notificationsURL  string
 }
 
-func NewProxyHandler(guildsURL, messagingURL, presenceURL, voiceURL string) *ProxyHandler {
+func NewProxyHandler(guildsURL, messagingURL, presenceURL, voiceURL, notificationsURL string) *ProxyHandler {
 	return &ProxyHandler{
-		guildsURL:    guildsURL,
-		messagingURL: messagingURL,
-		presenceURL:  presenceURL,
-		voiceURL:     voiceURL,
+		guildsURL:        guildsURL,
+		messagingURL:     messagingURL,
+		presenceURL:      presenceURL,
+		voiceURL:         voiceURL,
+		notificationsURL: notificationsURL,
 	}
 }
 
@@ -38,6 +40,10 @@ func (h *ProxyHandler) ProxyPresence(w http.ResponseWriter, r *http.Request) {
 
 func (h *ProxyHandler) ProxyVoice(w http.ResponseWriter, r *http.Request) {
 	h.proxy(w, r, h.voiceURL)
+}
+
+func (h *ProxyHandler) ProxyNotifications(w http.ResponseWriter, r *http.Request) {
+	h.proxy(w, r, h.notificationsURL)
 }
 
 func (h *ProxyHandler) proxy(w http.ResponseWriter, r *http.Request, targetBase string) {

@@ -9,7 +9,7 @@ import { useGuildStore } from "../stores/guild";
 import { useAuthStore } from "../stores/auth";
 import { useVoiceStore } from "../stores/voice";
 import { nexeWS } from "../lib/websocket";
-import { api, type Message, type VoiceState } from "../lib/api";
+import { api, type Message, type VoiceState, type AppNotification } from "../lib/api";
 
 function WelcomeScreen({ onCreateServer }: { onCreateServer: () => void }) {
   return (
@@ -247,6 +247,11 @@ export default function HomePage() {
       nexeWS.on("VOICE_STATE_UPDATE", (data) => {
         const state = data as VoiceState;
         useVoiceStore.getState().handleVoiceStateUpdate(state);
+      });
+
+      nexeWS.on("NOTIFICATION_CREATE", (data) => {
+        const notif = data as AppNotification;
+        window.dispatchEvent(new CustomEvent("nexe:notification", { detail: notif }));
       });
     }
 

@@ -314,6 +314,26 @@ export interface ReactionGroup {
   users: string[];
 }
 
+export interface AppNotification {
+  id: string;
+  userId: string;
+  type: string;
+  guildId: string;
+  channelId: string;
+  messageId?: string;
+  authorId?: string;
+  content: string;
+  read: boolean;
+  createdAt: string;
+}
+
+export interface NotificationPreference {
+  userId: string;
+  guildId: string;
+  channelId?: string;
+  level: "all" | "mentions" | "nothing";
+}
+
 export interface VoiceState {
   userId: string;
   guildId: string;
@@ -623,6 +643,37 @@ export const api = {
     const params = new URLSearchParams({ q: query });
     if (limit) params.set("limit", String(limit));
     return request<Message[]>("GET", `/channels/${channelId}/search?${params}`);
+  },
+
+  // ---- Notification methods ----
+
+  getNotifications(unreadOnly?: boolean) {
+    const params = unreadOnly ? "?unread=true" : "";
+    return request<AppNotification[]>("GET", `/notifications${params}`);
+  },
+
+  getUnreadCount() {
+    return request<{ count: number }>("GET", "/notifications/unread-count");
+  },
+
+  markNotificationRead(id: string) {
+    return request<void>("POST", `/notifications/${id}/read`);
+  },
+
+  markAllNotificationsRead() {
+    return request<void>("POST", "/notifications/read-all");
+  },
+
+  deleteNotification(id: string) {
+    return request<void>("DELETE", `/notifications/${id}`);
+  },
+
+  getNotificationPreference(guildId: string) {
+    return request<NotificationPreference>("GET", `/notifications/preferences/${guildId}`);
+  },
+
+  setNotificationPreference(guildId: string, level: string, channelId?: string) {
+    return request<NotificationPreference>("PUT", `/notifications/preferences/${guildId}`, { level, channelId });
   },
 
   // ---- Voice methods ----
