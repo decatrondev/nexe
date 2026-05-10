@@ -397,8 +397,10 @@ export const api = {
     return request<UserProfile>("PATCH", "/users/@me/profile", data);
   },
 
-  updatePresence(status: string) {
-    return request<void>("PATCH", "/users/@me/presence", { status });
+  updatePresence(status: string, clearAfter?: number) {
+    const body: Record<string, unknown> = { status };
+    if (clearAfter) body.clearAfter = clearAfter;
+    return request<void>("PATCH", "/users/@me/presence", body);
   },
 
   presenceHeartbeat() {

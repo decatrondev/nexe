@@ -19,6 +19,7 @@ type StatusUpdate struct {
 	Status      string `json:"status"`
 	CustomText  string `json:"customText,omitempty"`
 	CustomEmoji string `json:"customEmoji,omitempty"`
+	ClearAfter  int    `json:"clearAfter,omitempty"` // minutes, 0 = don't clear
 }
 
 type StreamStatus struct {

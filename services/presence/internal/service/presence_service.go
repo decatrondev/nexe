@@ -50,7 +50,11 @@ func (s *PresenceService) SetPresence(ctx context.Context, userID string, update
 	// Save preferred status (persists across reconnects) — only for manual changes
 	// "online" is the default, so we only save non-default preferences
 	if update.Status == "dnd" || update.Status == "invisible" {
-		pipe.Set(ctx, preferredKeyPrefix+userID, update.Status, preferredTTL)
+		ttl := preferredTTL
+		if update.ClearAfter > 0 {
+			ttl = time.Duration(update.ClearAfter) * time.Minute
+		}
+		pipe.Set(ctx, preferredKeyPrefix+userID, update.Status, ttl)
 	} else {
 		pipe.Del(ctx, preferredKeyPrefix+userID) // clear preference when going online
 	}

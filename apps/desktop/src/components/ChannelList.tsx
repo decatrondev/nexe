@@ -274,15 +274,14 @@ export default function ChannelList() {
             {showStatusMenu && (
               <StatusMenu
                 current={userStatus}
-                onSelect={async (status) => {
+                onSelect={async (status, clearAfter) => {
                   setShowStatusMenu(false);
                   try {
-                    await api.updatePresence(status);
-                    const typedStatus = status as "online" | "idle" | "dnd" | "offline";
+                    await api.updatePresence(status, clearAfter);
+                    const typedStatus = status as "online" | "idle" | "dnd" | "offline" | "invisible";
                     useAuthStore.setState((s) => ({
                       user: s.user ? { ...s.user, status: typedStatus } : null,
                     }));
-                    // Update presenceMap so member list reflects it immediately
                     const userId = useAuthStore.getState().user?.id;
                     if (userId) {
                       useGuildStore.setState((s) => ({
@@ -356,10 +355,19 @@ export default function ChannelList() {
 // ── Status Selector Dropdown ──
 
 const STATUS_OPTIONS = [
-  { value: "online", label: "Online", color: "bg-green-500" },
-  { value: "idle", label: "Idle", color: "bg-yellow-500" },
-  { value: "dnd", label: "Do Not Disturb", color: "bg-red-500" },
-  { value: "invisible", label: "Invisible", color: "bg-slate-500" },
+  { value: "online", label: "Online", color: "bg-green-500", hasDuration: false },
+  { value: "idle", label: "Idle", color: "bg-yellow-500", hasDuration: false },
+  { value: "dnd", label: "Do Not Disturb", color: "bg-red-500", hasDuration: true },
+  { value: "invisible", label: "Invisible", color: "bg-slate-500", hasDuration: true },
+] as const;
+
+const DURATION_OPTIONS = [
+  { label: "Don't clear", value: 0 },
+  { label: "30 minutes", value: 30 },
+  { label: "1 hour", value: 60 },
+  { label: "4 hours", value: 240 },
+  { label: "8 hours", value: 480 },
+  { label: "24 hours", value: 1440 },
 ] as const;
 
 function StatusMenu({
@@ -369,11 +377,12 @@ function StatusMenu({
   anchorRef,
 }: {
   current: string;
-  onSelect: (status: string) => void;
+  onSelect: (status: string, clearAfter?: number) => void;
   onClose: () => void;
   anchorRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const [durationFor, setDurationFor] = useState<string | null>(null);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -391,29 +400,67 @@ function StatusMenu({
   return (
     <div
       ref={menuRef}
-      className="absolute bottom-full left-0 mb-2 w-48 overflow-hidden rounded-lg border border-dark-700 bg-dark-800 py-1 shadow-xl"
+      className="absolute bottom-full left-0 mb-2 w-52 overflow-hidden rounded-lg border border-dark-700 bg-dark-800 py-1 shadow-xl"
       style={{ zIndex: 100 }}
     >
-      <p className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500">
-        Set Status
-      </p>
-      {STATUS_OPTIONS.map((opt) => (
-        <button
-          key={opt.value}
-          onClick={() => onSelect(opt.value)}
-          className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-sm transition-colors hover:bg-dark-700 ${
-            current === opt.value ? "text-white" : "text-slate-300"
-          }`}
-        >
-          <div className={`h-2.5 w-2.5 rounded-full ${opt.color}`} />
-          <span>{opt.label}</span>
-          {current === opt.value && (
-            <svg className="ml-auto h-3.5 w-3.5 text-nexe-400" viewBox="0 0 20 20" fill="currentColor">
-              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+      {durationFor ? (
+        <>
+          <button
+            onClick={() => setDurationFor(null)}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500 hover:text-slate-300"
+          >
+            <svg viewBox="0 0 24 24" className="h-3 w-3 fill-current">
+              <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
             </svg>
-          )}
-        </button>
-      ))}
+            Clear after
+          </button>
+          {DURATION_OPTIONS.map((dur) => (
+            <button
+              key={dur.value}
+              onClick={() => onSelect(durationFor, dur.value || undefined)}
+              className="flex w-full items-center gap-2.5 px-3 py-1.5 text-sm text-slate-300 transition-colors hover:bg-dark-700 hover:text-white"
+            >
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current text-slate-500">
+                <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
+              </svg>
+              <span>{dur.label}</span>
+            </button>
+          ))}
+        </>
+      ) : (
+        <>
+          <p className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+            Set Status
+          </p>
+          {STATUS_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => {
+                if (opt.hasDuration) {
+                  setDurationFor(opt.value);
+                } else {
+                  onSelect(opt.value);
+                }
+              }}
+              className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-sm transition-colors hover:bg-dark-700 ${
+                current === opt.value ? "text-white" : "text-slate-300"
+              }`}
+            >
+              <div className={`h-2.5 w-2.5 rounded-full ${opt.color}`} />
+              <span>{opt.label}</span>
+              {current === opt.value ? (
+                <svg className="ml-auto h-3.5 w-3.5 text-nexe-400" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                </svg>
+              ) : opt.hasDuration ? (
+                <svg className="ml-auto h-3.5 w-3.5 text-slate-600" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />
+                </svg>
+              ) : null}
+            </button>
+          ))}
+        </>
+      )}
     </div>
   );
 }
