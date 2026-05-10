@@ -1,5 +1,6 @@
 const API_URL =
-  typeof window !== "undefined" && window.location.protocol === "https:"
+  typeof window !== "undefined" &&
+  (window.location.protocol === "https:" || "__TAURI__" in window)
     ? "https://nexeapi.decatron.net"
     : "http://161.132.53.175:8090";
 
