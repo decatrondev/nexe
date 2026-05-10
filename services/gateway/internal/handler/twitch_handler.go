@@ -875,6 +875,8 @@ func (h *TwitchHandler) SetupEventSub(w http.ResponseWriter, r *http.Request) {
 	}{
 		{"stream.online", "1", map[string]string{"broadcaster_user_id": twitchID}},
 		{"stream.offline", "1", map[string]string{"broadcaster_user_id": twitchID}},
+		{"channel.follow", "2", map[string]string{"broadcaster_user_id": twitchID, "moderator_user_id": twitchID}},
+		{"channel.subscribe", "1", map[string]string{"broadcaster_user_id": twitchID}},
 	}
 
 	var errors []string

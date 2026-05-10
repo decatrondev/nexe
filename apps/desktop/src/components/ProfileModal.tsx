@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type UserProfile } from "../lib/api";
+import { api, type UserProfile, type UserBadge } from "../lib/api";
 
 function userColor(userId: string): string {
   const colors = ["#a78bfa","#34d399","#f472b6","#60a5fa","#fbbf24","#fb923c","#c084fc","#2dd4bf","#f87171","#a3e635"];
@@ -30,12 +30,14 @@ interface Props {
 
 export default function ProfileModal({ userId, onClose }: Props) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [badges, setBadges] = useState<UserBadge[]>([]);
   const [loading, setLoading] = useState(true);
   const color = userColor(userId);
 
   useEffect(() => {
     let cancel = false;
     api.getProfile(userId).then((p) => { if (!cancel) { setProfile(p); setLoading(false); } }).catch(() => { if (!cancel) setLoading(false); });
+    api.getBadges(userId).then((b) => { if (!cancel) setBadges(b ?? []); }).catch(() => {});
     return () => { cancel = true; };
   }, [userId]);
 
@@ -154,7 +156,22 @@ export default function ProfileModal({ userId, onClose }: Props) {
               {/* Badges */}
               <div>
                 <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-400">Badges</h4>
-                <p className="text-[12px] text-slate-600">No badges earned yet</p>
+                {badges.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {badges.map((badge) => (
+                      <span
+                        key={badge.id}
+                        title={badge.description || badge.name}
+                        className="flex items-center gap-1.5 rounded-md bg-slate-800 px-3 py-1.5 text-[12px] font-medium text-slate-300"
+                      >
+                        <ProfileBadgeIcon iconUrl={badge.iconUrl} />
+                        {badge.name}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[12px] text-slate-600">No badges earned yet</p>
+                )}
               </div>
 
               {/* Member since */}
@@ -177,5 +194,31 @@ function StatCard({ label, value }: { label: string; value: string }) {
       <p className="text-sm font-bold text-white">{value}</p>
       <p className="mt-0.5 text-[10px] uppercase text-slate-500">{label}</p>
     </div>
+  );
+}
+
+// Badge icon — uses known icon slugs or falls back to a star
+const BADGE_ICONS: Record<string, string> = {
+  early_adopter: "M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z",
+  streamer: "M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0 1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z",
+  developer: "M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z",
+};
+
+function ProfileBadgeIcon({ iconUrl }: { iconUrl: string }) {
+  const path = BADGE_ICONS[iconUrl];
+  if (path) {
+    return (
+      <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+        <path d={path} />
+      </svg>
+    );
+  }
+  if (iconUrl.startsWith("http")) {
+    return <img src={iconUrl} alt="" className="h-3.5 w-3.5 shrink-0 rounded-sm" />;
+  }
+  return (
+    <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+      <path d="M10 1l2.39 6.26H19l-5.3 3.98L15.69 18 10 14.27 4.31 18l1.99-6.76L1 7.26h6.61z" />
+    </svg>
   );
 }

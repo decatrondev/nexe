@@ -146,6 +146,7 @@ func main() {
 	mux.Handle("DELETE /guilds/{id}/bans/{uid}", guildsProxy(gp))
 	mux.Handle("GET /guilds/{id}/bans", guildsProxy(gp))
 	mux.Handle("POST /guilds/{id}/members/{uid}/timeout", guildsProxy(gp))
+	mux.Handle("POST /guilds/{id}/members/{uid}/warn", guildsProxy(gp))
 	mux.Handle("GET /guilds/{id}/audit-log", guildsProxy(gp))
 	mux.Handle("POST /guilds/{id}/twitch/enable", guildsProxy(gp))
 	mux.Handle("POST /guilds/{id}/twitch/disable", guildsProxy(gp))

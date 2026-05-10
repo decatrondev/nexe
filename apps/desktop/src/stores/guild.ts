@@ -35,7 +35,7 @@ interface GuildState {
   deleteGuild: (guildId: string) => Promise<void>;
   leaveGuild: (guildId: string) => Promise<void>;
   createChannel: (name: string, type: string) => Promise<void>;
-  updateChannel: (channelId: string, data: { name?: string; topic?: string }) => Promise<void>;
+  updateChannel: (channelId: string, data: { name?: string; topic?: string; slowmodeSeconds?: number }) => Promise<void>;
   deleteChannel: (channelId: string) => Promise<void>;
   sendMessage: (content: string, replyToId?: string) => Promise<void>;
   editMessage: (messageId: string, content: string) => Promise<void>;
@@ -260,7 +260,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
     });
   },
 
-  async updateChannel(channelId: string, data: { name?: string; topic?: string }) {
+  async updateChannel(channelId: string, data: { name?: string; topic?: string; slowmodeSeconds?: number }) {
     const updated = await api.updateChannel(channelId, data);
     set((s) => {
       const newChannels: Record<string, Channel[]> = {};

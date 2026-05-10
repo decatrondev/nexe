@@ -7,6 +7,7 @@ export const Permissions = {
   KICK_MEMBERS:      1 << 8,
   BAN_MEMBERS:       1 << 9,
   TIMEOUT_MEMBERS:   1 << 10,
+  VIEW_CHANNEL:      1 << 15,
   SEND_MESSAGES:     1 << 16,
   MANAGE_MESSAGES:   1 << 18,
 } as const;

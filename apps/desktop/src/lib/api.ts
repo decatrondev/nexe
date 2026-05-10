@@ -203,6 +203,21 @@ export interface UpdateProfileData {
   bio?: string;
   avatarUrl?: string;
   status?: "online" | "idle" | "dnd" | "offline";
+  socialLinks?: SocialLink[];
+}
+
+export interface UserBadge {
+  id: string;
+  name: string;
+  description?: string;
+  iconUrl: string;
+  type: string;
+  guildId?: string;
+  tierRequired: string;
+  createdAt: string;
+  displayed: boolean;
+  displayOrder: number;
+  earnedAt: string;
 }
 
 // ---- Guild types ----
@@ -265,6 +280,8 @@ export interface Role {
   mentionable: boolean;
   hoisted: boolean;
   isDefault: boolean;
+  isAuto?: boolean;
+  autoSource?: string;
 }
 
 export interface Invite {
@@ -340,6 +357,14 @@ export const api = {
 
   updateProfile(data: UpdateProfileData) {
     return request<UserProfile>("PATCH", "/users/@me/profile", data);
+  },
+
+  updatePresence(status: string) {
+    return request<void>("PATCH", "/users/@me/presence", { status });
+  },
+
+  getBadges(userId: string) {
+    return request<UserBadge[]>("GET", `/users/${userId}/badges`);
   },
 
   // ---- Guild methods ----
@@ -432,7 +457,7 @@ export const api = {
     return request<void>("DELETE", `/guilds/${id}`);
   },
 
-  updateChannel(id: string, data: { name?: string; topic?: string }) {
+  updateChannel(id: string, data: { name?: string; topic?: string; slowmodeSeconds?: number }) {
     return request<Channel>("PATCH", `/channels/${id}`, data);
   },
 
@@ -450,7 +475,7 @@ export const api = {
     return request<Role>("POST", `/guilds/${guildId}/roles`, data);
   },
 
-  updateRole(roleId: string, data: { guildId: string; name?: string; color?: string; permissions?: number; hoisted?: boolean; mentionable?: boolean }) {
+  updateRole(roleId: string, data: { guildId: string; name?: string; color?: string; position?: number; permissions?: number; hoisted?: boolean; mentionable?: boolean }) {
     return request<Role>("PATCH", `/roles/${roleId}`, data);
   },
 
@@ -490,6 +515,10 @@ export const api = {
 
   getAuditLog(guildId: string) {
     return request<AuditLogEntry[]>("GET", `/guilds/${guildId}/audit-log`);
+  },
+
+  warnMember(guildId: string, userId: string, reason: string) {
+    return request<void>("POST", `/guilds/${guildId}/members/${userId}/warn`, { reason });
   },
 
   // ---- Twitch integration methods ----

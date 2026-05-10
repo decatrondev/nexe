@@ -104,6 +104,17 @@ interface TypingUser {
   timestamp: number;
 }
 
+// Extract Twitch clip slug from message text
+function extractTwitchClipSlug(text: string): string | null {
+  // Match https://clips.twitch.tv/SLUG
+  const m1 = text.match(/https?:\/\/clips\.twitch\.tv\/(\S+)/);
+  if (m1) return m1[1];
+  // Match https://www.twitch.tv/CHANNEL/clip/SLUG
+  const m2 = text.match(/https?:\/\/(?:www\.)?twitch\.tv\/\w+\/clip\/(\S+)/);
+  if (m2) return m2[1];
+  return null;
+}
+
 // Highlight search query matches in text
 function highlightMatch(text: string, query: string): React.ReactNode {
   if (!query) return text;
@@ -185,6 +196,10 @@ export default function ChatArea() {
   const [pinnedMessages, setPinnedMessages] = useState<Message[]>([]);
   const [pinsLoading, setPinsLoading] = useState(false);
 
+  // Slowmode
+  const [lastSendTime, setLastSendTime] = useState(0);
+  const [slowmodeRemaining, setSlowmodeRemaining] = useState(0);
+
   // Search
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -201,6 +216,7 @@ export default function ChatArea() {
   const guildChannels = activeGuildId ? allChannels[activeGuildId] : undefined;
   const activeChannel = guildChannels?.find((c) => c.id === activeChannelId);
   const channelName = activeChannel?.name || "general";
+  const slowmodeSeconds = activeChannel?.slowmodeSeconds ?? 0;
 
   // Close context menu on any click
   useEffect(() => {
@@ -305,6 +321,8 @@ export default function ChatArea() {
     setSearchOpen(false);
     setSearchQuery("");
     setSearchResults([]);
+    setLastSendTime(0);
+    setSlowmodeRemaining(0);
   }, [activeChannelId]);
 
   // Focus edit input
@@ -316,6 +334,20 @@ export default function ChatArea() {
   useEffect(() => {
     if (searchOpen) searchInputRef.current?.focus();
   }, [searchOpen]);
+
+  // Slowmode countdown timer
+  useEffect(() => {
+    if (slowmodeSeconds <= 0 || lastSendTime === 0) return;
+    const tick = () => {
+      const elapsed = Math.floor((Date.now() - lastSendTime) / 1000);
+      const remaining = Math.max(0, slowmodeSeconds - elapsed);
+      setSlowmodeRemaining(remaining);
+      if (remaining <= 0) return;
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [slowmodeSeconds, lastSendTime]);
 
   const handleScroll = useCallback(() => {
     const el = scrollContainerRef.current;
@@ -350,12 +382,18 @@ export default function ChatArea() {
     e.preventDefault();
     const content = input.trim();
     if (!content || sending) return;
+    // Check slowmode
+    if (slowmodeSeconds > 0 && slowmodeRemaining > 0) return;
     setSending(true);
     setSendError(null);
     try {
       await sendMessage(content, replyTo?.id);
       setInput("");
       setReplyTo(null);
+      if (slowmodeSeconds > 0) {
+        setLastSendTime(Date.now());
+        setSlowmodeRemaining(slowmodeSeconds);
+      }
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     } catch (err) {
       console.error("Failed to send message:", err);
@@ -581,6 +619,17 @@ export default function ChatArea() {
             <span className="truncate text-xs text-slate-500">{activeChannel.topic}</span>
           </>
         )}
+        {slowmodeSeconds > 0 && (
+          <>
+            <div className="mx-2 h-5 w-px bg-dark-700" />
+            <div className="flex items-center gap-1 text-xs text-slate-400" title={`Slowmode: ${slowmodeSeconds}s`}>
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>{slowmodeSeconds >= 60 ? `${Math.floor(slowmodeSeconds / 60)}m` : `${slowmodeSeconds}s`}</span>
+            </div>
+          </>
+        )}
         <div className="flex-1" />
 
         {/* Search toggle */}
@@ -778,16 +827,33 @@ export default function ChatArea() {
                           </p>
                         </div>
                       ) : (
-                        <div className="flex items-start gap-1">
-                          {msg.pinned && (
-                            <span className="mt-0.5 shrink-0 text-xs text-amber-500/60" title="Pinned">
-                              <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a2 2 0 014 0v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
-                              </svg>
-                            </span>
-                          )}
-                          <p className="text-sm leading-relaxed text-slate-200 break-words">{msg.content}</p>
-                        </div>
+                        <>
+                          <div className="flex items-start gap-1">
+                            {msg.pinned && (
+                              <span className="mt-0.5 shrink-0 text-xs text-amber-500/60" title="Pinned">
+                                <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20">
+                                  <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a2 2 0 014 0v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
+                                </svg>
+                              </span>
+                            )}
+                            <p className="text-sm leading-relaxed text-slate-200 break-words">{msg.content}</p>
+                          </div>
+                          {(() => {
+                            const clipSlug = extractTwitchClipSlug(msg.content);
+                            if (!clipSlug) return null;
+                            return (
+                              <div className="mt-2 overflow-hidden rounded-lg border border-dark-700 bg-dark-800">
+                                <iframe
+                                  src={`https://clips.twitch.tv/embed?clip=${clipSlug}&parent=${window.location.hostname}`}
+                                  height="300"
+                                  width="100%"
+                                  allowFullScreen
+                                  className="border-0"
+                                />
+                              </div>
+                            );
+                          })()}
+                        </>
                       )}
 
                       {/* Reactions row */}
@@ -896,9 +962,9 @@ export default function ChatArea() {
                   type="text"
                   value={input}
                   onChange={(e) => handleInputChange(e.target.value)}
-                  placeholder={`Message #${channelName}`}
+                  placeholder={slowmodeRemaining > 0 ? `Slowmode: ${slowmodeRemaining}s remaining` : `Message #${channelName}`}
                   className="flex-1 bg-transparent py-3 text-sm text-slate-200 outline-none placeholder:text-slate-500"
-                  disabled={sending}
+                  disabled={sending || slowmodeRemaining > 0}
                 />
                 <button
                   type="button"

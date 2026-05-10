@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useAuthStore } from "../stores/auth";
-import { api } from "../lib/api";
+import { api, type SocialLink } from "../lib/api";
 
 interface Props { onClose: () => void }
 type Tab = "account" | "profile" | "appearance";
@@ -228,10 +228,17 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 // Profiles
 // ═══════════════════════════
 
+const SOCIAL_PLATFORMS = ["Twitch", "YouTube", "Twitter", "Instagram", "TikTok", "Website"] as const;
+const MAX_SOCIAL_LINKS = 8;
+
 function ProfileTab() {
   const user = useAuthStore((s) => s.user);
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
+  const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
+  const [showAddLink, setShowAddLink] = useState(false);
+  const [newPlatform, setNewPlatform] = useState<string>(SOCIAL_PLATFORMS[0]);
+  const [newUrl, setNewUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; msg: string } | null>(null);
@@ -243,6 +250,7 @@ function ProfileTab() {
       if (cancel) return;
       setDisplayName(p.displayName ?? "");
       setBio(p.bio ?? "");
+      setSocialLinks(p.socialLinks ?? []);
       setLoaded(true);
     }).catch(() => { if (!cancel) setLoaded(true); });
     return () => { cancel = true; };
@@ -252,12 +260,28 @@ function ProfileTab() {
     e.preventDefault();
     setLoading(true); setFeedback(null);
     try {
-      await api.updateProfile({ displayName: displayName.trim() || undefined, bio: bio.trim() || undefined });
+      await api.updateProfile({
+        displayName: displayName.trim() || undefined,
+        bio: bio.trim() || undefined,
+        socialLinks,
+      });
       setFeedback({ type: "success", msg: "Profile saved!" });
       setTimeout(() => setFeedback(null), 3000);
     } catch (err) {
       setFeedback({ type: "error", msg: err instanceof Error ? err.message : "Failed" });
     } finally { setLoading(false); }
+  }
+
+  function handleAddLink() {
+    if (!newUrl.trim() || socialLinks.length >= MAX_SOCIAL_LINKS) return;
+    setSocialLinks((prev) => [...prev, { platform: newPlatform.toLowerCase(), url: newUrl.trim() }]);
+    setNewUrl("");
+    setNewPlatform(SOCIAL_PLATFORMS[0]);
+    setShowAddLink(false);
+  }
+
+  function handleRemoveLink(index: number) {
+    setSocialLinks((prev) => prev.filter((_, i) => i !== index));
   }
 
   const previewName = displayName.trim() || user?.username || "User";
@@ -284,6 +308,91 @@ function ProfileTab() {
               className="w-full resize-none rounded-md border border-dark-700 bg-dark-800 px-3 py-2 text-sm text-slate-200 outline-none focus:border-nexe-500" />
             <p className="mt-1 text-right text-[11px] text-slate-600">{bio.length}/190</p>
           </div>
+
+          {/* Social Links */}
+          <div>
+            <label className="mb-1.5 block text-[11px] font-bold uppercase text-slate-400">
+              Social Links ({socialLinks.length}/{MAX_SOCIAL_LINKS})
+            </label>
+
+            {socialLinks.length > 0 && (
+              <div className="mb-2 space-y-1.5">
+                {socialLinks.map((link, i) => (
+                  <div key={i} className="flex items-center gap-2 rounded-md border border-dark-700 bg-dark-800 px-3 py-1.5">
+                    <span className="text-xs font-medium capitalize text-slate-400 w-16 shrink-0">{link.platform}</span>
+                    <span className="min-w-0 flex-1 truncate text-xs text-slate-300">{link.url}</span>
+                    {link.verified && (
+                      <svg className="h-3 w-3 shrink-0 text-nexe-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveLink(i)}
+                      className="shrink-0 text-slate-500 hover:text-red-400 transition-colors"
+                      title="Remove link"
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {showAddLink ? (
+              <div className="space-y-2 rounded-md border border-dark-700 bg-dark-800 p-3">
+                <select
+                  value={newPlatform}
+                  onChange={(e) => setNewPlatform(e.target.value)}
+                  className="w-full rounded-md border border-dark-700 bg-dark-900 px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-nexe-500"
+                >
+                  {SOCIAL_PLATFORMS.map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+                <input
+                  type="url"
+                  value={newUrl}
+                  onChange={(e) => setNewUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="w-full rounded-md border border-dark-700 bg-dark-900 px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-nexe-500"
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddLink(); } }}
+                  autoFocus
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleAddLink}
+                    disabled={!newUrl.trim()}
+                    className="rounded-md bg-nexe-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-nexe-500 disabled:opacity-50"
+                  >
+                    Add
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowAddLink(false); setNewUrl(""); }}
+                    className="text-xs text-slate-400 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : socialLinks.length < MAX_SOCIAL_LINKS ? (
+              <button
+                type="button"
+                onClick={() => setShowAddLink(true)}
+                className="flex items-center gap-1.5 rounded-md border border-dashed border-dark-600 px-3 py-1.5 text-xs text-slate-400 transition-colors hover:border-nexe-500 hover:text-nexe-400"
+              >
+                <svg className="h-3 w-3" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M13 5a1 1 0 1 0-2 0v6H5a1 1 0 1 0 0 2h6v6a1 1 0 1 0 2 0v-6h6a1 1 0 1 0 0-2h-6z" />
+                </svg>
+                Add Link
+              </button>
+            ) : null}
+          </div>
+
           <button type="submit" disabled={loading || !loaded}
             className="rounded-md bg-nexe-600 px-4 py-2 text-sm font-medium text-white hover:bg-nexe-500 disabled:opacity-50">
             {loading ? "Saving..." : "Save Changes"}
@@ -312,6 +421,20 @@ function ProfileTab() {
                   <div className="my-3 h-px bg-dark-700" />
                   <p className="text-[11px] font-bold uppercase text-slate-500">About Me</p>
                   <p className="mt-1 text-sm leading-relaxed text-slate-300 break-words">{bio}</p>
+                </>
+              )}
+
+              {socialLinks.length > 0 && (
+                <>
+                  <div className="my-3 h-px bg-dark-700" />
+                  <p className="text-[11px] font-bold uppercase text-slate-500">Connections</p>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {socialLinks.map((link, i) => (
+                      <span key={i} className="rounded-md bg-slate-800 px-2.5 py-1 text-[11px] capitalize text-slate-300">
+                        {link.platform}
+                      </span>
+                    ))}
+                  </div>
                 </>
               )}
 

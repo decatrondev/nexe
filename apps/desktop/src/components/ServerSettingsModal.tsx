@@ -10,7 +10,7 @@ interface ServerSettingsModalProps {
   onClose: () => void;
 }
 
-type Tab = "overview" | "channels" | "roles" | "bans" | "audit" | "twitch" | "danger";
+type Tab = "overview" | "channels" | "roles" | "bans" | "audit" | "automod" | "twitch" | "danger";
 
 const EMPTY_CHANNELS: Channel[] = [];
 
@@ -39,6 +39,8 @@ export default function ServerSettingsModal({ guildId, onClose }: ServerSettings
       tabs.push({ id: "bans", label: "Bans" });
     if (isOwner || hasPermission(myPerms, Permissions.MANAGE_GUILD))
       tabs.push({ id: "audit", label: "Audit Log" });
+    if (isOwner || hasPermission(myPerms, Permissions.MANAGE_GUILD))
+      tabs.push({ id: "automod", label: "Automod" });
     if (isOwner)
       tabs.push({ id: "twitch", label: "Twitch" });
     // Danger Zone is always visible (Leave Server is for everyone)
@@ -109,6 +111,7 @@ export default function ServerSettingsModal({ guildId, onClose }: ServerSettings
             {activeTab === "roles" && <RolesTab guildId={guildId} />}
             {activeTab === "bans" && <BansTab guildId={guildId} />}
             {activeTab === "audit" && <AuditLogTab guildId={guildId} />}
+            {activeTab === "automod" && <AutomodTab guildId={guildId} />}
             {activeTab === "twitch" && <TwitchTab guildId={guildId} />}
             {activeTab === "danger" && <DangerZoneTab guildId={guildId} onClose={onClose} />}
           </div>
@@ -202,18 +205,36 @@ function OverviewTab({ guildId }: { guildId: string }) {
 function ChannelsTab({ guildId }: { guildId: string }) {
   const allChannels = useGuildStore((s) => s.channels);
   const channels = allChannels[guildId] ?? EMPTY_CHANNELS;
+  const allRolesMap = useGuildStore((s) => s.roles);
+  const guildRoles = allRolesMap[guildId] ?? [];
   const updateChannelStore = useGuildStore((s) => s.updateChannel);
   const deleteChannelStore = useGuildStore((s) => s.deleteChannel);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [editSlowmode, setEditSlowmode] = useState(0);
+  const [showPermsForId, setShowPermsForId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const SLOWMODE_OPTIONS = [
+    { label: "Off", value: 0 },
+    { label: "5s", value: 5 },
+    { label: "10s", value: 10 },
+    { label: "15s", value: 15 },
+    { label: "30s", value: 30 },
+    { label: "1m", value: 60 },
+    { label: "2m", value: 120 },
+    { label: "5m", value: 300 },
+    { label: "10m", value: 600 },
+  ];
+
   function startEdit(ch: Channel) {
     setEditingId(ch.id);
     setEditName(ch.name);
+    setEditSlowmode(ch.slowmodeSeconds ?? 0);
+    setShowPermsForId(null);
     setError("");
   }
 
@@ -222,7 +243,11 @@ function ChannelsTab({ guildId }: { guildId: string }) {
     setLoading(true);
     setError("");
     try {
-      await updateChannelStore(channelId, { name: editName.trim() });
+      const ch = channels.find((c) => c.id === channelId);
+      const data: { name?: string; slowmodeSeconds?: number } = {};
+      if (editName.trim() !== ch?.name) data.name = editName.trim();
+      if (editSlowmode !== (ch?.slowmodeSeconds ?? 0)) data.slowmodeSeconds = editSlowmode;
+      await updateChannelStore(channelId, Object.keys(data).length > 0 ? data : { name: editName.trim() });
       setEditingId(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update channel");
@@ -244,6 +269,13 @@ function ChannelsTab({ guildId }: { guildId: string }) {
     }
   }
 
+  // Channel permission overrides UI data
+  const OVERRIDE_PERMS = [
+    { name: "View Channel", bit: Permissions.VIEW_CHANNEL },
+    { name: "Send Messages", bit: Permissions.SEND_MESSAGES },
+    { name: "Manage Messages", bit: Permissions.MANAGE_MESSAGES },
+  ] as const;
+
   return (
     <>
       <h2 className="mb-6 text-xl font-bold text-slate-100">Channels</h2>
@@ -257,92 +289,180 @@ function ChannelsTab({ guildId }: { guildId: string }) {
       ) : (
         <div className="space-y-1">
           {channels.map((ch) => (
-            <div
-              key={ch.id}
-              className="flex items-center gap-2 rounded-lg bg-dark-800/50 px-3 py-2"
-            >
-              <span className="shrink-0 text-sm text-slate-500">
-                {ch.type === "voice" ? (
-                  <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
-                    <path d="M12 3a1 1 0 0 0-.707.293l-7 7a1 1 0 0 0 0 1.414l7 7A1 1 0 0 0 13 18v-4.28c3.526.36 5.47 2.03 6.136 3.636a1 1 0 0 0 1.864-.728C20.143 14.07 17.368 11 13 10.29V6a1 1 0 0 0-1-1z" />
-                  </svg>
-                ) : (
-                  "#"
-                )}
-              </span>
+            <div key={ch.id}>
+              <div className="flex items-center gap-2 rounded-lg bg-dark-800/50 px-3 py-2">
+                <span className="shrink-0 text-sm text-slate-500">
+                  {ch.type === "voice" ? (
+                    <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+                      <path d="M12 3a1 1 0 0 0-.707.293l-7 7a1 1 0 0 0 0 1.414l7 7A1 1 0 0 0 13 18v-4.28c3.526.36 5.47 2.03 6.136 3.636a1 1 0 0 0 1.864-.728C20.143 14.07 17.368 11 13 10.29V6a1 1 0 0 0-1-1z" />
+                    </svg>
+                  ) : (
+                    "#"
+                  )}
+                </span>
 
-              {editingId === ch.id ? (
-                <div className="flex flex-1 items-center gap-2">
-                  <input
-                    value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") saveEdit(ch.id);
-                      if (e.key === "Escape") setEditingId(null);
-                    }}
-                    className="flex-1 rounded border border-dark-600 bg-dark-900 px-2 py-1 text-sm text-slate-200 outline-none focus:border-nexe-500"
-                    autoFocus
-                    disabled={loading}
-                  />
-                  <button
-                    onClick={() => saveEdit(ch.id)}
-                    disabled={loading || !editName.trim()}
-                    className="text-xs text-green-400 hover:text-green-300 disabled:opacity-50"
-                  >
-                    Save
-                  </button>
-                  <button
-                    onClick={() => setEditingId(null)}
-                    className="text-xs text-slate-400 hover:text-slate-300"
-                  >
-                    Cancel
-                  </button>
+                {editingId === ch.id ? (
+                  <div className="flex flex-1 flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveEdit(ch.id);
+                          if (e.key === "Escape") setEditingId(null);
+                        }}
+                        className="flex-1 rounded border border-dark-600 bg-dark-900 px-2 py-1 text-sm text-slate-200 outline-none focus:border-nexe-500"
+                        autoFocus
+                        disabled={loading}
+                      />
+                      <button
+                        onClick={() => saveEdit(ch.id)}
+                        disabled={loading || !editName.trim()}
+                        className="text-xs text-green-400 hover:text-green-300 disabled:opacity-50"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setEditingId(null)}
+                        className="text-xs text-slate-400 hover:text-slate-300"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    {ch.type === "text" && (
+                      <div className="flex items-center gap-2">
+                        <label className="text-[11px] font-medium text-slate-400">Slowmode:</label>
+                        <select
+                          value={editSlowmode}
+                          onChange={(e) => setEditSlowmode(Number(e.target.value))}
+                          className="rounded border border-dark-600 bg-dark-900 px-2 py-1 text-[12px] text-slate-200 outline-none focus:border-nexe-500"
+                          disabled={loading}
+                        >
+                          {SLOWMODE_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                ) : confirmDeleteId === ch.id ? (
+                  <div className="flex flex-1 items-center gap-2">
+                    <span className="flex-1 truncate text-sm text-red-400">
+                      Delete #{ch.name}?
+                    </span>
+                    <button
+                      onClick={() => handleDelete(ch.id)}
+                      disabled={loading}
+                      className="text-xs font-semibold text-red-400 hover:text-red-300 disabled:opacity-50"
+                    >
+                      Confirm
+                    </button>
+                    <button
+                      onClick={() => setConfirmDeleteId(null)}
+                      className="text-xs text-slate-400 hover:text-slate-300"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <span className="flex-1 truncate text-sm text-slate-200">
+                      {ch.name}
+                    </span>
+                    <button
+                      onClick={() => setShowPermsForId(showPermsForId === ch.id ? null : ch.id)}
+                      className={`flex h-6 w-6 items-center justify-center rounded transition-colors ${
+                        showPermsForId === ch.id ? "text-nexe-400" : "text-slate-500 hover:text-slate-300"
+                      }`}
+                      title="Channel permissions"
+                    >
+                      {/* Shield icon */}
+                      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
+                        <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => startEdit(ch)}
+                      className="flex h-6 w-6 items-center justify-center rounded text-slate-500 transition-colors hover:text-slate-300"
+                      title="Edit channel"
+                    >
+                      {/* Pencil icon */}
+                      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
+                        <path d="M16.474 5.408l2.118 2.117m-.756-3.982L12.109 9.27a2.118 2.118 0 0 0-.58 1.082L11 13l2.648-.53c.41-.082.786-.283 1.082-.579l5.727-5.727a1.853 1.853 0 1 0-2.621-2.621zM19.5 12c0 .76-.056 1.508-.165 2.24C18.58 18.776 14.68 22 10 22c-5.523 0-10-4.477-10-10S4.477 2 10 2c1.376 0 2.69.278 3.884.78" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => setConfirmDeleteId(ch.id)}
+                      className="flex h-6 w-6 items-center justify-center rounded text-slate-500 transition-colors hover:text-red-400"
+                      title="Delete channel"
+                    >
+                      {/* Trash icon */}
+                      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
+                        <path d="M9 3v1H4v2h1v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6h1V4h-5V3H9zm0 5h2v9H9V8zm4 0h2v9h-2V8z" />
+                      </svg>
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* Channel Permission Overrides Panel */}
+              {showPermsForId === ch.id && (
+                <div className="ml-6 mt-1 mb-2 rounded-lg border border-dark-700 bg-dark-800/70 p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-300">
+                      Permission Overrides
+                    </h4>
+                    <span className="rounded-full bg-yellow-500/10 border border-yellow-500/20 px-2.5 py-0.5 text-[10px] font-semibold text-yellow-400">
+                      Coming soon
+                    </span>
+                  </div>
+                  <p className="mb-3 text-[11px] text-slate-500">
+                    Set per-channel permissions for specific roles. Override the server-wide role settings for this channel only.
+                  </p>
+                  <div className="space-y-2 opacity-50 pointer-events-none">
+                    {guildRoles
+                      .filter((r) => !r.isDefault)
+                      .slice(0, 5)
+                      .map((role) => (
+                        <div key={role.id} className="rounded-md bg-dark-900/60 px-3 py-2">
+                          <div className="mb-2 flex items-center gap-2">
+                            <span
+                              className="h-2.5 w-2.5 rounded-full"
+                              style={{ backgroundColor: role.color || "#99AAB5" }}
+                            />
+                            <span className="text-xs font-medium text-slate-300">{role.name}</span>
+                          </div>
+                          <div className="flex flex-wrap gap-x-4 gap-y-1">
+                            {OVERRIDE_PERMS.map((perm) => (
+                              <div key={perm.bit} className="flex items-center gap-2">
+                                <span className="text-[11px] text-slate-400 w-28">{perm.name}</span>
+                                <div className="flex gap-1">
+                                  {(["Allow", "Deny", "Inherit"] as const).map((state) => (
+                                    <button
+                                      key={state}
+                                      disabled
+                                      className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                                        state === "Inherit"
+                                          ? "bg-dark-700 text-slate-400"
+                                          : state === "Allow"
+                                            ? "bg-dark-700 text-slate-500"
+                                            : "bg-dark-700 text-slate-500"
+                                      }`}
+                                    >
+                                      {state}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                  {guildRoles.filter((r) => !r.isDefault).length === 0 && (
+                    <p className="text-[11px] text-slate-500 italic">No roles to configure.</p>
+                  )}
                 </div>
-              ) : confirmDeleteId === ch.id ? (
-                <div className="flex flex-1 items-center gap-2">
-                  <span className="flex-1 truncate text-sm text-red-400">
-                    Delete #{ch.name}?
-                  </span>
-                  <button
-                    onClick={() => handleDelete(ch.id)}
-                    disabled={loading}
-                    className="text-xs font-semibold text-red-400 hover:text-red-300 disabled:opacity-50"
-                  >
-                    Confirm
-                  </button>
-                  <button
-                    onClick={() => setConfirmDeleteId(null)}
-                    className="text-xs text-slate-400 hover:text-slate-300"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <span className="flex-1 truncate text-sm text-slate-200">
-                    {ch.name}
-                  </span>
-                  <button
-                    onClick={() => startEdit(ch)}
-                    className="flex h-6 w-6 items-center justify-center rounded text-slate-500 transition-colors hover:text-slate-300"
-                    title="Edit channel"
-                  >
-                    {/* Pencil icon */}
-                    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
-                      <path d="M16.474 5.408l2.118 2.117m-.756-3.982L12.109 9.27a2.118 2.118 0 0 0-.58 1.082L11 13l2.648-.53c.41-.082.786-.283 1.082-.579l5.727-5.727a1.853 1.853 0 1 0-2.621-2.621zM19.5 12c0 .76-.056 1.508-.165 2.24C18.58 18.776 14.68 22 10 22c-5.523 0-10-4.477-10-10S4.477 2 10 2c1.376 0 2.69.278 3.884.78" />
-                    </svg>
-                  </button>
-                  <button
-                    onClick={() => setConfirmDeleteId(ch.id)}
-                    className="flex h-6 w-6 items-center justify-center rounded text-slate-500 transition-colors hover:text-red-400"
-                    title="Delete channel"
-                  >
-                    {/* Trash icon */}
-                    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
-                      <path d="M9 3v1H4v2h1v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6h1V4h-5V3H9zm0 5h2v9H9V8zm4 0h2v9h-2V8z" />
-                    </svg>
-                  </button>
-                </>
               )}
             </div>
           ))}
@@ -534,12 +654,51 @@ function RolesTab({ guildId }: { guildId: string }) {
     }
   }
 
-  // Sort: @everyone last, then by position
+  // Reorder: swap positions between two roles
+  const [reordering, setReordering] = useState(false);
+
+  async function handleMoveRole(role: Role, direction: "up" | "down") {
+    // Non-default, non-auto roles only — sorted by position ascending
+    const movable = [...roles]
+      .filter((r) => !r.isDefault && !r.isAuto)
+      .sort((a, b) => a.position - b.position);
+
+    const idx = movable.findIndex((r) => r.id === role.id);
+    if (idx === -1) return;
+
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= movable.length) return;
+
+    const target = movable[swapIdx];
+    setReordering(true);
+    setError("");
+    try {
+      // Swap positions
+      const rolePos = role.position;
+      const targetPos = target.position;
+      await Promise.all([
+        api.updateRole(role.id, { guildId, position: targetPos }),
+        api.updateRole(target.id, { guildId, position: rolePos }),
+      ]);
+      await fetchRoles();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reorder roles");
+    } finally {
+      setReordering(false);
+    }
+  }
+
+  // Sort: @everyone last, auto roles after custom roles, then by position
   const sorted = [...roles].sort((a, b) => {
     if (a.isDefault) return 1;
     if (b.isDefault) return -1;
+    if (a.isAuto && !b.isAuto) return 1;
+    if (!a.isAuto && b.isAuto) return -1;
     return a.position - b.position;
   });
+
+  // For computing move-ability: only custom (non-default, non-auto) roles
+  const movableRoles = sorted.filter((r) => !r.isDefault && !r.isAuto);
 
   return (
     <>
@@ -652,7 +811,13 @@ function RolesTab({ guildId }: { guildId: string }) {
         <p className="text-sm text-slate-500">No roles in this server.</p>
       ) : (
         <div className="space-y-1">
-          {sorted.map((role) => (
+          {sorted.map((role) => {
+            const isMovable = !role.isDefault && !role.isAuto;
+            const movableIdx = movableRoles.findIndex((r) => r.id === role.id);
+            const canMoveUp = isMovable && movableIdx > 0;
+            const canMoveDown = isMovable && movableIdx < movableRoles.length - 1;
+
+            return (
             <div
               key={role.id}
               className="flex items-center gap-2 rounded-lg bg-dark-800/50 px-3 py-2"
@@ -745,8 +910,38 @@ function RolesTab({ guildId }: { guildId: string }) {
                     {role.isDefault && (
                       <span className="ml-2 text-xs text-slate-500">(default)</span>
                     )}
+                    {role.isAuto && (
+                      <span className="ml-2 text-xs text-purple-400">(auto)</span>
+                    )}
                   </span>
-                  {!role.isDefault && (
+
+                  {/* Reorder arrows — only for custom roles (not default, not auto) */}
+                  {isMovable && (
+                    <div className="flex flex-col gap-0.5">
+                      <button
+                        onClick={() => handleMoveRole(role, "up")}
+                        disabled={!canMoveUp || reordering || loading}
+                        className="flex h-4 w-5 items-center justify-center rounded text-slate-500 transition-colors hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Move up"
+                      >
+                        <svg viewBox="0 0 24 24" className="h-3 w-3 fill-current">
+                          <path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z" />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => handleMoveRole(role, "down")}
+                        disabled={!canMoveDown || reordering || loading}
+                        className="flex h-4 w-5 items-center justify-center rounded text-slate-500 transition-colors hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Move down"
+                      >
+                        <svg viewBox="0 0 24 24" className="h-3 w-3 fill-current">
+                          <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
+
+                  {!role.isDefault && !role.isAuto && (
                     <>
                       <button
                         onClick={() => startEdit(role)}
@@ -773,7 +968,8 @@ function RolesTab({ guildId }: { guildId: string }) {
                 </>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </>
@@ -939,6 +1135,97 @@ function AuditLogTab({ guildId }: { guildId: string }) {
           ))}
         </div>
       )}
+    </>
+  );
+}
+
+// ---- Automod Tab ----
+
+function AutomodTab({ guildId: _guildId }: { guildId: string }) {
+  void _guildId; // Will be used when server-side automod is implemented
+  const [blockedWords, setBlockedWords] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  function handleSave() {
+    // Placeholder — server-side filtering is not yet implemented
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  return (
+    <>
+      <div className="mb-6 flex items-center gap-3">
+        <svg className="h-6 w-6 text-nexe-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+        <h2 className="text-xl font-bold text-slate-100">Automod</h2>
+      </div>
+
+      <div className="rounded-lg border border-nexe-500/20 bg-nexe-500/5 px-4 py-3 mb-6">
+        <div className="flex items-center gap-2">
+          <span className="rounded-full bg-nexe-500/10 border border-nexe-500/20 px-2.5 py-0.5 text-[10px] font-semibold text-nexe-400">
+            Preview
+          </span>
+          <p className="text-sm text-slate-300">
+            Automod is under development. Configure your word filter below — server-side enforcement is coming soon.
+          </p>
+        </div>
+      </div>
+
+      <div className="space-y-5">
+        {/* Word Filter */}
+        <div className="rounded-lg border border-dark-700 bg-dark-800/50 p-5">
+          <h3 className="text-sm font-semibold text-slate-200 mb-1">Blocked Words</h3>
+          <p className="text-xs text-slate-500 mb-3">
+            Enter words or phrases to block, one per line. Messages containing these words will be automatically deleted.
+          </p>
+          <textarea
+            value={blockedWords}
+            onChange={(e) => { setBlockedWords(e.target.value); setSaved(false); }}
+            rows={6}
+            placeholder={"bad-word\nanother phrase\nspam-link.example.com"}
+            className="w-full resize-none rounded-lg border border-dark-700 bg-dark-900 px-4 py-2.5 text-sm text-slate-200 outline-none transition-colors placeholder:text-slate-600 focus:border-nexe-500 font-mono"
+          />
+
+          <div className="mt-3 flex items-center gap-3">
+            <button
+              onClick={handleSave}
+              disabled={!blockedWords.trim()}
+              className="rounded-lg bg-nexe-500 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-nexe-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Save
+            </button>
+            {saved && (
+              <span className="text-xs text-green-400">Settings saved (local only — server filtering coming soon)</span>
+            )}
+          </div>
+        </div>
+
+        {/* Future features */}
+        <div className="rounded-lg border border-dark-700 bg-dark-800/50 p-5">
+          <h3 className="text-sm font-semibold text-slate-200 mb-3">Upcoming Features</h3>
+          <div className="space-y-2.5">
+            {[
+              { name: "Spam Detection", desc: "Auto-detect and remove spam messages" },
+              { name: "Link Filter", desc: "Block or whitelist specific domains" },
+              { name: "Mention Limit", desc: "Limit mass mentions to prevent abuse" },
+              { name: "Auto Actions", desc: "Choose between delete, warn, or timeout" },
+            ].map((feature) => (
+              <div key={feature.name} className="flex items-center gap-3 opacity-50">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-dark-700">
+                  <svg className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-[13px] font-medium text-slate-300">{feature.name}</p>
+                  <p className="text-[11px] text-slate-500">{feature.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </>
   );
 }

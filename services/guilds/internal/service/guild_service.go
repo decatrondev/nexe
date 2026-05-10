@@ -227,6 +227,9 @@ func (s *GuildService) UpdateChannel(ctx context.Context, channel *model.Channel
 	if err := s.channels.Update(ctx, channel); err != nil {
 		return fmt.Errorf("update channel: %w", err)
 	}
+
+	go s.events.Publish(context.Background(), channel.GuildID, "CHANNEL_UPDATE", channel)
+
 	return nil
 }
 
@@ -963,6 +966,35 @@ func (s *GuildService) TimeoutMember(ctx context.Context, guildID, targetID, mod
 
 	durSecs := int(duration.Seconds())
 	s.logModAction(ctx, guildID, modID, targetID, "timeout", reason, &durSecs)
+	return nil
+}
+
+func (s *GuildService) WarnMember(ctx context.Context, guildID, targetID, modID, reason string) error {
+	// Require at least kick or ban permission to warn
+	if err := s.checkPermission(ctx, guildID, modID, model.PermKickMembers); err != nil {
+		return err
+	}
+
+	// Protect guild owner from being warned
+	guild, err := s.guilds.GetByID(ctx, guildID)
+	if err != nil {
+		return fmt.Errorf("warn member: %w", err)
+	}
+	if guild != nil && guild.OwnerID == targetID {
+		return fmt.Errorf("cannot warn the server owner")
+	}
+
+	// Verify target is a member
+	member, err := s.members.GetByGuildAndUser(ctx, guildID, targetID)
+	if err != nil {
+		return fmt.Errorf("warn member: %w", err)
+	}
+	if member == nil {
+		return fmt.Errorf("member not found")
+	}
+
+	s.logModAction(ctx, guildID, modID, targetID, "warn", reason, nil)
+	slog.Info("member warned", "guild_id", guildID, "target_id", targetID, "mod_id", modID)
 	return nil
 }
 

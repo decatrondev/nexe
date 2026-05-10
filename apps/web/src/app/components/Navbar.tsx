@@ -24,17 +24,11 @@ export default function Navbar() {
           >
             Open Source
           </a>
-          <a
-            href="#download"
+          <Link
+            href="/download"
             className="text-sm text-slate-400 transition-colors hover:text-white"
           >
             Download
-          </a>
-          <Link
-            href="/admin"
-            className="text-sm text-slate-500 transition-colors hover:text-slate-300"
-          >
-            Admin
           </Link>
         </div>
       </div>

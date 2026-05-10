@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useGuildStore } from "../stores/guild";
 import { useAuthStore } from "../stores/auth";
 import { hasPermission, computePermissions, Permissions } from "../lib/permissions";
-import { type Channel } from "../lib/api";
+import { type Channel, api } from "../lib/api";
 import { FREE_TIER_LIMITS } from "../lib/limits";
 import CreateChannelModal from "./CreateChannelModal";
 import ServerSettingsModal from "./ServerSettingsModal";
@@ -30,6 +30,8 @@ export default function ChannelList() {
   const [showSettings, setShowSettings] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [showUserSettings, setShowUserSettings] = useState(false);
+  const [showStatusMenu, setShowStatusMenu] = useState(false);
+  const statusMenuRef = useRef<HTMLDivElement>(null);
 
   const allRoles = useGuildStore((s) => s.roles);
   const memberRolesMap = useGuildStore((s) => s.memberRoles);
@@ -180,13 +182,33 @@ export default function ChannelList() {
 
         {/* User info bar */}
         <div className="flex shrink-0 items-center gap-2 border-t border-dark-950 bg-dark-950/50 px-2 py-2">
-          <div className="relative">
+          <div className="relative" ref={statusMenuRef}>
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-nexe-600 text-xs font-semibold text-white">
               {(user?.username || "U").charAt(0).toUpperCase()}
             </div>
-            <div
-              className={`absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-dark-950 ${statusColors[userStatus] || statusColors.online}`}
+            <button
+              onClick={() => setShowStatusMenu((v) => !v)}
+              className={`absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-dark-950 cursor-pointer transition-transform hover:scale-125 ${statusColors[userStatus] || statusColors.online}`}
+              title="Change status"
             />
+            {showStatusMenu && (
+              <StatusMenu
+                current={userStatus}
+                onSelect={async (status) => {
+                  setShowStatusMenu(false);
+                  try {
+                    await api.updatePresence(status);
+                    useAuthStore.setState((s) => ({
+                      user: s.user ? { ...s.user, status: status as "online" | "idle" | "dnd" | "offline" } : null,
+                    }));
+                  } catch (err) {
+                    console.error("Failed to update status:", err);
+                  }
+                }}
+                onClose={() => setShowStatusMenu(false)}
+                anchorRef={statusMenuRef}
+              />
+            )}
           </div>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-slate-200">
@@ -240,5 +262,70 @@ export default function ChannelList() {
         <UserSettingsModal onClose={() => setShowUserSettings(false)} />
       )}
     </>
+  );
+}
+
+// ── Status Selector Dropdown ──
+
+const STATUS_OPTIONS = [
+  { value: "online", label: "Online", color: "bg-green-500" },
+  { value: "idle", label: "Idle", color: "bg-yellow-500" },
+  { value: "dnd", label: "Do Not Disturb", color: "bg-red-500" },
+  { value: "invisible", label: "Invisible", color: "bg-slate-500" },
+] as const;
+
+function StatusMenu({
+  current,
+  onSelect,
+  onClose,
+  anchorRef,
+}: {
+  current: string;
+  onSelect: (status: string) => void;
+  onClose: () => void;
+  anchorRef: React.RefObject<HTMLDivElement | null>;
+}) {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (
+        menuRef.current && !menuRef.current.contains(e.target as Node) &&
+        anchorRef.current && !anchorRef.current.contains(e.target as Node)
+      ) {
+        onClose();
+      }
+    };
+    const t = setTimeout(() => document.addEventListener("mousedown", handler), 10);
+    return () => { clearTimeout(t); document.removeEventListener("mousedown", handler); };
+  }, [onClose, anchorRef]);
+
+  return (
+    <div
+      ref={menuRef}
+      className="absolute bottom-full left-0 mb-2 w-48 overflow-hidden rounded-lg border border-dark-700 bg-dark-800 py-1 shadow-xl"
+      style={{ zIndex: 100 }}
+    >
+      <p className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+        Set Status
+      </p>
+      {STATUS_OPTIONS.map((opt) => (
+        <button
+          key={opt.value}
+          onClick={() => onSelect(opt.value)}
+          className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-sm transition-colors hover:bg-dark-700 ${
+            current === opt.value ? "text-white" : "text-slate-300"
+          }`}
+        >
+          <div className={`h-2.5 w-2.5 rounded-full ${opt.color}`} />
+          <span>{opt.label}</span>
+          {current === opt.value && (
+            <svg className="ml-auto h-3.5 w-3.5 text-nexe-400" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+            </svg>
+          )}
+        </button>
+      ))}
+    </div>
   );
 }

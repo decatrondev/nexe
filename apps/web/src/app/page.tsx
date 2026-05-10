@@ -1,38 +1,64 @@
 import Navbar from "@/app/components/Navbar";
+import { type ReactNode } from "react";
 
-const features = [
+const features: { icon: ReactNode; title: string; description: string }[] = [
   {
-    icon: "[LIVE]",
+    icon: (
+      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9.348 14.651a3.75 3.75 0 010-5.303m5.304 0a3.75 3.75 0 010 5.303m-7.425 2.122a6.75 6.75 0 010-9.546m9.546 0a6.75 6.75 0 010 9.546M5.106 18.894c-3.808-3.808-3.808-9.98 0-13.789m13.788 0c3.808 3.808 3.808 9.981 0 13.79M12 12h.008v.007H12V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+      </svg>
+    ),
     title: "Live Status",
     description:
       "Know when your streamer is live, automatically. Real-time notifications without third-party bots.",
   },
   {
-    icon: "[ROLE]",
+    icon: (
+      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+      </svg>
+    ),
     title: "Auto Roles",
     description:
       "Twitch subs get roles instantly, no bots needed. Seamless integration with your subscriber tiers.",
   },
   {
-    icon: "[USER]",
+    icon: (
+      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+      </svg>
+    ),
     title: "Steam-like Profiles",
     description:
       "Dynamic profiles with badges, levels, and showcase. Show off your streaming stats and achievements.",
   },
   {
-    icon: "[CLIP]",
+    icon: (
+      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15.91 11.672a.375.375 0 010 .656l-5.603 3.113a.375.375 0 01-.557-.328V8.887c0-.286.307-.466.557-.327l5.603 3.112z" />
+      </svg>
+    ),
     title: "Native Clips",
     description:
       "Share Twitch clips directly in chat with rich embeds. No link previews — real native playback.",
   },
   {
-    icon: "[SYNC]",
+    icon: (
+      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+      </svg>
+    ),
     title: "Chat Bridge",
     description:
       "Sync messages between Nexe and Twitch chat in real time. One conversation, two platforms.",
   },
   {
-    icon: "[API]",
+    icon: (
+      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
+      </svg>
+    ),
     title: "Bot API",
     description:
       "Build powerful bots from day one with a first-class API. No reverse engineering required.",
@@ -102,7 +128,7 @@ export default function Home() {
 
           <div className="flex flex-col items-center justify-center gap-4 sm:flex-row" id="download">
             <a
-              href="#download"
+              href="/download"
               className="inline-flex h-12 items-center justify-center rounded-lg bg-nexe-600 px-8 text-sm font-medium text-white transition-all hover:bg-nexe-700 hover:shadow-lg hover:shadow-nexe-600/25"
             >
               Download Desktop
@@ -143,7 +169,7 @@ export default function Home() {
                 key={feature.title}
                 className="group rounded-xl border border-slate-800 bg-dark-800 p-6 transition-all hover:border-nexe-500/30 hover:bg-dark-850"
               >
-                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-nexe-600/10 font-mono text-xs font-bold text-nexe-400">
+                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg bg-nexe-600/10 text-nexe-400">
                   {feature.icon}
                 </div>
                 <h3 className="mb-2 text-lg font-semibold text-white">

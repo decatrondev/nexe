@@ -171,6 +171,22 @@ export default function HomePage() {
         }
       });
 
+      nexeWS.on("CHANNEL_UPDATE", (data) => {
+        const ch = data as { id: string; guildId: string; name: string; topic: string; slowmodeSeconds: number };
+        useGuildStore.setState((s) => {
+          const guildChannels = s.channels[ch.guildId];
+          if (!guildChannels) return s;
+          return {
+            channels: {
+              ...s.channels,
+              [ch.guildId]: guildChannels.map((c) =>
+                c.id === ch.id ? { ...c, ...ch } : c,
+              ),
+            },
+          };
+        });
+      });
+
       nexeWS.on("GUILD_BAN_REMOVE", (_data) => {
         // Unban event — no immediate UI action needed since the user
         // is not currently a member. Could be used for mod log updates.

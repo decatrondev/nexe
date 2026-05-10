@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, type UserProfile } from "../lib/api";
+import { api, type UserProfile, type UserBadge } from "../lib/api";
 import { useAuthStore } from "../stores/auth";
 import { useGuildStore } from "../stores/guild";
 import { hasPermission, computePermissions, Permissions } from "../lib/permissions";
@@ -22,7 +22,7 @@ interface UserProfileWithTwitch extends UserProfile {
   twitchLogin?: string;
 }
 
-type ModAction = "kick" | "ban" | "timeout" | null;
+type ModAction = "kick" | "ban" | "timeout" | "warn" | null;
 
 const TIMEOUT_OPTIONS = [
   { label: "1 min", value: 60 },
@@ -113,15 +113,20 @@ export default function MiniProfilePopover({ userId, x, y, onClose, onViewFull }
   }
 
 
+  // Badges
+  const [badges, setBadges] = useState<UserBadge[]>([]);
+
   // Moderation state
   const [modAction, setModAction] = useState<ModAction>(null);
   const [banReason, setBanReason] = useState("");
+  const [warnReason, setWarnReason] = useState("");
   const [timeoutDuration, setTimeoutDuration] = useState(60);
   const [modLoading, setModLoading] = useState(false);
 
   useEffect(() => {
     let cancel = false;
     api.getProfile(userId).then((p) => { if (!cancel) { setProfile(p); setLoading(false); } }).catch(() => { if (!cancel) setLoading(false); });
+    api.getBadges(userId).then((b) => { if (!cancel) setBadges(b ?? []); }).catch(() => {});
     return () => { cancel = true; };
   }, [userId]);
 
@@ -186,6 +191,19 @@ export default function MiniProfilePopover({ userId, x, y, onClose, onViewFull }
       onClose();
     } catch (err) {
       console.error("Failed to timeout member:", err);
+    } finally {
+      setModLoading(false);
+    }
+  }
+
+  async function handleWarn() {
+    if (!activeGuildId || !warnReason.trim()) return;
+    setModLoading(true);
+    try {
+      await api.warnMember(activeGuildId, userId, warnReason.trim());
+      onClose();
+    } catch (err) {
+      console.error("Failed to warn member:", err);
     } finally {
       setModLoading(false);
     }
@@ -281,6 +299,25 @@ export default function MiniProfilePopover({ userId, x, y, onClose, onViewFull }
                 Level {level}
               </div>
             </div>
+
+            {/* Badges */}
+            {badges.length > 0 && (
+              <div className="mb-3">
+                <p className="mb-1 text-[11px] font-bold uppercase text-slate-400">Badges</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {badges.map((badge) => (
+                    <span
+                      key={badge.id}
+                      title={badge.description || badge.name}
+                      className="flex items-center gap-1 rounded-full bg-slate-800 px-2 py-0.5 text-[11px] font-medium text-slate-300"
+                    >
+                      <BadgeIcon iconUrl={badge.iconUrl} />
+                      {badge.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* View Full Profile */}
             {onViewFull && (
@@ -399,7 +436,15 @@ export default function MiniProfilePopover({ userId, x, y, onClose, onViewFull }
               <>
                 <div className="mt-3 h-px bg-slate-700/50" />
                 {modAction === null ? (
-                  <div className="mt-2 flex gap-2">
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {(canKick || canBan) && (
+                      <button
+                        onClick={() => setModAction("warn")}
+                        className="flex-1 rounded-md py-1.5 text-[12px] font-medium text-amber-400 transition-colors hover:bg-amber-500/10"
+                      >
+                        Warn
+                      </button>
+                    )}
                     {canKick && (
                       <button
                         onClick={() => setModAction("kick")}
@@ -424,6 +469,34 @@ export default function MiniProfilePopover({ userId, x, y, onClose, onViewFull }
                         Timeout
                       </button>
                     )}
+                  </div>
+                ) : modAction === "warn" ? (
+                  <div className="mt-2">
+                    <p className="text-[12px] text-slate-400">Warn this user:</p>
+                    <input
+                      type="text"
+                      value={warnReason}
+                      onChange={(e) => setWarnReason(e.target.value)}
+                      placeholder="Reason for warning"
+                      className="mt-1.5 w-full rounded bg-dark-800 px-2 py-1 text-[12px] text-slate-200 outline-none ring-1 ring-slate-700 focus:ring-amber-500/50"
+                      autoFocus
+                      onKeyDown={(e) => { if (e.key === "Enter") handleWarn(); }}
+                    />
+                    <div className="mt-2 flex gap-2">
+                      <button
+                        onClick={handleWarn}
+                        disabled={modLoading || !warnReason.trim()}
+                        className="flex-1 rounded-md bg-amber-600 py-1.5 text-[12px] font-medium text-white transition-colors hover:bg-amber-700 disabled:opacity-50"
+                      >
+                        {modLoading ? "..." : "Warn"}
+                      </button>
+                      <button
+                        onClick={() => { setModAction(null); setWarnReason(""); }}
+                        className="flex-1 rounded-md py-1.5 text-[12px] font-medium text-slate-400 transition-colors hover:bg-slate-700/50"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
                 ) : modAction === "kick" ? (
                   <div className="mt-2">
@@ -513,5 +586,34 @@ export default function MiniProfilePopover({ userId, x, y, onClose, onViewFull }
         )}
       </div>
     </div>
+  );
+}
+
+// Badge icon — uses known icon slugs or falls back to a star
+const BADGE_ICONS: Record<string, string> = {
+  early_adopter: "M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z",
+  streamer: "M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0 1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z",
+  developer: "M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z",
+};
+
+function BadgeIcon({ iconUrl }: { iconUrl: string }) {
+  // If iconUrl is a known slug, render inline SVG
+  const path = BADGE_ICONS[iconUrl];
+  if (path) {
+    return (
+      <svg className="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="currentColor">
+        <path d={path} />
+      </svg>
+    );
+  }
+  // If it's an actual URL, render an image
+  if (iconUrl.startsWith("http")) {
+    return <img src={iconUrl} alt="" className="h-3 w-3 shrink-0 rounded-sm" />;
+  }
+  // Fallback star
+  return (
+    <svg className="h-3 w-3 shrink-0" viewBox="0 0 20 20" fill="currentColor">
+      <path d="M10 1l2.39 6.26H19l-5.3 3.98L15.69 18 10 14.27 4.31 18l1.99-6.76L1 7.26h6.61z" />
+    </svg>
   );
 }
