@@ -18,12 +18,13 @@ func NewUserRepository(db *sql.DB) *UserRepository {
 
 func (r *UserRepository) Create(ctx context.Context, user *model.User) error {
 	query := `
-		INSERT INTO users (username, email, password_hash, email_verified, status)
-		VALUES ($1, $2, $3, $4, 'offline')
+		INSERT INTO users (username, email, password_hash, email_verified, status, twitch_id, twitch_login)
+		VALUES ($1, $2, $3, $4, 'offline', $5, $6)
 		RETURNING id, created_at, updated_at`
 
 	return r.db.QueryRowContext(ctx, query,
 		user.Username, user.Email, user.PasswordHash, user.EmailVerified,
+		user.TwitchID, user.TwitchLogin,
 	).Scan(&user.ID, &user.CreatedAt, &user.UpdatedAt)
 }
 

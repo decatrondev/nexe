@@ -50,9 +50,14 @@ func (s *AuthService) GetUserByID(ctx context.Context, id string) (*model.User, 
 }
 
 type RegisterInput struct {
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Username           string `json:"username"`
+	Email              string `json:"email"`
+	Password           string `json:"password"`
+	TwitchID           string `json:"twitchId,omitempty"`
+	TwitchLogin        string `json:"twitchLogin,omitempty"`
+	TwitchDisplayName  string `json:"twitchDisplayName,omitempty"`
+	TwitchEmail        string `json:"twitchEmail,omitempty"`
+	TwitchAvatar       string `json:"twitchAvatar,omitempty"`
 }
 
 type LoginInput struct {
@@ -111,6 +116,12 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*model
 		Username:     input.Username,
 		Email:        input.Email,
 		PasswordHash: &hashStr,
+	}
+
+	// Link Twitch if registering via Twitch OAuth
+	if input.TwitchID != "" {
+		user.TwitchID = &input.TwitchID
+		user.TwitchLogin = &input.TwitchLogin
 	}
 
 	if err := s.users.Create(ctx, user); err != nil {
