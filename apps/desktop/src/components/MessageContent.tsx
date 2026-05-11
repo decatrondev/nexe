@@ -60,7 +60,7 @@ const TWITCH_GLOBAL_EMOTES: Record<string, string> = {
 };
 
 function getTwitchEmoteURL(id: string, size: "1.0" | "2.0" | "3.0" = "2.0") {
-  return `https://static-cdn.jtvnbs.net/emoticons/v2/${id}/default/dark/${size}`;
+  return `https://static-cdn.jtvnw.net/emoticons/v2/${id}/default/dark/${size}`;
 }
 
 // ---- Types ----
