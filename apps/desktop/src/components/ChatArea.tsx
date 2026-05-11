@@ -436,7 +436,7 @@ export default function ChatArea() {
       y: e.clientY,
       messageId: msg.id,
       authorId: msg.authorId,
-      isOwn: msg.authorId === currentUser?.id,
+      isOwn: msg.authorId !== "" && msg.authorId === currentUser?.id,
     });
   }
 
@@ -693,8 +693,8 @@ export default function ChatArea() {
                 {searchResults.length} result{searchResults.length !== 1 ? "s" : ""}
               </div>
               {searchResults.map((msg) => {
-                const authorName = usernames[msg.authorId] || "Unknown";
-                const color = getRoleColor(msg.authorId, memberRolesMap, guildRoles) || userColor(msg.authorId);
+                const authorName = msg.bridgeSource ? (msg.bridgeAuthor || "Unknown") : (usernames[msg.authorId] || "Unknown");
+                const color = msg.bridgeSource ? (msg.bridgeSource === "twitch" ? "#9146FF" : "#888") : (getRoleColor(msg.authorId, memberRolesMap, guildRoles) || userColor(msg.authorId));
                 return (
                   <div
                     key={msg.id}
@@ -795,8 +795,8 @@ export default function ChatArea() {
                           <svg className="h-3 w-3 rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a5 5 0 015 5v4M3 10l6 6m-6-6l6-6" />
                           </svg>
-                          <span style={{ color: getRoleColor(replyRef.authorId, memberRolesMap, guildRoles) || userColor(replyRef.authorId) }} className="font-medium">
-                            {usernames[replyRef.authorId] || "Unknown"}
+                          <span style={{ color: replyRef.bridgeSource ? (replyRef.bridgeSource === "twitch" ? "#9146FF" : "#888") : (getRoleColor(replyRef.authorId, memberRolesMap, guildRoles) || userColor(replyRef.authorId)) }} className="font-medium">
+                            {replyRef.bridgeSource ? (replyRef.bridgeAuthor || "Unknown") : (usernames[replyRef.authorId] || "Unknown")}
                           </span>
                           <span className="truncate max-w-xs">{replyRef.content}</span>
                         </div>
@@ -922,7 +922,7 @@ export default function ChatArea() {
                             <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a5 5 0 015 5v4M3 10l6 6m-6-6l6-6" />
                           </svg>
                         </button>
-                        {msg.authorId === currentUser?.id && (
+                        {msg.authorId !== "" && msg.authorId === currentUser?.id && (
                           <button
                             onClick={() => startEdit(msg)}
                             className="rounded p-1 text-slate-400 hover:bg-dark-700 hover:text-white"
@@ -933,7 +933,7 @@ export default function ChatArea() {
                             </svg>
                           </button>
                         )}
-                        {(msg.authorId === currentUser?.id || canManageMessages) && (
+                        {(msg.authorId !== "" && msg.authorId === currentUser?.id || canManageMessages) && (
                           <button
                             onClick={() => setDeleteConfirm(msg.id)}
                             className="rounded p-1 text-slate-400 hover:bg-red-500/20 hover:text-red-400"
@@ -1038,8 +1038,8 @@ export default function ChatArea() {
                 </div>
               ) : (
                 pinnedMessages.map((msg) => {
-                  const authorName = usernames[msg.authorId] || "Unknown";
-                  const color = getRoleColor(msg.authorId, memberRolesMap, guildRoles) || userColor(msg.authorId);
+                  const authorName = msg.bridgeSource ? (msg.bridgeAuthor || "Unknown") : (usernames[msg.authorId] || "Unknown");
+                  const color = msg.bridgeSource ? (msg.bridgeSource === "twitch" ? "#9146FF" : "#888") : (getRoleColor(msg.authorId, memberRolesMap, guildRoles) || userColor(msg.authorId));
                   return (
                     <div key={msg.id} className="mb-2 rounded-lg border border-dark-700 bg-dark-800 p-3 transition-colors hover:bg-dark-700/50 hover:border-dark-600">
                       <div className="flex items-baseline gap-2">
