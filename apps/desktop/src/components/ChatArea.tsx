@@ -801,11 +801,11 @@ export default function ChatArea() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Messages area */}
-        <div className="relative flex min-w-0 flex-1 flex-col">
+        <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
           <div
             ref={scrollContainerRef}
             onScroll={handleScroll}
-            className="flex flex-1 flex-col gap-1 overflow-y-auto px-4 py-4"
+            className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-4 py-4"
           >
             {loadingMore && (
               <div className="flex justify-center py-2">
