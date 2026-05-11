@@ -214,7 +214,7 @@ export default function ChatArea() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const prevMessageCountRef = useRef(0);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const editInputRef = useRef<HTMLTextAreaElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -238,16 +238,7 @@ export default function ChatArea() {
         .slice(0, 8)
     : [];
 
-  // Auto-resize textarea based on line count
-  useEffect(() => {
-    const el = inputRef.current;
-    if (!el) return;
-    const lineCount = (input.match(/\n/g) || []).length + 1;
-    const lineHeight = 20; // leading-5
-    const padding = 24; // py-3 = 12px top + 12px bottom
-    const height = Math.min(Math.max(lineCount * lineHeight + padding, 44), 160);
-    el.style.height = height + "px";
-  }, [input]);
+  // no auto-resize effect needed — textarea uses rows + CSS
 
   // Close context menu on any click
   useEffect(() => {
@@ -1102,17 +1093,13 @@ export default function ChatArea() {
               </div>
             )}
             <form onSubmit={handleSubmit}>
-              <div className={`flex items-end bg-dark-800 px-4 ${replyTo ? "rounded-b-lg" : "rounded-lg"}`}>
-                <textarea
-                  ref={inputRef}
+              <div className={`flex items-center bg-dark-800 px-4 ${replyTo ? "rounded-b-lg" : "rounded-lg"}`}>
+                <input
+                  ref={inputRef as React.RefObject<HTMLInputElement>}
+                  type="text"
                   value={input}
                   onChange={(e) => handleInputChange(e.target.value)}
                   onKeyDown={(e) => {
-                    // Enter to send, Shift+Enter for newline
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSubmit(e);
-                    }
                     // @mention keyboard navigation
                     if (mentionQuery !== null && mentionSuggestions.length > 0) {
                       if (e.key === "ArrowDown") {
@@ -1121,19 +1108,18 @@ export default function ChatArea() {
                       } else if (e.key === "ArrowUp") {
                         e.preventDefault();
                         setMentionIndex((i) => Math.max(i - 1, 0));
-                      } else if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+                      } else if (e.key === "Tab" || e.key === "Enter") {
                         e.preventDefault();
                         const s = mentionSuggestions[mentionIndex];
                         if (s) insertMention(s.userId, usernames[s.userId] || "Unknown");
+                        return;
                       } else if (e.key === "Escape") {
                         setMentionQuery(null);
                       }
                     }
                   }}
                   placeholder={slowmodeRemaining > 0 ? `Slowmode: ${slowmodeRemaining}s remaining` : `Message #${channelName}`}
-                  className="flex-1 resize-none bg-transparent py-3 text-sm leading-5 text-slate-200 outline-none placeholder:text-slate-500"
-                  rows={1}
-                  style={{ height: "44px", overflow: "hidden" }}
+                  className="flex-1 bg-transparent py-3 text-sm text-slate-200 outline-none placeholder:text-slate-500"
                   disabled={sending || slowmodeRemaining > 0}
                 />
                 <button
