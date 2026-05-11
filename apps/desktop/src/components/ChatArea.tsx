@@ -210,6 +210,7 @@ export default function ChatArea() {
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const mentionMapRef = useRef<Map<string, string>>(new Map()); // username → userId
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -423,22 +424,32 @@ export default function ChatArea() {
     }
   }
 
-  function insertMention(userId: string, _username: string) {
+  function insertMention(userId: string, username: string) {
     const cursorPos = inputRef.current?.selectionStart ?? input.length;
     const textBeforeCursor = input.slice(0, cursorPos);
     const atIndex = textBeforeCursor.lastIndexOf("@");
     if (atIndex === -1) return;
     const before = input.slice(0, atIndex);
     const after = input.slice(cursorPos);
-    const newValue = `${before}<@${userId}> ${after}`;
+    const newValue = `${before}@${username} ${after}`;
+    mentionMapRef.current.set(username, userId);
     setInput(newValue);
     setMentionQuery(null);
     inputRef.current?.focus();
   }
 
+  // Convert @username to <@userId> before sending
+  function resolveContentMentions(text: string): string {
+    let result = text;
+    for (const [username, userId] of mentionMapRef.current) {
+      result = result.replace(new RegExp(`@${username}\\b`, "g"), `<@${userId}>`);
+    }
+    return result;
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    const content = input.trim();
+    const content = resolveContentMentions(input.trim());
     if (!content || sending) return;
     // Check slowmode
     if (slowmodeSeconds > 0 && slowmodeRemaining > 0) return;
@@ -452,6 +463,7 @@ export default function ChatArea() {
         api.sendToBridge(guild.id, guild.bridgeChannelId, content, currentUser.displayName || currentUser.username).catch(() => {});
       }
       setInput("");
+      mentionMapRef.current.clear();
       setReplyTo(null);
       if (slowmodeSeconds > 0) {
         setLastSendTime(Date.now());
