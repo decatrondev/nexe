@@ -52,11 +52,11 @@ func main() {
 	// Service
 	guildService := service.NewGuildService(
 		guildRepo, channelRepo, categoryRepo, roleRepo,
-		memberRepo, inviteRepo, moderationRepo, eventPublisher,
+		memberRepo, inviteRepo, moderationRepo, automodRepo, eventPublisher, rdb,
 	)
 
 	// Handler
-	guildHandler := handler.NewGuildHandler(guildService, automodRepo, overrideRepo)
+	guildHandler := handler.NewGuildHandler(guildService, automodRepo, overrideRepo, rdb)
 
 	// Router
 	mux := http.NewServeMux()

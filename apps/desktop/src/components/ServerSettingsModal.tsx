@@ -1146,6 +1146,8 @@ function AutomodTab({ guildId }: { guildId: string }) {
   const [blockedWords, setBlockedWords] = useState("");
   const [antiLinks, setAntiLinks] = useState(false);
   const [antiCaps, setAntiCaps] = useState(false);
+  const [antiSpam, setAntiSpam] = useState(false);
+  const [antiRaid, setAntiRaid] = useState(false);
   const [loading, setLoading] = useState(true);
   const [feedback, setFeedback] = useState("");
 
@@ -1162,6 +1164,8 @@ function AutomodTab({ guildId }: { guildId: string }) {
         }
         setAntiLinks(r.some((rule) => rule.type === "anti_links" && rule.enabled));
         setAntiCaps(r.some((rule) => rule.type === "anti_caps" && rule.enabled));
+        setAntiSpam(r.some((rule) => rule.type === "anti_spam" && rule.enabled));
+        setAntiRaid(r.some((rule) => rule.type === "anti_raid" && rule.enabled));
       }
     }).catch(() => {}).finally(() => setLoading(false));
   }, [guildId]);
@@ -1187,7 +1191,13 @@ function AutomodTab({ guildId }: { guildId: string }) {
         await api.updateAutomodRule(existing.id, { enabled });
         setRules((prev) => prev.map((r) => r.type === type ? { ...r, enabled } : r));
       } else if (enabled) {
-        const config = type === "anti_links" ? { allowedDomains: [] } : { maxPercent: 70, minLength: 10 };
+        const configs: Record<string, unknown> = {
+          anti_links: { allowedDomains: [] },
+          anti_caps: { maxPercent: 70, minLength: 10 },
+          anti_spam: { maxMessages: 5, windowSeconds: 10, duplicateCheck: true },
+          anti_raid: { maxJoinsPerMinute: 10, minAccountAgeDays: 0 },
+        };
+        const config = configs[type] || {};
         await api.createAutomodRule(guildId, type, config);
         // Reload
         const r = await api.getAutomodRules(guildId);
@@ -1260,6 +1270,38 @@ function AutomodTab({ guildId }: { guildId: string }) {
           >
             <div className="absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform"
               style={{ transform: antiCaps ? "translateX(22px)" : "translateX(2px)" }}
+            />
+          </button>
+        </div>
+
+        {/* Anti-Spam */}
+        <div className="flex items-center justify-between rounded-lg border border-dark-700 bg-dark-800/50 p-5">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-200">Anti-Spam</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Block rapid message sending (5 messages / 10 seconds) and duplicate messages</p>
+          </div>
+          <button
+            onClick={() => { const v = !antiSpam; setAntiSpam(v); toggleRule("anti_spam", v); }}
+            className={`relative h-6 w-11 rounded-full transition-colors ${antiSpam ? "bg-nexe-500" : "bg-dark-600"}`}
+          >
+            <div className="absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform"
+              style={{ transform: antiSpam ? "translateX(22px)" : "translateX(2px)" }}
+            />
+          </button>
+        </div>
+
+        {/* Anti-Raid */}
+        <div className="flex items-center justify-between rounded-lg border border-dark-700 bg-dark-800/50 p-5">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-200">Anti-Raid</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Block mass joins — max 10 joins per minute triggers protection</p>
+          </div>
+          <button
+            onClick={() => { const v = !antiRaid; setAntiRaid(v); toggleRule("anti_raid", v); }}
+            className={`relative h-6 w-11 rounded-full transition-colors ${antiRaid ? "bg-nexe-500" : "bg-dark-600"}`}
+          >
+            <div className="absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform"
+              style={{ transform: antiRaid ? "translateX(22px)" : "translateX(2px)" }}
             />
           </button>
         </div>

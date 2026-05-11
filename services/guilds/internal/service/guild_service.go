@@ -4,12 +4,14 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/decatrondev/nexe/services/guilds/internal/model"
 	"github.com/decatrondev/nexe/services/guilds/internal/repository"
+	"github.com/redis/go-redis/v9"
 )
 
 type GuildService struct {
@@ -20,7 +22,9 @@ type GuildService struct {
 	members    *repository.MemberRepository
 	invites    *repository.InviteRepository
 	moderation *repository.ModerationRepository
+	automod    *repository.AutomodRepository
 	events     *EventPublisher
+	rdb        *redis.Client
 }
 
 func NewGuildService(
@@ -31,7 +35,9 @@ func NewGuildService(
 	members *repository.MemberRepository,
 	invites *repository.InviteRepository,
 	moderation *repository.ModerationRepository,
+	automod *repository.AutomodRepository,
 	events *EventPublisher,
+	rdb *redis.Client,
 ) *GuildService {
 	return &GuildService{
 		guilds:     guilds,
@@ -41,7 +47,9 @@ func NewGuildService(
 		members:    members,
 		invites:    invites,
 		moderation: moderation,
+		automod:    automod,
 		events:     events,
+		rdb:        rdb,
 	}
 }
 
@@ -737,6 +745,11 @@ func (s *GuildService) JoinGuild(ctx context.Context, guildID, userID string) (*
 		return nil, fmt.Errorf("user is banned from this guild")
 	}
 
+	// Anti-raid check
+	if reason := s.checkAntiRaid(ctx, guildID, userID); reason != "" {
+		return nil, fmt.Errorf("join blocked: %s", reason)
+	}
+
 	member, err := s.members.Add(ctx, guildID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("join guild: %w", err)
@@ -1058,4 +1071,49 @@ func (s *GuildService) ClearBridgeChannel(ctx context.Context, guildID, userID s
 		return fmt.Errorf("only the owner can configure the bridge")
 	}
 	return s.guilds.ClearBridgeChannel(ctx, guildID)
+}
+
+// checkAntiRaid checks anti_raid automod rules for a guild join.
+// Returns a reason string if blocked, empty string if allowed.
+func (s *GuildService) checkAntiRaid(ctx context.Context, guildID, userID string) string {
+	if s.rdb == nil || s.automod == nil {
+		return ""
+	}
+
+	rules, err := s.automod.ListByGuild(ctx, guildID)
+	if err != nil {
+		return ""
+	}
+
+	for _, rule := range rules {
+		if !rule.Enabled || rule.Type != "anti_raid" {
+			continue
+		}
+
+		var cfg struct {
+			MaxJoinsPerMinute int `json:"maxJoinsPerMinute"` // default: 10
+			MinAccountAgeDays int `json:"minAccountAgeDays"` // default: 0 (disabled)
+		}
+		json.Unmarshal(rule.Config, &cfg)
+		if cfg.MaxJoinsPerMinute == 0 {
+			cfg.MaxJoinsPerMinute = 10
+		}
+
+		// Join rate limit: count joins in the last minute
+		rateKey := fmt.Sprintf("nexe:raid:%s:joins", guildID)
+		count, _ := s.rdb.Incr(ctx, rateKey).Result()
+		if count == 1 {
+			s.rdb.Expire(ctx, rateKey, 60*time.Second)
+		}
+		if int(count) > cfg.MaxJoinsPerMinute {
+			slog.Warn("anti-raid triggered", "guild", guildID, "user", userID, "joins", count)
+			return fmt.Sprintf("too many joins (%d in 60s) — server is in raid protection", count)
+		}
+
+		// Account age check (requires user creation date — use Redis cache from gateway)
+		// For now, we skip this since it needs cross-service data.
+		// TODO: Add account age check via gateway API call
+	}
+
+	return ""
 }

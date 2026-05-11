@@ -783,13 +783,13 @@ export const api = {
   },
 
   createAutomodRule(guildId: string, type: string, config: unknown, action?: string) {
-    return request<unknown>("POST", `/guilds/${guildId}/automod`, { type, config: JSON.stringify(config), action: action || "block", enabled: true });
+    return request<unknown>("POST", `/guilds/${guildId}/automod`, { type, config, action: action || "block", enabled: true });
   },
 
   updateAutomodRule(ruleId: string, data: { enabled?: boolean; config?: unknown; action?: string }) {
     const body: Record<string, unknown> = {};
     if (data.enabled !== undefined) body.enabled = data.enabled;
-    if (data.config !== undefined) body.config = JSON.stringify(data.config);
+    if (data.config !== undefined) body.config = data.config;
     if (data.action) body.action = data.action;
     return request<void>("PATCH", `/automod/${ruleId}`, body);
   },

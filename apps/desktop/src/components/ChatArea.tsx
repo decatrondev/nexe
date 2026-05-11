@@ -394,8 +394,26 @@ export default function ChatArea() {
       }
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     } catch (err) {
-      console.error("Failed to send message:", err);
-      setSendError("Failed to send message. Please try again.");
+      const msg = err instanceof Error ? err.message : "Failed to send message";
+      // Parse automod reasons into user-friendly messages
+      let errorMsg: string;
+      if (msg.includes("blocked word")) {
+        errorMsg = "Message blocked — contains a blocked word";
+      } else if (msg.includes("links are not allowed")) {
+        errorMsg = "Message blocked — links are not allowed in this channel";
+      } else if (msg.includes("too many capital")) {
+        errorMsg = "Message blocked — too many capital letters";
+      } else if (msg.includes("too many messages")) {
+        errorMsg = "Slow down — you're sending messages too fast";
+      } else if (msg.includes("duplicate message")) {
+        errorMsg = "Message blocked — duplicate message detected";
+      } else if (msg.includes("automod")) {
+        errorMsg = "Message blocked by automod";
+      } else {
+        errorMsg = "Failed to send message. Please try again.";
+      }
+      setSendError(errorMsg);
+      setTimeout(() => setSendError((prev) => prev === errorMsg ? null : prev), 5000);
     } finally {
       setSending(false);
     }
@@ -1051,7 +1069,19 @@ export default function ChatArea() {
                 </button>
                 </div>
               </div>
-              {sendError && <p className="mt-1 text-xs text-red-400">{sendError}</p>}
+              {sendError && (
+                <div className="mt-2 flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 animate-slide-up">
+                  <svg className="h-4 w-4 shrink-0 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <p className="flex-1 text-xs text-red-400">{sendError}</p>
+                  <button onClick={() => setSendError(null)} className="text-red-400/60 hover:text-red-300">
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              )}
             </form>
           </div>
         </div>

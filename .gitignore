@@ -60,3 +60,4 @@ services/gateway/gateway
 
 # Uploads (user files, not code)
 uploads/
+services/guilds/guilds

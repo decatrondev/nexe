@@ -1,7 +1,11 @@
 package handler
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -9,16 +13,18 @@ import (
 
 	"github.com/decatrondev/nexe/services/guilds/internal/repository"
 	"github.com/decatrondev/nexe/services/guilds/internal/service"
+	"github.com/redis/go-redis/v9"
 )
 
 type GuildHandler struct {
 	svc       *service.GuildService
 	automod   *repository.AutomodRepository
 	overrides *repository.OverrideRepository
+	rdb       *redis.Client
 }
 
-func NewGuildHandler(svc *service.GuildService, automod *repository.AutomodRepository, overrides *repository.OverrideRepository) *GuildHandler {
-	return &GuildHandler{svc: svc, automod: automod, overrides: overrides}
+func NewGuildHandler(svc *service.GuildService, automod *repository.AutomodRepository, overrides *repository.OverrideRepository, rdb *redis.Client) *GuildHandler {
+	return &GuildHandler{svc: svc, automod: automod, overrides: overrides, rdb: rdb}
 }
 
 func (h *GuildHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -1069,6 +1075,8 @@ func (h *GuildHandler) CheckAutomod(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_body", "invalid request body")
 		return
 	}
+
+	// 1. Check content-based rules (blocked_words, anti_links, anti_caps)
 	rule, reason, err := h.automod.CheckMessage(r.Context(), guildID, body.Content, body.UserID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "automod_error", err.Error())
@@ -1082,5 +1090,66 @@ func (h *GuildHandler) CheckAutomod(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+
+	// 2. Check anti-spam (rate limit + duplicate detection via Redis)
+	spamRule, spamReason := h.checkAntiSpam(r.Context(), guildID, body.Content, body.UserID)
+	if spamRule != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"blocked": true,
+			"reason":  spamReason,
+			"rule":    spamRule,
+		})
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{"blocked": false})
+}
+
+// checkAntiSpam uses Redis sliding windows to detect message spam and duplicate content.
+func (h *GuildHandler) checkAntiSpam(ctx context.Context, guildID, content, userID string) (*repository.AutomodRule, string) {
+	rules, err := h.automod.ListByGuild(ctx, guildID)
+	if err != nil {
+		return nil, ""
+	}
+
+	for _, rule := range rules {
+		if !rule.Enabled || rule.Type != "anti_spam" {
+			continue
+		}
+
+		var cfg struct {
+			MaxMessages    int `json:"maxMessages"`    // max messages per window (default: 5)
+			WindowSeconds  int `json:"windowSeconds"`  // time window in seconds (default: 10)
+			DuplicateCheck bool `json:"duplicateCheck"` // check for repeated messages
+		}
+		json.Unmarshal(rule.Config, &cfg)
+		if cfg.MaxMessages == 0 {
+			cfg.MaxMessages = 5
+		}
+		if cfg.WindowSeconds == 0 {
+			cfg.WindowSeconds = 10
+		}
+
+		// Rate limit: count messages in sliding window
+		rateKey := fmt.Sprintf("nexe:spam:%s:%s:rate", guildID, userID)
+		count, _ := h.rdb.Incr(ctx, rateKey).Result()
+		if count == 1 {
+			h.rdb.Expire(ctx, rateKey, time.Duration(cfg.WindowSeconds)*time.Second)
+		}
+		if int(count) > cfg.MaxMessages {
+			return &rule, fmt.Sprintf("too many messages (%d in %ds)", count, cfg.WindowSeconds)
+		}
+
+		// Duplicate detection: hash the content and check if same hash was sent recently
+		if cfg.DuplicateCheck && content != "" {
+			hash := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(content))))
+			dupKey := fmt.Sprintf("nexe:spam:%s:%s:dup:%s", guildID, userID, hex.EncodeToString(hash[:8]))
+			existed, _ := h.rdb.SetNX(ctx, dupKey, 1, 30*time.Second).Result()
+			if !existed {
+				return &rule, "duplicate message"
+			}
+		}
+	}
+
+	return nil, ""
 }
