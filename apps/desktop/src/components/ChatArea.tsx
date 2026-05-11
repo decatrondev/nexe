@@ -460,7 +460,11 @@ export default function ChatArea() {
       // If this is a bridge channel, also send to Twitch
       const guild = guilds.find((g) => g.id === activeGuildId);
       if (guild?.bridgeChannelId && guild.bridgeChannelId === activeChannelId && currentUser) {
-        api.sendToBridge(guild.id, guild.bridgeChannelId, content, currentUser.displayName || currentUser.username).catch(() => {});
+        // Resolve <@userId> to @username for Twitch display
+        const bridgeContent = content.replace(/<@([a-f0-9-]+)>/g, (_match, uid) => {
+          return "@" + (usernames[uid] || uid.slice(0, 8));
+        });
+        api.sendToBridge(guild.id, guild.bridgeChannelId, bridgeContent, currentUser.displayName || currentUser.username).catch(() => {});
       }
       setInput("");
       mentionMapRef.current.clear();

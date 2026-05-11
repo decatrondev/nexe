@@ -31,7 +31,18 @@ export default function NotificationBell() {
       setUnreadCount((c) => c + 1);
       setNotifications((prev) => [notif, ...prev].slice(0, 50));
 
-      // Desktop notification (Tauri or browser)
+      // Resolve username if unknown
+      if (notif.authorId && !usernames[notif.authorId]) {
+        api.getProfile(notif.authorId).then((p) => {
+          if (p) {
+            useGuildStore.setState((s) => ({
+              usernames: { ...s.usernames, [notif.authorId!]: p.displayName || p.username || "User" },
+            }));
+          }
+        }).catch(() => {});
+      }
+
+      // Desktop notification
       if (Notification.permission === "granted") {
         const authorName = usernames[notif.authorId || ""] || "Someone";
         const guildName = guilds.find((g) => g.id === notif.guildId)?.name || "Server";
@@ -68,6 +79,20 @@ export default function NotificationBell() {
       try {
         const notifs = await api.getNotifications();
         setNotifications(notifs || []);
+        // Resolve unknown usernames
+        const unknown = (notifs || [])
+          .map((n) => n.authorId)
+          .filter((id): id is string => !!id && !usernames[id]);
+        const unique = [...new Set(unknown)];
+        for (const id of unique.slice(0, 20)) {
+          api.getProfile(id).then((p) => {
+            if (p) {
+              useGuildStore.setState((s) => ({
+                usernames: { ...s.usernames, [id]: p.displayName || p.username || "User" },
+              }));
+            }
+          }).catch(() => {});
+        }
       } catch { /* ignore */ }
       setLoading(false);
     }
@@ -216,7 +241,7 @@ export default function NotificationBell() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-medium text-slate-200">
-                          {usernames[notif.authorId || ""] || "Someone"}
+                          {usernames[notif.authorId || ""] || notif.authorId?.slice(0, 8) || "Someone"}
                         </span>
                         <span className="text-[11px] text-slate-600">
                           {timeAgo(notif.createdAt)}
