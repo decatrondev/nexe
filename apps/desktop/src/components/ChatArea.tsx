@@ -242,9 +242,11 @@ export default function ChatArea() {
   useEffect(() => {
     const el = inputRef.current;
     if (!el) return;
-    el.style.height = "0px"; // reset to measure
-    const newHeight = Math.max(44, Math.min(el.scrollHeight, 160));
-    el.style.height = newHeight + "px";
+    // Reset to single row to measure actual content height
+    el.style.height = "44px";
+    if (el.scrollHeight > 44) {
+      el.style.height = Math.min(el.scrollHeight, 160) + "px";
+    }
   }, [input]);
 
   // Close context menu on any click
