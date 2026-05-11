@@ -313,7 +313,30 @@ export default function HomePage() {
 
     }
 
+    // Clean up voice on page close/refresh
+    const handleUnload = () => {
+      const voiceState = useVoiceStore.getState();
+      if (voiceState.connected || voiceState.connecting) {
+        // Use sendBeacon for reliability on page unload
+        const url = (window.location.protocol === "https:" || "__TAURI__" in window)
+          ? "https://nexeapi.decatron.net/voice/leave"
+          : "http://161.132.53.175:8090/voice/leave";
+        const token = localStorage.getItem("token");
+        if (token) {
+          navigator.sendBeacon(url, "");
+          // sendBeacon can't set headers, so also try fetch with keepalive
+          fetch(url, {
+            method: "POST",
+            headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+            keepalive: true,
+          }).catch(() => {});
+        }
+      }
+    };
+    window.addEventListener("beforeunload", handleUnload);
+
     return () => {
+      window.removeEventListener("beforeunload", handleUnload);
       nexeWS.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

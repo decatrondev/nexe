@@ -54,18 +54,20 @@ type WSHandler struct {
 	rdb         *redis.Client
 	guildsURL   string
 	presenceURL string
+	voiceURL    string
 	clients     map[uint64]*WSClient            // connID → client
 	userConns   map[string]map[uint64]bool       // userID → set of connIDs
 	guildSubs   map[string]map[string]bool       // guildID → set of userIDs
 	mu          sync.RWMutex
 }
 
-func NewWSHandler(jwt *service.JWTService, rdb *redis.Client, guildsURL, presenceURL string) *WSHandler {
+func NewWSHandler(jwt *service.JWTService, rdb *redis.Client, guildsURL, presenceURL, voiceURL string) *WSHandler {
 	return &WSHandler{
 		jwt:         jwt,
 		rdb:         rdb,
 		guildsURL:   guildsURL,
 		presenceURL: presenceURL,
+		voiceURL:    voiceURL,
 		clients:     make(map[uint64]*WSClient),
 		userConns:   make(map[string]map[uint64]bool),
 		guildSubs:   make(map[string]map[string]bool),
@@ -467,9 +469,10 @@ func (h *WSHandler) removeClient(client *WSClient) {
 	close(client.send)
 	slog.Info("ws client disconnected", "connId", client.id, "userId", client.userID)
 
-	// Mark offline, untrack from guilds, and broadcast (only on last connection)
+	// Mark offline, leave voice, untrack from guilds (only on last connection)
 	if isLastConn {
 		go h.markUserOffline(client.userID)
+		go h.leaveVoiceForUser(client.userID)
 		for _, gid := range guildIDs {
 			go func(guildID, userID string) {
 				req, _ := http.NewRequest("POST", h.presenceURL+"/guilds/"+guildID+"/untrack", strings.NewReader(`{}`))
@@ -579,6 +582,21 @@ func (h *WSHandler) markUserOffline(userID string) {
 	if len(guildIDs) > 0 {
 		h.broadcastPresenceToGuilds(userID, "offline", guildIDs)
 	}
+}
+
+// leaveVoiceForUser calls the voice service to remove the user from any voice channel.
+func (h *WSHandler) leaveVoiceForUser(userID string) {
+	req, err := http.NewRequest("POST", h.voiceURL+"/voice/leave", nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("X-User-ID", userID)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return
+	}
+	resp.Body.Close()
+	slog.Debug("voice leave on disconnect", "userId", userID)
 }
 
 // getUserPresenceStatus fetches the current status from the presence service.
