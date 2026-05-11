@@ -7,15 +7,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/decatrondev/nexe/services/guilds/internal/repository"
 	"github.com/decatrondev/nexe/services/guilds/internal/service"
 )
 
 type GuildHandler struct {
-	svc *service.GuildService
+	svc     *service.GuildService
+	automod *repository.AutomodRepository
 }
 
-func NewGuildHandler(svc *service.GuildService) *GuildHandler {
-	return &GuildHandler{svc: svc}
+func NewGuildHandler(svc *service.GuildService, automod *repository.AutomodRepository) *GuildHandler {
+	return &GuildHandler{svc: svc, automod: automod}
 }
 
 func (h *GuildHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -60,6 +62,13 @@ func (h *GuildHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /guilds/{id}/twitch/disable", h.DisableTwitchIntegration)
 	mux.HandleFunc("PUT /guilds/{id}/members/{uid}/auto-roles/{rid}", h.AssignAutoRole)
 	mux.HandleFunc("DELETE /guilds/{id}/members/{uid}/auto-roles/{rid}", h.RemoveAutoRole)
+
+	// Automod
+	mux.HandleFunc("GET /guilds/{id}/automod", h.ListAutomodRules)
+	mux.HandleFunc("POST /guilds/{id}/automod", h.CreateAutomodRule)
+	mux.HandleFunc("PATCH /automod/{id}", h.UpdateAutomodRule)
+	mux.HandleFunc("DELETE /automod/{id}", h.DeleteAutomodRule)
+	mux.HandleFunc("POST /guilds/{id}/automod/check", h.CheckAutomod)
 
 	// Bridge
 	mux.HandleFunc("POST /guilds/{id}/bridge", h.SetBridgeChannel)
@@ -939,4 +948,90 @@ func (h *GuildHandler) ClearBridgeChannel(w http.ResponseWriter, r *http.Request
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// ---- Automod ----
+
+func (h *GuildHandler) ListAutomodRules(w http.ResponseWriter, r *http.Request) {
+	guildID := r.PathValue("id")
+	rules, err := h.automod.ListByGuild(r.Context(), guildID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "automod_error", err.Error())
+		return
+	}
+	if rules == nil {
+		rules = []repository.AutomodRule{}
+	}
+	writeJSON(w, http.StatusOK, rules)
+}
+
+func (h *GuildHandler) CreateAutomodRule(w http.ResponseWriter, r *http.Request) {
+	guildID := r.PathValue("id")
+	var rule repository.AutomodRule
+	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "invalid request body")
+		return
+	}
+	rule.GuildID = guildID
+	if rule.Action == "" {
+		rule.Action = "block"
+	}
+	if err := h.automod.Create(r.Context(), &rule); err != nil {
+		writeError(w, http.StatusInternalServerError, "automod_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, rule)
+}
+
+func (h *GuildHandler) UpdateAutomodRule(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var body struct {
+		Enabled *bool            `json:"enabled"`
+		Config  *json.RawMessage `json:"config"`
+		Action  *string          `json:"action"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "invalid request body")
+		return
+	}
+	if err := h.automod.Update(r.Context(), id, body.Enabled, body.Config, body.Action); err != nil {
+		writeError(w, http.StatusInternalServerError, "automod_error", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *GuildHandler) DeleteAutomodRule(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.automod.Delete(r.Context(), id); err != nil {
+		writeError(w, http.StatusInternalServerError, "automod_error", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *GuildHandler) CheckAutomod(w http.ResponseWriter, r *http.Request) {
+	guildID := r.PathValue("id")
+	var body struct {
+		Content string `json:"content"`
+		UserID  string `json:"userId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "invalid request body")
+		return
+	}
+	rule, reason, err := h.automod.CheckMessage(r.Context(), guildID, body.Content, body.UserID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "automod_error", err.Error())
+		return
+	}
+	if rule != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"blocked": true,
+			"reason":  reason,
+			"rule":    rule,
+		})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"blocked": false})
 }

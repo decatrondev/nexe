@@ -704,6 +704,28 @@ export const api = {
     return request<{ channelId: string; unreadCount: number }[]>("GET", "/users/@me/unread");
   },
 
+  // ---- Automod methods ----
+
+  getAutomodRules(guildId: string) {
+    return request<{ id: string; type: string; enabled: boolean; config: unknown; action: string }[]>("GET", `/guilds/${guildId}/automod`);
+  },
+
+  createAutomodRule(guildId: string, type: string, config: unknown, action?: string) {
+    return request<unknown>("POST", `/guilds/${guildId}/automod`, { type, config: JSON.stringify(config), action: action || "block", enabled: true });
+  },
+
+  updateAutomodRule(ruleId: string, data: { enabled?: boolean; config?: unknown; action?: string }) {
+    const body: Record<string, unknown> = {};
+    if (data.enabled !== undefined) body.enabled = data.enabled;
+    if (data.config !== undefined) body.config = JSON.stringify(data.config);
+    if (data.action) body.action = data.action;
+    return request<void>("PATCH", `/automod/${ruleId}`, body);
+  },
+
+  deleteAutomodRule(ruleId: string) {
+    return request<void>("DELETE", `/automod/${ruleId}`);
+  },
+
   // ---- Bridge methods ----
 
   setBridgeChannel(guildId: string, channelId: string) {

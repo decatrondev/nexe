@@ -1,9 +1,12 @@
 package service
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 
 	"github.com/decatrondev/nexe/services/messaging/internal/model"
@@ -14,12 +17,14 @@ type MessageService struct {
 	messages  *repository.MessageRepository
 	reactions *repository.ReactionRepository
 	events    *EventPublisher
+	guildsURL string
 }
 
-func NewMessageService(messages *repository.MessageRepository, reactions *repository.ReactionRepository, events *EventPublisher) *MessageService {
+func NewMessageService(messages *repository.MessageRepository, reactions *repository.ReactionRepository, events *EventPublisher, guildsURL string) *MessageService {
 	return &MessageService{
 		messages:  messages,
-		reactions: reactions,
+		reactions:  reactions,
+		guildsURL: guildsURL,
 		events:    events,
 	}
 }
@@ -28,6 +33,16 @@ func NewMessageService(messages *repository.MessageRepository, reactions *reposi
 func (s *MessageService) SendMessage(ctx context.Context, channelID, authorID, content string, replyToID *string) (*model.Message, error) {
 	if strings.TrimSpace(content) == "" {
 		return nil, fmt.Errorf("message content cannot be empty")
+	}
+
+	// Automod check
+	if s.guildsURL != "" {
+		guildID, _ := s.messages.GetChannelGuildID(ctx, channelID)
+		if guildID != "" {
+			if blocked, reason := s.checkAutomod(ctx, guildID, content, authorID); blocked {
+				return nil, fmt.Errorf("message blocked by automod: %s", reason)
+			}
+		}
 	}
 
 	msg := &model.Message{
@@ -323,6 +338,21 @@ func (s *MessageService) RemoveAllReactions(ctx context.Context, messageID strin
 		return fmt.Errorf("remove all reactions: %w", err)
 	}
 	return nil
+}
+
+func (s *MessageService) checkAutomod(ctx context.Context, guildID, content, userID string) (bool, string) {
+	body, _ := json.Marshal(map[string]string{"content": content, "userId": userID})
+	resp, err := http.Post(s.guildsURL+"/guilds/"+guildID+"/automod/check", "application/json", bytes.NewReader(body))
+	if err != nil || resp.StatusCode != 200 {
+		return false, "" // if check fails, allow message
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Blocked bool   `json:"blocked"`
+		Reason  string `json:"reason"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result)
+	return result.Blocked, result.Reason
 }
 
 // ---- Read States ----

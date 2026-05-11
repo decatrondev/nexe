@@ -6,10 +6,11 @@ import (
 )
 
 type Config struct {
-	Env      string
-	Port     string
-	DBUrl    string
-	RedisUrl string
+	Env       string
+	Port      string
+	DBUrl     string
+	RedisUrl  string
+	GuildsURL string
 }
 
 func Load() *Config {
@@ -17,7 +18,8 @@ func Load() *Config {
 		Env:      getEnv("NEXE_ENV", "development"),
 		Port:     getEnv("NEXE_MESSAGING_PORT", "8083"),
 		DBUrl:    getEnv("NEXE_DB_URL", "postgresql://decatron_user:lfIEcCZ11kIEM573mA0PA@localhost:5432/nexe_dev?sslmode=disable"),
-		RedisUrl: getEnv("NEXE_REDIS_URL", "redis://localhost:6379/3"),
+		RedisUrl:  getEnv("NEXE_REDIS_URL", "redis://localhost:6379/3"),
+		GuildsURL: getEnv("NEXE_GUILDS_URL", "http://localhost:8082"),
 	}
 }
 

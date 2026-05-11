@@ -43,7 +43,7 @@ func main() {
 	eventPublisher := service.NewEventPublisher(rdb)
 
 	// Service
-	messageSvc := service.NewMessageService(messageRepo, reactionRepo, eventPublisher)
+	messageSvc := service.NewMessageService(messageRepo, reactionRepo, eventPublisher, cfg.GuildsURL)
 
 	// Handler
 	messageHandler := handler.NewMessageHandler(messageSvc)

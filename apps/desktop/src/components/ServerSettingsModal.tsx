@@ -1141,16 +1141,62 @@ function AuditLogTab({ guildId }: { guildId: string }) {
 
 // ---- Automod Tab ----
 
-function AutomodTab({ guildId: _guildId }: { guildId: string }) {
-  void _guildId; // Will be used when server-side automod is implemented
+function AutomodTab({ guildId }: { guildId: string }) {
+  const [rules, setRules] = useState<{ id: string; type: string; enabled: boolean; config: string; action: string }[]>([]);
   const [blockedWords, setBlockedWords] = useState("");
-  const [saved, setSaved] = useState(false);
+  const [antiLinks, setAntiLinks] = useState(false);
+  const [antiCaps, setAntiCaps] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [feedback, setFeedback] = useState("");
 
-  function handleSave() {
-    // Placeholder — server-side filtering is not yet implemented
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  useEffect(() => {
+    api.getAutomodRules(guildId).then((r) => {
+      if (r) {
+        setRules(r as typeof rules);
+        const wordRule = r.find((rule) => rule.type === "blocked_words");
+        if (wordRule) {
+          try {
+            const cfg = JSON.parse(wordRule.config as unknown as string);
+            setBlockedWords((cfg.words || []).join("\n"));
+          } catch { /* ignore */ }
+        }
+        setAntiLinks(r.some((rule) => rule.type === "anti_links" && rule.enabled));
+        setAntiCaps(r.some((rule) => rule.type === "anti_caps" && rule.enabled));
+      }
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, [guildId]);
+
+  async function saveBlockedWords() {
+    const words = blockedWords.split("\n").map((w) => w.trim()).filter(Boolean);
+    const existing = rules.find((r) => r.type === "blocked_words");
+    try {
+      if (existing) {
+        await api.updateAutomodRule(existing.id, { config: { words }, enabled: words.length > 0 });
+      } else if (words.length > 0) {
+        await api.createAutomodRule(guildId, "blocked_words", { words });
+      }
+      setFeedback("Saved!");
+      setTimeout(() => setFeedback(""), 2000);
+    } catch { setFeedback("Failed to save"); }
   }
+
+  async function toggleRule(type: string, enabled: boolean) {
+    const existing = rules.find((r) => r.type === type);
+    try {
+      if (existing) {
+        await api.updateAutomodRule(existing.id, { enabled });
+        setRules((prev) => prev.map((r) => r.type === type ? { ...r, enabled } : r));
+      } else if (enabled) {
+        const config = type === "anti_links" ? { allowedDomains: [] } : { maxPercent: 70, minLength: 10 };
+        await api.createAutomodRule(guildId, type, config);
+        // Reload
+        const r = await api.getAutomodRules(guildId);
+        if (r) setRules(r as typeof rules);
+      }
+    } catch { /* ignore */ }
+  }
+
+  if (loading) return <div className="flex justify-center py-8"><div className="h-5 w-5 animate-spin rounded-full border-2 border-dark-600 border-t-nexe-400" /></div>;
 
   return (
     <>
@@ -1161,69 +1207,61 @@ function AutomodTab({ guildId: _guildId }: { guildId: string }) {
         <h2 className="text-xl font-bold text-slate-100">Automod</h2>
       </div>
 
-      <div className="rounded-lg border border-nexe-500/20 bg-nexe-500/5 px-4 py-3 mb-6">
-        <div className="flex items-center gap-2">
-          <span className="rounded-full bg-nexe-500/10 border border-nexe-500/20 px-2.5 py-0.5 text-[10px] font-semibold text-nexe-400">
-            Preview
-          </span>
-          <p className="text-sm text-slate-300">
-            Automod is under development. Configure your word filter below — server-side enforcement is coming soon.
-          </p>
-        </div>
-      </div>
-
       <div className="space-y-5">
         {/* Word Filter */}
         <div className="rounded-lg border border-dark-700 bg-dark-800/50 p-5">
           <h3 className="text-sm font-semibold text-slate-200 mb-1">Blocked Words</h3>
           <p className="text-xs text-slate-500 mb-3">
-            Enter words or phrases to block, one per line. Messages containing these words will be automatically deleted.
+            Messages containing these words will be blocked. One per line.
           </p>
           <textarea
             value={blockedWords}
-            onChange={(e) => { setBlockedWords(e.target.value); setSaved(false); }}
+            onChange={(e) => setBlockedWords(e.target.value)}
             rows={6}
-            placeholder={"bad-word\nanother phrase\nspam-link.example.com"}
+            placeholder={"bad-word\nanother phrase"}
             className="w-full resize-none rounded-lg border border-dark-700 bg-dark-900 px-4 py-2.5 text-sm text-slate-200 outline-none transition-colors placeholder:text-slate-600 focus:border-nexe-500 font-mono"
           />
-
           <div className="mt-3 flex items-center gap-3">
             <button
-              onClick={handleSave}
-              disabled={!blockedWords.trim()}
-              className="rounded-lg bg-nexe-500 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-nexe-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={saveBlockedWords}
+              className="rounded-lg bg-nexe-500 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-nexe-600"
             >
               Save
             </button>
-            {saved && (
-              <span className="text-xs text-green-400">Settings saved (local only — server filtering coming soon)</span>
-            )}
+            {feedback && <span className="text-xs text-green-400">{feedback}</span>}
           </div>
         </div>
 
-        {/* Future features */}
-        <div className="rounded-lg border border-dark-700 bg-dark-800/50 p-5">
-          <h3 className="text-sm font-semibold text-slate-200 mb-3">Upcoming Features</h3>
-          <div className="space-y-2.5">
-            {[
-              { name: "Spam Detection", desc: "Auto-detect and remove spam messages" },
-              { name: "Link Filter", desc: "Block or whitelist specific domains" },
-              { name: "Mention Limit", desc: "Limit mass mentions to prevent abuse" },
-              { name: "Auto Actions", desc: "Choose between delete, warn, or timeout" },
-            ].map((feature) => (
-              <div key={feature.name} className="flex items-center gap-3 opacity-50">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-dark-700">
-                  <svg className="h-4 w-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-[13px] font-medium text-slate-300">{feature.name}</p>
-                  <p className="text-[11px] text-slate-500">{feature.desc}</p>
-                </div>
-              </div>
-            ))}
+        {/* Anti-Links */}
+        <div className="flex items-center justify-between rounded-lg border border-dark-700 bg-dark-800/50 p-5">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-200">Block Links</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Block messages containing URLs</p>
           </div>
+          <button
+            onClick={() => { const v = !antiLinks; setAntiLinks(v); toggleRule("anti_links", v); }}
+            className={`relative h-6 w-11 rounded-full transition-colors ${antiLinks ? "bg-nexe-500" : "bg-dark-600"}`}
+          >
+            <div className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${antiLinks ? "translate-x-5.5 left-0.5" : "left-0.5"}`}
+              style={{ transform: antiLinks ? "translateX(22px)" : "translateX(2px)" }}
+            />
+          </button>
+        </div>
+
+        {/* Anti-Caps */}
+        <div className="flex items-center justify-between rounded-lg border border-dark-700 bg-dark-800/50 p-5">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-200">Block Excessive Caps</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Block messages with more than 70% capital letters</p>
+          </div>
+          <button
+            onClick={() => { const v = !antiCaps; setAntiCaps(v); toggleRule("anti_caps", v); }}
+            className={`relative h-6 w-11 rounded-full transition-colors ${antiCaps ? "bg-nexe-500" : "bg-dark-600"}`}
+          >
+            <div className="absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform"
+              style={{ transform: antiCaps ? "translateX(22px)" : "translateX(2px)" }}
+            />
+          </button>
         </div>
       </div>
     </>
