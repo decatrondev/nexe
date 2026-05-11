@@ -215,7 +215,7 @@ export default function ChatArea() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const prevMessageCountRef = useRef(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const editInputRef = useRef<HTMLInputElement>(null);
+  const editInputRef = useRef<HTMLTextAreaElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const MAX_CHARS = 2000;
@@ -354,9 +354,14 @@ export default function ChatArea() {
     setSlowmodeRemaining(0);
   }, [activeChannelId]);
 
-  // Focus edit input
+  // Focus edit input + auto-resize to fit content
   useEffect(() => {
-    if (editingId) editInputRef.current?.focus();
+    if (editingId && editInputRef.current) {
+      const el = editInputRef.current;
+      el.focus();
+      el.style.height = "0px";
+      el.style.height = Math.max(36, Math.min(el.scrollHeight, 200)) + "px";
+    }
   }, [editingId]);
 
   // Focus search input when opened
@@ -900,16 +905,22 @@ export default function ChatArea() {
 
                       {isEditing ? (
                         <div className="mt-1">
-                          <input
+                          <textarea
                             ref={editInputRef}
-                            type="text"
                             value={editContent}
-                            onChange={(e) => setEditContent(e.target.value)}
+                            onChange={(e) => {
+                              setEditContent(e.target.value);
+                              // Auto-resize
+                              const t = e.currentTarget;
+                              t.style.height = "0px";
+                              t.style.height = Math.max(36, Math.min(t.scrollHeight, 200)) + "px";
+                            }}
                             onKeyDown={(e) => {
-                              if (e.key === "Enter") handleEditSave(msg.id);
+                              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleEditSave(msg.id); }
                               if (e.key === "Escape") { setEditingId(null); setEditContent(""); }
                             }}
-                            className="w-full rounded bg-dark-800 px-3 py-1.5 text-sm text-slate-200 outline-none ring-1 ring-nexe-500/50 focus:ring-nexe-500"
+                            className="w-full resize-none rounded bg-dark-800 px-3 py-1.5 text-sm leading-5 text-slate-200 outline-none ring-1 ring-nexe-500/50 focus:ring-nexe-500"
+                            rows={1}
                           />
                           <p className="mt-1 text-xs text-slate-500">
                             Enter to save &middot; Escape to cancel
