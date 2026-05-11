@@ -704,6 +704,20 @@ export const api = {
     return request<{ channelId: string; unreadCount: number }[]>("GET", "/users/@me/unread");
   },
 
+  // ---- Channel overrides ----
+
+  getChannelOverrides(channelId: string) {
+    return request<{ id: string; channelId: string; targetId: string; targetType: string; allow: number; deny: number }[]>("GET", `/channels/${channelId}/overrides`);
+  },
+
+  upsertChannelOverride(channelId: string, targetId: string, targetType: string, allow: number, deny: number) {
+    return request<unknown>("PUT", `/channels/${channelId}/overrides`, { targetId, targetType, allow, deny });
+  },
+
+  deleteChannelOverride(overrideId: string) {
+    return request<void>("DELETE", `/overrides/${overrideId}`);
+  },
+
   // ---- Automod methods ----
 
   getAutomodRules(guildId: string) {

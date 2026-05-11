@@ -44,6 +44,7 @@ func main() {
 	inviteRepo := repository.NewInviteRepository(db)
 	moderationRepo := repository.NewModerationRepository(db)
 	automodRepo := repository.NewAutomodRepository(db)
+	overrideRepo := repository.NewOverrideRepository(db)
 
 	// Event publisher (Redis pub/sub for real-time broadcasting via gateway)
 	eventPublisher := service.NewEventPublisher(rdb)
@@ -55,7 +56,7 @@ func main() {
 	)
 
 	// Handler
-	guildHandler := handler.NewGuildHandler(guildService, automodRepo)
+	guildHandler := handler.NewGuildHandler(guildService, automodRepo, overrideRepo)
 
 	// Router
 	mux := http.NewServeMux()

@@ -12,12 +12,13 @@ import (
 )
 
 type GuildHandler struct {
-	svc     *service.GuildService
-	automod *repository.AutomodRepository
+	svc       *service.GuildService
+	automod   *repository.AutomodRepository
+	overrides *repository.OverrideRepository
 }
 
-func NewGuildHandler(svc *service.GuildService, automod *repository.AutomodRepository) *GuildHandler {
-	return &GuildHandler{svc: svc, automod: automod}
+func NewGuildHandler(svc *service.GuildService, automod *repository.AutomodRepository, overrides *repository.OverrideRepository) *GuildHandler {
+	return &GuildHandler{svc: svc, automod: automod, overrides: overrides}
 }
 
 func (h *GuildHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -62,6 +63,11 @@ func (h *GuildHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /guilds/{id}/twitch/disable", h.DisableTwitchIntegration)
 	mux.HandleFunc("PUT /guilds/{id}/members/{uid}/auto-roles/{rid}", h.AssignAutoRole)
 	mux.HandleFunc("DELETE /guilds/{id}/members/{uid}/auto-roles/{rid}", h.RemoveAutoRole)
+
+	// Channel overrides
+	mux.HandleFunc("GET /channels/{id}/overrides", h.ListChannelOverrides)
+	mux.HandleFunc("PUT /channels/{id}/overrides", h.UpsertChannelOverride)
+	mux.HandleFunc("DELETE /overrides/{id}", h.DeleteChannelOverride)
 
 	// Automod
 	mux.HandleFunc("GET /guilds/{id}/automod", h.ListAutomodRules)
@@ -948,6 +954,49 @@ func (h *GuildHandler) ClearBridgeChannel(w http.ResponseWriter, r *http.Request
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// ---- Channel Overrides ----
+
+func (h *GuildHandler) ListChannelOverrides(w http.ResponseWriter, r *http.Request) {
+	channelID := r.PathValue("id")
+	overrides, err := h.overrides.ListByChannel(r.Context(), channelID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "override_error", err.Error())
+		return
+	}
+	if overrides == nil {
+		overrides = []repository.ChannelOverride{}
+	}
+	writeJSON(w, http.StatusOK, overrides)
+}
+
+func (h *GuildHandler) UpsertChannelOverride(w http.ResponseWriter, r *http.Request) {
+	channelID := r.PathValue("id")
+	var o repository.ChannelOverride
+	if err := json.NewDecoder(r.Body).Decode(&o); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "invalid request body")
+		return
+	}
+	o.ChannelID = channelID
+	if o.TargetType != "role" && o.TargetType != "user" {
+		writeError(w, http.StatusBadRequest, "invalid_type", "targetType must be 'role' or 'user'")
+		return
+	}
+	if err := h.overrides.Upsert(r.Context(), &o); err != nil {
+		writeError(w, http.StatusInternalServerError, "override_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, o)
+}
+
+func (h *GuildHandler) DeleteChannelOverride(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if err := h.overrides.Delete(r.Context(), id); err != nil {
+		writeError(w, http.StatusInternalServerError, "override_error", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ---- Automod ----
