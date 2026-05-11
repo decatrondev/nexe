@@ -73,7 +73,7 @@ interface MediaEmbed {
 
 // ---- Parse message content ----
 
-function parseContent(text: string): { segments: React.ReactNode[]; embeds: MediaEmbed[] } {
+function parseContent(text: string, usernames?: Record<string, string>): { segments: React.ReactNode[]; embeds: MediaEmbed[] } {
   const embeds: MediaEmbed[] = [];
   const parts = text.split(URL_REGEX);
 
@@ -123,13 +123,13 @@ function parseContent(text: string): { segments: React.ReactNode[]; embeds: Medi
 
     // Text segments — parse markdown + emotes
     if (!part) return null;
-    return parseMarkdownAndEmotes(part, i);
+    return parseMarkdownAndEmotes(part, i, usernames);
   });
 
   return { segments: segments.filter(Boolean), embeds };
 }
 
-function parseMarkdownAndEmotes(text: string, keyBase: number): React.ReactNode {
+function parseMarkdownAndEmotes(text: string, keyBase: number, usernames?: Record<string, string>): React.ReactNode {
   // Process markdown: ```code blocks```, `inline code`, **bold**, *italic*, ~~strikethrough~~, @mentions
   const parts: React.ReactNode[] = [];
   let remaining = text;
@@ -198,9 +198,11 @@ function parseMarkdownAndEmotes(text: string, keyBase: number): React.ReactNode 
       case "strike":
         parts.push(<s key={`${keyBase}-md-${key++}`} className="text-slate-500 line-through">{m[1]}</s>);
         break;
-      case "mention":
-        parts.push(<span key={`${keyBase}-md-${key++}`} className="rounded bg-nexe-500/20 px-1 text-nexe-400 font-medium">@{m[1].slice(0, 8)}</span>);
+      case "mention": {
+        const mentionName = usernames?.[m[1]] || m[1].slice(0, 8);
+        parts.push(<span key={`${keyBase}-md-${key++}`} className="rounded bg-nexe-500/20 px-1 text-nexe-400 font-medium cursor-pointer hover:bg-nexe-500/30">@{mentionName}</span>);
         break;
+      }
     }
 
     remaining = remaining.slice(earliest.index + m[0].length);
@@ -266,9 +268,10 @@ function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
 interface MessageContentProps {
   content: string;
   bridgeEmotes?: { id: string; text: string }[];
+  usernames?: Record<string, string>;
 }
 
-export default function MessageContent({ content, bridgeEmotes }: MessageContentProps) {
+export default function MessageContent({ content, bridgeEmotes, usernames }: MessageContentProps) {
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   // If bridge emotes are provided (from Twitch EventSub fragments), use those
@@ -276,7 +279,7 @@ export default function MessageContent({ content, bridgeEmotes }: MessageContent
     ? renderBridgeEmotes(content, bridgeEmotes)
     : null;
 
-  const { segments, embeds } = parseContent(content);
+  const { segments, embeds } = parseContent(content, usernames);
 
   return (
     <>

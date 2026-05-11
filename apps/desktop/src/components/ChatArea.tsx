@@ -929,7 +929,7 @@ export default function ChatArea() {
                                 </svg>
                               </span>
                             )}
-                            <MessageContent content={msg.content} />
+                            <MessageContent content={msg.content} usernames={usernames} />
                           </div>
                           {(() => {
                             // Legacy clip embed — now handled by MessageContent
