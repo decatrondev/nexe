@@ -121,12 +121,92 @@ function parseContent(text: string): { segments: React.ReactNode[]; embeds: Medi
       );
     }
 
-    // Text segments — check for Twitch emotes
+    // Text segments — parse markdown + emotes
     if (!part) return null;
-    return parseEmotes(part, i);
+    return parseMarkdownAndEmotes(part, i);
   });
 
   return { segments: segments.filter(Boolean), embeds };
+}
+
+function parseMarkdownAndEmotes(text: string, keyBase: number): React.ReactNode {
+  // Process markdown: ```code blocks```, `inline code`, **bold**, *italic*, ~~strikethrough~~, @mentions
+  const parts: React.ReactNode[] = [];
+  let remaining = text;
+  let key = 0;
+
+  while (remaining.length > 0) {
+    // Code block ```...```
+    const codeBlockMatch = remaining.match(/```([\s\S]*?)```/);
+    if (codeBlockMatch && remaining.indexOf(codeBlockMatch[0]) === 0) {
+      parts.push(<pre key={`${keyBase}-cb-${key++}`} className="my-1 rounded bg-dark-900 px-3 py-2 text-xs text-green-400 font-mono whitespace-pre-wrap">{codeBlockMatch[1]}</pre>);
+      remaining = remaining.slice(codeBlockMatch[0].length);
+      continue;
+    }
+
+    // Inline code `...`
+    const inlineMatch = remaining.match(/`([^`]+)`/);
+    if (inlineMatch && remaining.indexOf(inlineMatch[0]) === 0) {
+      parts.push(<code key={`${keyBase}-ic-${key++}`} className="rounded bg-dark-900 px-1.5 py-0.5 text-xs text-orange-300 font-mono">{inlineMatch[1]}</code>);
+      remaining = remaining.slice(inlineMatch[0].length);
+      continue;
+    }
+
+    // Find first markdown pattern
+    const patterns = [
+      { regex: /```[\s\S]*?```/, type: "codeblock" },
+      { regex: /`[^`]+`/, type: "code" },
+      { regex: /\*\*(.+?)\*\*/, type: "bold" },
+      { regex: /\*(.+?)\*/, type: "italic" },
+      { regex: /~~(.+?)~~/, type: "strike" },
+      { regex: /<@([a-f0-9-]+)>/, type: "mention" },
+    ];
+
+    let earliest = { index: remaining.length, match: null as RegExpMatchArray | null, type: "" };
+    for (const p of patterns) {
+      const m = remaining.match(p.regex);
+      if (m && m.index !== undefined && m.index < earliest.index) {
+        earliest = { index: m.index, match: m, type: p.type };
+      }
+    }
+
+    if (!earliest.match) {
+      // No more markdown, parse emotes on remaining text
+      parts.push(parseEmotes(remaining, keyBase * 1000 + key++));
+      break;
+    }
+
+    // Text before the match
+    if (earliest.index > 0) {
+      parts.push(parseEmotes(remaining.slice(0, earliest.index), keyBase * 1000 + key++));
+    }
+
+    const m = earliest.match;
+    switch (earliest.type) {
+      case "codeblock":
+        parts.push(<pre key={`${keyBase}-md-${key++}`} className="my-1 rounded bg-dark-900 px-3 py-2 text-xs text-green-400 font-mono whitespace-pre-wrap">{m[1] || m[0].slice(3, -3)}</pre>);
+        break;
+      case "code":
+        parts.push(<code key={`${keyBase}-md-${key++}`} className="rounded bg-dark-900 px-1.5 py-0.5 text-xs text-orange-300 font-mono">{m[1] || m[0].slice(1, -1)}</code>);
+        break;
+      case "bold":
+        parts.push(<strong key={`${keyBase}-md-${key++}`} className="font-bold text-white">{m[1]}</strong>);
+        break;
+      case "italic":
+        parts.push(<em key={`${keyBase}-md-${key++}`} className="italic">{m[1]}</em>);
+        break;
+      case "strike":
+        parts.push(<s key={`${keyBase}-md-${key++}`} className="text-slate-500 line-through">{m[1]}</s>);
+        break;
+      case "mention":
+        parts.push(<span key={`${keyBase}-md-${key++}`} className="rounded bg-nexe-500/20 px-1 text-nexe-400 font-medium">@{m[1].slice(0, 8)}</span>);
+        break;
+    }
+
+    remaining = remaining.slice(earliest.index + m[0].length);
+  }
+
+  return <span key={keyBase}>{parts}</span>;
 }
 
 function parseEmotes(text: string, keyBase: number): React.ReactNode {

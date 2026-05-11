@@ -207,17 +207,36 @@ export default function ChatArea() {
   const [searchResults, setSearchResults] = useState<Message[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
 
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const prevMessageCountRef = useRef(0);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const editInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const MAX_CHARS = 2000;
 
   const guildChannels = activeGuildId ? allChannels[activeGuildId] : undefined;
   const activeChannel = guildChannels?.find((c) => c.id === activeChannelId);
   const channelName = activeChannel?.name || "general";
   const slowmodeSeconds = activeChannel?.slowmodeSeconds ?? 0;
+
+  const allMembers = useGuildStore((s) => s.members);
+  const members = (activeGuildId ? allMembers[activeGuildId] : undefined) ?? [];
+
+  // Filtered mention suggestions
+  const mentionSuggestions = mentionQuery !== null
+    ? members
+        .filter((m) => {
+          const name = (usernames[m.userId] || "").toLowerCase();
+          return name.includes(mentionQuery.toLowerCase());
+        })
+        .slice(0, 8)
+    : [];
 
   // Close context menu on any click
   useEffect(() => {
@@ -352,8 +371,14 @@ export default function ChatArea() {
 
   const handleScroll = useCallback(() => {
     const el = scrollContainerRef.current;
-    if (!el || loadingMore || !hasMore) return;
-    if (el.scrollTop < 100) {
+    if (!el) return;
+
+    // Show/hide scroll-to-bottom button
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    setShowScrollBottom(distanceFromBottom > 200);
+
+    // Load more messages when near top
+    if (!loadingMore && hasMore && el.scrollTop < 100) {
       setLoadingMore(true);
       const prevScrollHeight = el.scrollHeight;
       loadMoreMessages().finally(() => {
@@ -368,8 +393,9 @@ export default function ChatArea() {
     }
   }, [loadingMore, hasMore, loadMoreMessages]);
 
-  // Send typing indicator (throttled to 1 per 3s)
+  // Send typing indicator (throttled to 1 per 3s) + @mention detection
   function handleInputChange(value: string) {
+    if (value.length > MAX_CHARS) return; // enforce char limit
     setInput(value);
     if (sendError) setSendError(null);
     const now = Date.now();
@@ -377,6 +403,30 @@ export default function ChatArea() {
       lastTypingSent.current = now;
       nexeWS.sendTyping(activeChannelId);
     }
+
+    // Detect @mention query
+    const cursorPos = inputRef.current?.selectionStart ?? value.length;
+    const textBeforeCursor = value.slice(0, cursorPos);
+    const atMatch = textBeforeCursor.match(/@(\w*)$/);
+    if (atMatch) {
+      setMentionQuery(atMatch[1]);
+      setMentionIndex(0);
+    } else {
+      setMentionQuery(null);
+    }
+  }
+
+  function insertMention(userId: string, _username: string) {
+    const cursorPos = inputRef.current?.selectionStart ?? input.length;
+    const textBeforeCursor = input.slice(0, cursorPos);
+    const atIndex = textBeforeCursor.lastIndexOf("@");
+    if (atIndex === -1) return;
+    const before = input.slice(0, atIndex);
+    const after = input.slice(cursorPos);
+    const newValue = `${before}<@${userId}> ${after}`;
+    setInput(newValue);
+    setMentionQuery(null);
+    inputRef.current?.focus();
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -792,15 +842,21 @@ export default function ChatArea() {
                     <div className="min-w-0 flex-1">
                       {/* Reply reference */}
                       {replyRef && (
-                        <div className="mb-0.5 flex items-center gap-1.5 text-xs text-slate-500">
-                          <svg className="h-3 w-3 rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <button
+                          onClick={() => {
+                            const el = document.getElementById(`msg-${replyRef.id}`);
+                            if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+                          }}
+                          className="mb-0.5 flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300 transition-colors cursor-pointer"
+                        >
+                          <svg className="h-3 w-3 rotate-180 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                             <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a5 5 0 015 5v4M3 10l6 6m-6-6l6-6" />
                           </svg>
                           <span style={{ color: replyRef.bridgeSource ? (replyRef.bridgeSource === "twitch" ? "#9146FF" : "#888") : (getRoleColor(replyRef.authorId, memberRolesMap, guildRoles) || userColor(replyRef.authorId)) }} className="font-medium">
                             {replyRef.bridgeSource ? (replyRef.bridgeAuthor || "Unknown") : (usernames[replyRef.authorId] || "Unknown")}
                           </span>
                           <span className="truncate max-w-xs">{replyRef.content}</span>
-                        </div>
+                        </button>
                       )}
 
                       {!isGrouped && (
@@ -956,6 +1012,21 @@ export default function ChatArea() {
             <div ref={messagesEndRef} />
           </div>
 
+          {/* Scroll to bottom button */}
+          {showScrollBottom && (
+            <div className="absolute bottom-28 left-1/2 z-30 -translate-x-1/2">
+              <button
+                onClick={() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })}
+                className="flex items-center gap-1.5 rounded-full bg-nexe-500 px-4 py-1.5 text-xs font-medium text-white shadow-lg transition-all hover:bg-nexe-600"
+              >
+                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
+                  <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" />
+                </svg>
+                Scroll to bottom
+              </button>
+            </div>
+          )}
+
           {/* Typing indicator */}
           <div className="h-5 shrink-0 px-4">
             {typingText && (
@@ -981,16 +1052,75 @@ export default function ChatArea() {
 
           {/* Message input */}
           <div className="shrink-0 px-4 pb-4">
+            {/* @mention autocomplete */}
+            {mentionQuery !== null && mentionSuggestions.length > 0 && (
+              <div className="mb-1 overflow-hidden rounded-lg border border-dark-700 bg-dark-800 shadow-xl">
+                {mentionSuggestions.map((m, i) => {
+                  const name = usernames[m.userId] || "Unknown";
+                  const roleColor = getRoleColor(m.userId, memberRolesMap, guildRoles);
+                  return (
+                    <button
+                      key={m.userId}
+                      onClick={() => insertMention(m.userId, name)}
+                      className={`flex w-full items-center gap-2 px-3 py-1.5 text-sm transition-colors ${i === mentionIndex ? "bg-nexe-500/20 text-white" : "text-slate-300 hover:bg-dark-700"}`}
+                    >
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-dark-600 text-xs font-semibold" style={{ color: roleColor || undefined }}>
+                        {name.charAt(0).toUpperCase()}
+                      </div>
+                      <span style={{ color: roleColor || undefined }}>{name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {/* Char counter */}
+            {input.length > MAX_CHARS - 200 && (
+              <div className="mb-1 text-right">
+                <span className={`text-xs ${input.length > MAX_CHARS - 50 ? "text-red-400" : "text-slate-500"}`}>
+                  {input.length}/{MAX_CHARS}
+                </span>
+              </div>
+            )}
             <form onSubmit={handleSubmit}>
-              <div className={`flex items-center bg-dark-800 px-4 ${replyTo ? "rounded-b-lg" : "rounded-lg"}`}>
-                <input
+              <div className={`flex items-end bg-dark-800 px-4 ${replyTo ? "rounded-b-lg" : "rounded-lg"}`}>
+                <textarea
                   ref={inputRef}
-                  type="text"
                   value={input}
                   onChange={(e) => handleInputChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Enter to send, Shift+Enter for newline
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSubmit(e);
+                    }
+                    // @mention keyboard navigation
+                    if (mentionQuery !== null && mentionSuggestions.length > 0) {
+                      if (e.key === "ArrowDown") {
+                        e.preventDefault();
+                        setMentionIndex((i) => Math.min(i + 1, mentionSuggestions.length - 1));
+                      } else if (e.key === "ArrowUp") {
+                        e.preventDefault();
+                        setMentionIndex((i) => Math.max(i - 1, 0));
+                      } else if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+                        e.preventDefault();
+                        const s = mentionSuggestions[mentionIndex];
+                        if (s) insertMention(s.userId, usernames[s.userId] || "Unknown");
+                      } else if (e.key === "Escape") {
+                        setMentionQuery(null);
+                      }
+                    }
+                  }}
                   placeholder={slowmodeRemaining > 0 ? `Slowmode: ${slowmodeRemaining}s remaining` : `Message #${channelName}`}
-                  className="flex-1 bg-transparent py-3 text-sm text-slate-200 outline-none placeholder:text-slate-500"
+                  className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent py-3 text-sm text-slate-200 outline-none placeholder:text-slate-500"
+                  rows={1}
                   disabled={sending || slowmodeRemaining > 0}
+                  style={{ height: "auto", overflow: "hidden" }}
+                  onInput={(e) => {
+                    const t = e.currentTarget;
+                    t.style.height = "auto";
+                    t.style.height = Math.min(t.scrollHeight, 160) + "px";
+                    t.style.overflow = t.scrollHeight > 160 ? "auto" : "hidden";
+                  }}
                 />
                 <button
                   type="button"
