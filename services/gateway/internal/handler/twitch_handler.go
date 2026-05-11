@@ -1004,12 +1004,9 @@ func (h *TwitchHandler) handleChatMessage(ctx context.Context, event json.RawMes
 		return
 	}
 
-	// Don't bridge messages that originated from Nexe (avoid loops)
-	// Messages sent from Nexe to Twitch will have the broadcaster as the chatter
-	// We use a Redis flag to track messages we sent
-	loopKey := "nexe:bridge:sent:" + chatEvent.MessageID
-	exists, _ := h.rdb.Exists(ctx, loopKey).Result()
-	if exists > 0 {
+	// Don't bridge messages from the broadcaster — they're either:
+	// 1. Sent by Nexe bridge (loop) or 2. Typed by streamer who's already in Nexe
+	if chatEvent.ChatterUserID == chatEvent.BroadcasterUserID {
 		return
 	}
 
