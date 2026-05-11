@@ -238,12 +238,13 @@ export default function ChatArea() {
         .slice(0, 8)
     : [];
 
-  // Auto-resize textarea
+  // Auto-resize textarea when content changes
   useEffect(() => {
     const el = inputRef.current;
     if (!el) return;
-    el.style.height = "44px";
-    el.style.height = Math.min(el.scrollHeight, 160) + "px";
+    el.style.height = "0px"; // reset to measure
+    const newHeight = Math.max(44, Math.min(el.scrollHeight, 160));
+    el.style.height = newHeight + "px";
   }, [input]);
 
   // Close context menu on any click
@@ -1020,19 +1021,17 @@ export default function ChatArea() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Scroll to bottom button */}
+          {/* Scroll to bottom — floating above the input when user scrolled up */}
           {showScrollBottom && (
-            <div className="absolute bottom-28 left-1/2 z-30 -translate-x-1/2">
-              <button
-                onClick={() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })}
-                className="flex items-center gap-1.5 rounded-full bg-nexe-500 px-4 py-1.5 text-xs font-medium text-white shadow-lg transition-all hover:bg-nexe-600"
-              >
-                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
-                  <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" />
-                </svg>
-                Scroll to bottom
-              </button>
-            </div>
+            <button
+              onClick={() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })}
+              className="absolute bottom-2 right-6 z-30 flex h-8 w-8 items-center justify-center rounded-full bg-dark-700 text-slate-300 shadow-lg ring-1 ring-dark-600 transition-all hover:bg-dark-600 hover:text-white"
+              title="Jump to latest"
+            >
+              <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
+                <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" />
+              </svg>
+            </button>
           )}
 
           {/* Typing indicator */}
@@ -1119,8 +1118,9 @@ export default function ChatArea() {
                     }
                   }}
                   placeholder={slowmodeRemaining > 0 ? `Slowmode: ${slowmodeRemaining}s remaining` : `Message #${channelName}`}
-                  className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent py-3 text-sm text-slate-200 outline-none placeholder:text-slate-500"
+                  className="flex-1 resize-none bg-transparent py-3 text-sm leading-5 text-slate-200 outline-none placeholder:text-slate-500"
                   rows={1}
+                  style={{ height: "44px", overflow: "hidden" }}
                   disabled={sending || slowmodeRemaining > 0}
                 />
                 <button
