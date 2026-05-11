@@ -805,7 +805,7 @@ export default function ChatArea() {
           <div
             ref={scrollContainerRef}
             onScroll={handleScroll}
-            className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-4 py-4"
+            className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-4 py-4"
           >
             {loadingMore && (
               <div className="flex justify-center py-2">
