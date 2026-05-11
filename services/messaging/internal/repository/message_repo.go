@@ -71,7 +71,6 @@ func (r *MessageRepository) GetByID(ctx context.Context, id string) (*model.Mess
 	err := r.db.QueryRowContext(ctx,
 		`SELECT id, channel_id, COALESCE(author_id::text, ''), content, type, reply_to_id, thread_id,
 		        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at,
-		        bridge_source, bridge_author, bridge_author_id,
 		        bridge_source, bridge_author, bridge_author_id
 		 FROM messages WHERE id = $1`, id,
 	).Scan(
