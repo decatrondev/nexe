@@ -238,6 +238,14 @@ export default function ChatArea() {
         .slice(0, 8)
     : [];
 
+  // Auto-resize textarea
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "44px";
+    el.style.height = Math.min(el.scrollHeight, 160) + "px";
+  }, [input]);
+
   // Close context menu on any click
   useEffect(() => {
     const close = () => { setCtxMenu(null); };
@@ -787,7 +795,7 @@ export default function ChatArea() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Messages area */}
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="relative flex min-w-0 flex-1 flex-col">
           <div
             ref={scrollContainerRef}
             onScroll={handleScroll}
@@ -1074,7 +1082,7 @@ export default function ChatArea() {
               </div>
             )}
             {/* Char counter */}
-            {input.length > MAX_CHARS - 200 && (
+            {input.length > 0 && (
               <div className="mb-1 text-right">
                 <span className={`text-xs ${input.length > MAX_CHARS - 50 ? "text-red-400" : "text-slate-500"}`}>
                   {input.length}/{MAX_CHARS}
@@ -1114,13 +1122,6 @@ export default function ChatArea() {
                   className="max-h-40 min-h-[44px] flex-1 resize-none bg-transparent py-3 text-sm text-slate-200 outline-none placeholder:text-slate-500"
                   rows={1}
                   disabled={sending || slowmodeRemaining > 0}
-                  style={{ height: "auto", overflow: "hidden" }}
-                  onInput={(e) => {
-                    const t = e.currentTarget;
-                    t.style.height = "auto";
-                    t.style.height = Math.min(t.scrollHeight, 160) + "px";
-                    t.style.overflow = t.scrollHeight > 160 ? "auto" : "hidden";
-                  }}
                 />
                 <button
                   type="button"
