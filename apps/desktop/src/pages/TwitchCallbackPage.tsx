@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { useAuthStore } from "../stores/auth";
 
-type Step = "loading" | "register" | "error";
+type Step = "loading" | "register" | "verify" | "error";
 
 export default function TwitchCallbackPage() {
   const [step, setStep] = useState<Step>("loading");
@@ -24,6 +24,8 @@ export default function TwitchCallbackPage() {
   const [email, setEmail] = useState(twitchEmail);
   const [password, setPassword] = useState("");
   const [regLoading, setRegLoading] = useState(false);
+  const [code, setCode] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0);
 
   // Handle existing user login or link completion
   useEffect(() => {
@@ -94,7 +96,6 @@ export default function TwitchCallbackPage() {
     setError("");
     setRegLoading(true);
     try {
-      // Register with Twitch data attached
       await api.registerWithTwitch(
         username.trim(),
         email.trim(),
@@ -105,12 +106,43 @@ export default function TwitchCallbackPage() {
         twitchEmail,
         twitchAvatar,
       );
-      // After registration, the user needs to verify email then log in
-      navigate("/login", { replace: true });
+      setStep("verify");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
     } finally {
       setRegLoading(false);
+    }
+  }
+
+  async function handleVerify(e: FormEvent) {
+    e.preventDefault();
+    setError("");
+    setRegLoading(true);
+    try {
+      const { verifyEmail } = useAuthStore.getState();
+      await verifyEmail(email.trim(), code);
+      // Auto-login after verification
+      const { login } = useAuthStore.getState();
+      await login(email.trim(), password);
+      navigate("/", { replace: true });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Verification failed");
+    } finally {
+      setRegLoading(false);
+    }
+  }
+
+  async function handleResend() {
+    if (resendCooldown > 0) return;
+    setError("");
+    try {
+      await api.resendVerification(email.trim());
+      setResendCooldown(60);
+      const interval = setInterval(() => {
+        setResendCooldown((c) => { if (c <= 1) { clearInterval(interval); return 0; } return c - 1; });
+      }, 1000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to resend");
     }
   }
 
@@ -150,6 +182,63 @@ export default function TwitchCallbackPage() {
           >
             Back to Login
           </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Verify email step
+  if (step === "verify") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-dark-900">
+        <div className="w-full max-w-md rounded-2xl bg-dark-850 p-8 shadow-2xl">
+          <div className="mb-6 text-center">
+            <h1 className="text-2xl font-bold text-slate-100">Verify your email</h1>
+            <p className="mt-2 text-sm text-slate-400">
+              We sent a verification code to <span className="text-slate-200">{email}</span>
+            </p>
+          </div>
+
+          {error && (
+            <div className="mb-4 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleVerify} className="space-y-4">
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-300">
+                Verification Code
+              </label>
+              <input
+                type="text"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                required
+                maxLength={6}
+                className="w-full rounded-lg border border-dark-700 bg-dark-900 px-4 py-2.5 text-center text-lg tracking-[0.5em] text-slate-200 outline-none transition-colors placeholder:text-slate-500 placeholder:tracking-normal focus:border-nexe-500"
+                placeholder="Enter code"
+                autoFocus
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={regLoading || !code}
+              className="w-full rounded-lg bg-nexe-500 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-nexe-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {regLoading ? "Verifying..." : "Verify & Continue"}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleResend}
+              disabled={resendCooldown > 0}
+              className="w-full text-center text-sm text-nexe-400 transition-colors hover:text-nexe-300 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend verification code"}
+            </button>
+          </form>
         </div>
       </div>
     );
