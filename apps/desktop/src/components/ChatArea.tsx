@@ -238,15 +238,15 @@ export default function ChatArea() {
         .slice(0, 8)
     : [];
 
-  // Auto-resize textarea when content changes
+  // Auto-resize textarea based on line count
   useEffect(() => {
     const el = inputRef.current;
     if (!el) return;
-    // Reset to single row to measure actual content height
-    el.style.height = "44px";
-    if (el.scrollHeight > 44) {
-      el.style.height = Math.min(el.scrollHeight, 160) + "px";
-    }
+    const lineCount = (input.match(/\n/g) || []).length + 1;
+    const lineHeight = 20; // leading-5
+    const padding = 24; // py-3 = 12px top + 12px bottom
+    const height = Math.min(Math.max(lineCount * lineHeight + padding, 44), 160);
+    el.style.height = height + "px";
   }, [input]);
 
   // Close context menu on any click
