@@ -22,7 +22,7 @@ async function getInviteData(code: string): Promise<InviteData | null> {
               u.username as inviter_name
        FROM invites i
        JOIN guilds g ON g.id = i.guild_id
-       JOIN users u ON u.id = i.created_by
+       JOIN users u ON u.id = i.inviter_id
        WHERE i.code = $1 AND (i.expires_at IS NULL OR i.expires_at > NOW())
        LIMIT 1`,
       [code]
