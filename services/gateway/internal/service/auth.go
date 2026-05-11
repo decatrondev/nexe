@@ -275,6 +275,17 @@ func (s *AuthService) ResendVerification(ctx context.Context, email string) (str
 		return "", fmt.Errorf("email already verified")
 	}
 
+	// Check cooldown — minimum 60 seconds between resends
+	// CreatedAt = ExpiresAt - 10 minutes
+	v, _ := s.verification.GetLatest(ctx, email)
+	if v != nil {
+		createdAt := v.ExpiresAt.Add(-10 * time.Minute)
+		if time.Since(createdAt) < 60*time.Second {
+			remaining := 60 - int(time.Since(createdAt).Seconds())
+			return "", fmt.Errorf("please wait %d seconds before resending", remaining)
+		}
+	}
+
 	code, err := s.generateVerificationCode(ctx, email)
 	if err != nil {
 		return "", fmt.Errorf("generate code: %w", err)

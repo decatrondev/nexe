@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../stores/auth";
+import { api } from "../lib/api";
 
 type Step = "register" | "verify";
 
@@ -12,6 +13,7 @@ export default function RegisterPage() {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
 
   const register = useAuthStore((s) => s.register);
   const verifyEmail = useAuthStore((s) => s.verifyEmail);
@@ -150,8 +152,29 @@ export default function RegisterPage() {
 
             <button
               type="button"
+              disabled={loading || resendCooldown > 0}
+              onClick={async () => {
+                if (resendCooldown > 0) return;
+                try {
+                  await api.resendVerification(email);
+                  setError("");
+                  setResendCooldown(60);
+                  const interval = setInterval(() => {
+                    setResendCooldown((c) => { if (c <= 1) { clearInterval(interval); return 0; } return c - 1; });
+                  }, 1000);
+                } catch (err) {
+                  setError(err instanceof Error ? err.message : "Failed to resend");
+                }
+              }}
+              className="w-full text-center text-sm text-nexe-400 transition-colors hover:text-nexe-300 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend verification code"}
+            </button>
+
+            <button
+              type="button"
               onClick={() => setStep("register")}
-              className="w-full text-center text-sm text-slate-400 transition-colors hover:text-slate-300"
+              className="w-full text-center text-sm text-slate-500 transition-colors hover:text-slate-300"
             >
               Back to registration
             </button>

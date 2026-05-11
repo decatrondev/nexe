@@ -13,6 +13,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0);
 
   const login = useAuthStore((s) => s.login);
   const verifyEmail = useAuthStore((s) => s.verifyEmail);
@@ -57,12 +58,21 @@ export default function LoginPage() {
   }
 
   async function handleResend() {
+    if (resendCooldown > 0) return;
     setError("");
     setFeedback("");
     setLoading(true);
     try {
       await api.resendVerification(email);
       setFeedback("Verification code resent to " + email);
+      // Start 60s cooldown
+      setResendCooldown(60);
+      const interval = setInterval(() => {
+        setResendCooldown((c) => {
+          if (c <= 1) { clearInterval(interval); return 0; }
+          return c - 1;
+        });
+      }, 1000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to resend code");
     } finally {
@@ -192,10 +202,10 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={handleResend}
-              disabled={loading}
-              className="w-full text-center text-sm text-nexe-400 transition-colors hover:text-nexe-300 disabled:opacity-50"
+              disabled={loading || resendCooldown > 0}
+              className="w-full text-center text-sm text-nexe-400 transition-colors hover:text-nexe-300 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Resend verification code
+              {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend verification code"}
             </button>
 
             <button
