@@ -37,6 +37,10 @@ func (h *MessageHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /messages/{id}/reactions/{emoji}/@me", h.RemoveReaction)
 	mux.HandleFunc("GET /messages/{id}/reactions", h.GetReactions)
 	mux.HandleFunc("DELETE /messages/{id}/reactions", h.RemoveAllReactions)
+
+	// Read states
+	mux.HandleFunc("POST /channels/{id}/ack", h.AckChannel)
+	mux.HandleFunc("GET /users/@me/unread", h.GetUnreadChannels)
 }
 
 func getUserID(r *http.Request) string {
@@ -334,4 +338,39 @@ func (h *MessageHandler) RemoveAllReactions(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// AckChannel marks a channel as read up to the latest message.
+func (h *MessageHandler) AckChannel(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	channelID := r.PathValue("id")
+
+	var body struct {
+		MessageID string `json:"messageId"`
+	}
+	json.NewDecoder(r.Body).Decode(&body)
+
+	if err := h.svc.AckChannel(r.Context(), userID, channelID, body.MessageID); err != nil {
+		classifyError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetUnreadChannels returns channels with unread messages for the user.
+func (h *MessageHandler) GetUnreadChannels(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	unreads, err := h.svc.GetUnreadChannels(r.Context(), userID)
+	if err != nil {
+		classifyError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, unreads)
 }

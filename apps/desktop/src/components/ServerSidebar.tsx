@@ -10,6 +10,8 @@ export default function ServerSidebar() {
   const activeGuildId = useGuildStore((s) => s.activeGuildId);
   const setActiveGuild = useGuildStore((s) => s.setActiveGuild);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const unreadChannels = useGuildStore((s) => s.unreadChannels);
+  const allChannels = useGuildStore((s) => s.channels);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
 
@@ -36,6 +38,8 @@ export default function ServerSidebar() {
         {guilds.map((guild) => {
           const isActive = activeGuildId === guild.id;
           const isHovered = hoveredId === guild.id;
+          const guildChannelList = allChannels[guild.id] || [];
+          const guildUnread = guildChannelList.reduce((sum, ch) => sum + (unreadChannels[ch.id] || 0), 0);
           return (
             <div key={guild.id} className="relative">
               {/* Active / hover indicator pill */}
@@ -67,6 +71,11 @@ export default function ServerSidebar() {
                   </span>
                 )}
               </button>
+              {guildUnread > 0 && !isActive && (
+                <span className="absolute -bottom-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+                  {guildUnread > 99 ? "99+" : guildUnread}
+                </span>
+              )}
             </div>
           );
         })}

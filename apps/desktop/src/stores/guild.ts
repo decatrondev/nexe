@@ -19,6 +19,7 @@ interface GuildState {
   messages: Record<string, Message[]>;
   usernames: Record<string, string>;
   presenceMap: Record<string, string>; // userId → status (online/idle/dnd/offline)
+  unreadChannels: Record<string, number>; // channelId → unread count
   loading: boolean;
   loadingGuilds: boolean;
   hasMoreMessages: Record<string, boolean>;
@@ -63,6 +64,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
   messages: {},
   usernames: {},
   presenceMap: {},
+  unreadChannels: {},
   loading: false,
   loadingGuilds: false,
   hasMoreMessages: {},
@@ -80,6 +82,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
       messages: {},
       usernames: {},
       presenceMap: {},
+      unreadChannels: {},
       loading: false,
       loadingGuilds: false,
       hasMoreMessages: {},
@@ -93,6 +96,17 @@ export const useGuildStore = create<GuildState>((set, get) => ({
       const guilds = await api.getMyGuilds();
       const list = Array.isArray(guilds) ? guilds : [];
       set({ guilds: list, loadingGuilds: false });
+
+      // Fetch unread channels
+      api.getUnreadChannels().then((unreads) => {
+        if (unreads) {
+          const map: Record<string, number> = {};
+          for (const u of unreads) {
+            map[u.channelId] = u.unreadCount;
+          }
+          set({ unreadChannels: map });
+        }
+      }).catch(() => {});
     } catch (err) {
       console.error("Failed to load guilds:", err);
       set({ guilds: [], loadingGuilds: false, error: "Failed to load servers" });
@@ -240,6 +254,15 @@ export const useGuildStore = create<GuildState>((set, get) => ({
           [channelId]: msgList.length >= MESSAGE_LIMIT,
         },
       }));
+
+      // Mark channel as read
+      api.ackChannel(channelId).then(() => {
+        set((s) => {
+          const u = { ...s.unreadChannels };
+          delete u[channelId];
+          return { unreadChannels: u };
+        });
+      }).catch(() => {});
     } catch (err) {
       console.error("Failed to load messages:", err);
     }

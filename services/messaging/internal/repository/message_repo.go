@@ -537,3 +537,75 @@ func (a *pqStringArray) parseArray(s string) error {
 	*a = result
 	return nil
 }
+
+// ---- Read States ----
+
+type UnreadChannel struct {
+	ChannelID       string `json:"channelId"`
+	LastMessageID   string `json:"lastMessageId"`
+	LastReadID      string `json:"lastReadId"`
+	UnreadCount     int    `json:"unreadCount"`
+	MentionCount    int    `json:"mentionCount"`
+}
+
+func (r *MessageRepository) AckChannel(ctx context.Context, userID, channelID, messageID string) error {
+	if messageID == "" {
+		// Get the latest message in the channel
+		err := r.db.QueryRowContext(ctx,
+			`SELECT id FROM messages WHERE channel_id = $1 AND deleted = false ORDER BY created_at DESC LIMIT 1`,
+			channelID,
+		).Scan(&messageID)
+		if err != nil {
+			return nil // no messages, nothing to ack
+		}
+	}
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO read_states (user_id, channel_id, last_read_message_id, last_read_at)
+		 VALUES ($1, $2, $3, NOW())
+		 ON CONFLICT (user_id, channel_id)
+		 DO UPDATE SET last_read_message_id = $3, last_read_at = NOW()`,
+		userID, channelID, messageID,
+	)
+	return err
+}
+
+func (r *MessageRepository) GetUnreadChannels(ctx context.Context, userID string) ([]UnreadChannel, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT c.id AS channel_id,
+		        COALESCE(c.last_message_id::text, '') AS last_message_id,
+		        COALESCE(rs.last_read_message_id::text, '') AS last_read_id,
+		        COALESCE(
+		          (SELECT COUNT(*) FROM messages m
+		           WHERE m.channel_id = c.id AND m.deleted = false
+		           AND m.created_at > COALESCE(
+		             (SELECT created_at FROM messages WHERE id = rs.last_read_message_id),
+		             '1970-01-01'::timestamptz
+		           )), 0
+		        )::int AS unread_count
+		 FROM channels c
+		 LEFT JOIN read_states rs ON rs.channel_id = c.id AND rs.user_id = $1
+		 WHERE c.guild_id IN (SELECT guild_id FROM guild_members WHERE user_id = $1)
+		   AND c.last_message_id IS NOT NULL
+		   AND (rs.last_read_message_id IS NULL OR rs.last_read_message_id != c.last_message_id)`,
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var unreads []UnreadChannel
+	for rows.Next() {
+		var u UnreadChannel
+		if err := rows.Scan(&u.ChannelID, &u.LastMessageID, &u.LastReadID, &u.UnreadCount); err != nil {
+			return nil, err
+		}
+		if u.UnreadCount > 0 {
+			unreads = append(unreads, u)
+		}
+	}
+	if unreads == nil {
+		unreads = []UnreadChannel{}
+	}
+	return unreads, nil
+}

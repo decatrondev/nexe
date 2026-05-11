@@ -174,6 +174,8 @@ func main() {
 	mux.Handle("PUT /messages/{id}/reactions/{emoji}/@me", guildsProxy(mp))
 	mux.Handle("DELETE /messages/{id}/reactions/{emoji}/@me", guildsProxy(mp))
 	mux.Handle("DELETE /messages/{id}/reactions", guildsProxy(mp))
+	mux.Handle("POST /channels/{id}/ack", guildsProxy(mp))
+	mux.Handle("GET /users/@me/unread", guildsProxy(mp))
 
 	// Proxy to presence service (authenticated)
 	pp := http.HandlerFunc(proxyHandler.ProxyPresence)

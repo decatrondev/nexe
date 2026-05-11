@@ -694,6 +694,16 @@ export const api = {
     return request<NotificationPreference>("PUT", `/notifications/preferences/${guildId}`, { level, channelId });
   },
 
+  // ---- Unread methods ----
+
+  ackChannel(channelId: string, messageId?: string) {
+    return request<void>("POST", `/channels/${channelId}/ack`, messageId ? { messageId } : {});
+  },
+
+  getUnreadChannels() {
+    return request<{ channelId: string; unreadCount: number }[]>("GET", "/users/@me/unread");
+  },
+
   // ---- Bridge methods ----
 
   setBridgeChannel(guildId: string, channelId: string) {

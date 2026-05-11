@@ -91,6 +91,16 @@ export default function HomePage() {
             }));
           }).catch(() => {});
         }
+        // Increment unread if not in that channel
+        const activeChannel = useGuildStore.getState().activeChannelId;
+        if (msg.channelId !== activeChannel) {
+          useGuildStore.setState((s) => ({
+            unreadChannels: {
+              ...s.unreadChannels,
+              [msg.channelId]: (s.unreadChannels[msg.channelId] || 0) + 1,
+            },
+          }));
+        }
       });
 
       nexeWS.on("MESSAGE_UPDATE", (data) => {

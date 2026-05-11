@@ -324,3 +324,13 @@ func (s *MessageService) RemoveAllReactions(ctx context.Context, messageID strin
 	}
 	return nil
 }
+
+// ---- Read States ----
+
+func (s *MessageService) AckChannel(ctx context.Context, userID, channelID, messageID string) error {
+	return s.messages.AckChannel(ctx, userID, channelID, messageID)
+}
+
+func (s *MessageService) GetUnreadChannels(ctx context.Context, userID string) ([]repository.UnreadChannel, error) {
+	return s.messages.GetUnreadChannels(ctx, userID)
+}

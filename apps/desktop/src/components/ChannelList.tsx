@@ -51,6 +51,7 @@ export default function ChannelList() {
   const myPerms = computePermissions(myRoleIds, guildRoles);
   const canManageChannels = isOwner || hasPermission(myPerms, Permissions.MANAGE_CHANNELS);
   const channelLimitReached = channels.length >= FREE_TIER_LIMITS.MAX_CHANNELS_PER_GUILD;
+  const unreadChannels = useGuildStore((s) => s.unreadChannels);
 
   const textChannels = channels.filter((c) => c.type === "text");
   const voiceChannels = channels.filter((c) => c.type === "voice");
@@ -169,18 +170,26 @@ export default function ChannelList() {
             }
 
             // Text channel
+            const unread = unreadChannels[ch.id] || 0;
             return (
               <button
                 key={ch.id}
                 className={`group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors ${
                   activeChannelId === ch.id
                     ? "bg-dark-700/50 text-white"
+                    : unread > 0
+                    ? "text-white font-semibold hover:bg-dark-800"
                     : "text-slate-400 hover:bg-dark-800 hover:text-slate-200"
                 }`}
                 onClick={() => setActiveChannel(ch.id)}
               >
-                <span className="text-lg leading-none text-slate-500">#</span>
+                <span className={`text-lg leading-none ${unread > 0 ? "text-white" : "text-slate-500"}`}>#</span>
                 <span className="truncate">{ch.name}</span>
+                {unread > 0 && activeChannelId !== ch.id && (
+                  <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                    {unread > 99 ? "99+" : unread}
+                  </span>
+                )}
               </button>
             );
           })}
