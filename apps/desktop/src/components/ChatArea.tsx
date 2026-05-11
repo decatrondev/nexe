@@ -214,7 +214,7 @@ export default function ChatArea() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const prevMessageCountRef = useRef(0);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const editInputRef = useRef<HTMLTextAreaElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -1093,14 +1093,24 @@ export default function ChatArea() {
               </div>
             )}
             <form onSubmit={handleSubmit}>
-              <div className={`flex items-center bg-dark-800 px-4 ${replyTo ? "rounded-b-lg" : "rounded-lg"}`}>
-                <input
-                  ref={inputRef as React.RefObject<HTMLInputElement>}
-                  type="text"
+              <div className={`bg-dark-800 px-4 ${replyTo ? "rounded-b-lg" : "rounded-lg"}`}>
+                <div className="flex items-end">
+                <textarea
+                  ref={inputRef}
                   value={input}
-                  onChange={(e) => handleInputChange(e.target.value)}
+                  onChange={(e) => {
+                    handleInputChange(e.target.value);
+                    const t = e.currentTarget;
+                    t.style.height = "0px";
+                    t.style.height = Math.max(44, Math.min(t.scrollHeight, 160)) + "px";
+                  }}
                   onKeyDown={(e) => {
-                    // @mention keyboard navigation
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSubmit(e);
+                      // Reset height after send
+                      if (inputRef.current) inputRef.current.style.height = "44px";
+                    }
                     if (mentionQuery !== null && mentionSuggestions.length > 0) {
                       if (e.key === "ArrowDown") {
                         e.preventDefault();
@@ -1108,18 +1118,18 @@ export default function ChatArea() {
                       } else if (e.key === "ArrowUp") {
                         e.preventDefault();
                         setMentionIndex((i) => Math.max(i - 1, 0));
-                      } else if (e.key === "Tab" || e.key === "Enter") {
+                      } else if (e.key === "Tab") {
                         e.preventDefault();
                         const s = mentionSuggestions[mentionIndex];
                         if (s) insertMention(s.userId, usernames[s.userId] || "Unknown");
-                        return;
                       } else if (e.key === "Escape") {
                         setMentionQuery(null);
                       }
                     }
                   }}
                   placeholder={slowmodeRemaining > 0 ? `Slowmode: ${slowmodeRemaining}s remaining` : `Message #${channelName}`}
-                  className="flex-1 bg-transparent py-3 text-sm text-slate-200 outline-none placeholder:text-slate-500"
+                  className="w-full resize-none bg-transparent py-3 text-sm leading-5 text-slate-200 outline-none placeholder:text-slate-500"
+                  rows={1}
                   disabled={sending || slowmodeRemaining > 0}
                 />
                 <button
@@ -1140,6 +1150,7 @@ export default function ChatArea() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 </button>
+                </div>
               </div>
               {sendError && <p className="mt-1 text-xs text-red-400">{sendError}</p>}
             </form>
