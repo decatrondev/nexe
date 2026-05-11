@@ -20,6 +20,7 @@ interface GuildState {
   usernames: Record<string, string>;
   presenceMap: Record<string, string>; // userId → status (online/idle/dnd/offline)
   unreadChannels: Record<string, number>; // channelId → unread count
+  lastReadMessageIds: Record<string, string>; // channelId → last read message id (for divider)
   loading: boolean;
   loadingGuilds: boolean;
   hasMoreMessages: Record<string, boolean>;
@@ -65,6 +66,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
   usernames: {},
   presenceMap: {},
   unreadChannels: {},
+  lastReadMessageIds: {},
   loading: false,
   loadingGuilds: false,
   hasMoreMessages: {},
@@ -83,6 +85,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
       usernames: {},
       presenceMap: {},
       unreadChannels: {},
+      lastReadMessageIds: {},
       loading: false,
       loadingGuilds: false,
       hasMoreMessages: {},
@@ -100,11 +103,13 @@ export const useGuildStore = create<GuildState>((set, get) => ({
       // Fetch unread channels
       api.getUnreadChannels().then((unreads) => {
         if (unreads) {
-          const map: Record<string, number> = {};
+          const countMap: Record<string, number> = {};
+          const readMap: Record<string, string> = {};
           for (const u of unreads) {
-            map[u.channelId] = u.unreadCount;
+            countMap[u.channelId] = u.unreadCount;
+            if (u.lastReadId) readMap[u.channelId] = u.lastReadId;
           }
-          set({ unreadChannels: map });
+          set({ unreadChannels: countMap, lastReadMessageIds: readMap });
         }
       }).catch(() => {});
     } catch (err) {
@@ -255,14 +260,17 @@ export const useGuildStore = create<GuildState>((set, get) => ({
         },
       }));
 
-      // Mark channel as read
-      api.ackChannel(channelId).then(() => {
-        set((s) => {
-          const u = { ...s.unreadChannels };
-          delete u[channelId];
-          return { unreadChannels: u };
-        });
-      }).catch(() => {});
+      // Mark channel as read (delay briefly so divider can render first)
+      setTimeout(() => {
+        api.ackChannel(channelId).then(() => {
+          set((s) => {
+            const u = { ...s.unreadChannels };
+            delete u[channelId];
+            // Keep lastReadMessageIds — divider uses it until component unmounts
+            return { unreadChannels: u };
+          });
+        }).catch(() => {});
+      }, 500);
     } catch (err) {
       console.error("Failed to load messages:", err);
     }

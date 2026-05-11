@@ -10,6 +10,7 @@ import ProfileModal from "./ProfileModal";
 import EmojiPicker from "./EmojiPicker";
 import MessageContent from "./MessageContent";
 import MessageActions from "./MessageActions";
+import EditHistoryModal from "./EditHistoryModal";
 
 const EMPTY_MSGS: Message[] = [];
 const EMPTY_ROLES: Role[] = [];
@@ -59,6 +60,8 @@ export default function ChatArea() {
   const loadMoreMessages = useGuildStore((s) => s.loadMoreMessages);
   const allHasMore = useGuildStore((s) => s.hasMoreMessages);
   const hasMore = activeChannelId ? (allHasMore[activeChannelId] ?? false) : false;
+  const lastReadMessageIds = useGuildStore((s) => s.lastReadMessageIds);
+  const lastReadId = activeChannelId ? lastReadMessageIds[activeChannelId] : undefined;
   const currentUser = useAuthStore((s) => s.user);
   const guilds = useGuildStore((s) => s.guilds);
 
@@ -93,6 +96,9 @@ export default function ChatArea() {
   // Mini profile popover + full profile
   const [profilePopover, setProfilePopover] = useState<{ userId: string; x: number; y: number } | null>(null);
   const [fullProfileUserId, setFullProfileUserId] = useState<string | null>(null);
+
+  // Edit history
+  const [editHistoryMsg, setEditHistoryMsg] = useState<{ id: string; content: string } | null>(null);
 
   // Typing indicator
   const [typingUsers, setTypingUsers] = useState<Map<string, TypingUser>>(new Map());
@@ -744,10 +750,11 @@ export default function ChatArea() {
             ) : (
               messages.map((msg, idx) => {
                 const prevMsg = idx > 0 ? messages[idx - 1] : null;
+                const showUnreadDivider = lastReadId && prevMsg?.id === lastReadId && msg.id !== lastReadId;
                 const isBridge = msg.type === "bridge" && msg.bridgeSource;
-                const isGrouped = isBridge
+                const isGrouped = showUnreadDivider ? false : (isBridge
                   ? prevMsg?.type === "bridge" && prevMsg?.bridgeAuthorId === msg.bridgeAuthorId
-                  : prevMsg?.authorId === msg.authorId && prevMsg?.type !== "bridge";
+                  : prevMsg?.authorId === msg.authorId && prevMsg?.type !== "bridge");
                 const authorName = isBridge ? (msg.bridgeAuthor || "Unknown") : (usernames[msg.authorId] || "Unknown");
                 const bridgeColor = msg.bridgeSource === "twitch" ? "#9146FF" : msg.bridgeSource === "kick" ? "#53FC18" : msg.bridgeSource === "youtube" ? "#FF0000" : undefined;
                 const color = isBridge ? (bridgeColor || "#9146FF") : (getRoleColor(msg.authorId, memberRolesMap, guildRoles) || userColor(msg.authorId));
@@ -756,6 +763,13 @@ export default function ChatArea() {
                 const reactions = messageReactions[msg.id] || [];
 
                 return (
+                  <>{showUnreadDivider && (
+                    <div className="my-2 flex items-center gap-3 px-2 animate-fade-in" key={`divider-${msg.id}`}>
+                      <div className="h-px flex-1 bg-red-500/40" />
+                      <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-red-400">New Messages</span>
+                      <div className="h-px flex-1 bg-red-500/40" />
+                    </div>
+                  )}
                   <div
                     key={msg.id}
                     id={`msg-${msg.id}`}
@@ -820,7 +834,11 @@ export default function ChatArea() {
                           )}
                           <span className="text-xs text-slate-500">{formatTimestamp(msg.createdAt)}</span>
                           {msg.editedAt && (
-                            <span className="text-xs text-slate-600" title={`Edited ${formatTimestamp(msg.editedAt)}`}>(edited)</span>
+                            <button
+                              onClick={() => setEditHistoryMsg({ id: msg.id, content: msg.content })}
+                              className="text-xs text-slate-600 transition-colors hover:text-slate-400 hover:underline cursor-pointer"
+                              title={`Edited ${formatTimestamp(msg.editedAt)} — click to view history`}
+                            >(edited)</button>
                           )}
                         </div>
                       )}
@@ -898,6 +916,7 @@ export default function ChatArea() {
                       />
                     )}
                   </div>
+                  </>
                 );
               })
             )}
@@ -1328,6 +1347,15 @@ export default function ChatArea() {
         <ProfileModal
           userId={fullProfileUserId}
           onClose={() => setFullProfileUserId(null)}
+        />
+      )}
+
+      {/* Edit history modal */}
+      {editHistoryMsg && (
+        <EditHistoryModal
+          messageId={editHistoryMsg.id}
+          currentContent={editHistoryMsg.content}
+          onClose={() => setEditHistoryMsg(null)}
         />
       )}
     </div>

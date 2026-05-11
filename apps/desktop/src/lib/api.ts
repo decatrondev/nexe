@@ -489,6 +489,10 @@ export const api = {
     return request<Message>("PATCH", `/messages/${messageId}`, { content });
   },
 
+  getEditHistory(messageId: string) {
+    return request<{ id: string; messageId: string; oldContent: string; editedAt: string }[]>("GET", `/messages/${messageId}/edits`);
+  },
+
   deleteMessage(messageId: string) {
     return request<void>("DELETE", `/messages/${messageId}`);
   },
@@ -701,7 +705,7 @@ export const api = {
   },
 
   getUnreadChannels() {
-    return request<{ channelId: string; unreadCount: number }[]>("GET", "/users/@me/unread");
+    return request<{ channelId: string; unreadCount: number; lastReadId: string }[]>("GET", "/users/@me/unread");
   },
 
   // ---- Channel overrides ----

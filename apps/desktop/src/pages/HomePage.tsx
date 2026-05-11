@@ -65,6 +65,15 @@ export default function HomePage() {
 
     // Connect WebSocket
     if (token) {
+      // Clear any stale handlers before registering (prevents duplicates on re-mount)
+      nexeWS.off("MESSAGE_CREATE");
+      nexeWS.off("MESSAGE_UPDATE");
+      nexeWS.off("MESSAGE_DELETE");
+      nexeWS.off("GUILD_MEMBER_ADD");
+      nexeWS.off("VOICE_STATE_UPDATE");
+      nexeWS.off("PRESENCE_UPDATE");
+      nexeWS.off("NOTIFICATION_CREATE");
+
       nexeWS.connect(token);
 
       nexeWS.on("MESSAGE_CREATE", (data) => {
@@ -91,9 +100,14 @@ export default function HomePage() {
             }));
           }).catch(() => {});
         }
-        // Increment unread if not in that channel
-        const activeChannel = useGuildStore.getState().activeChannelId;
-        if (msg.channelId !== activeChannel) {
+        // Increment unread only if:
+        // 1. Not the active channel
+        // 2. Not own message
+        // 3. Channel messages are loaded (otherwise backend count is already correct)
+        const { activeChannelId, messages: storeMsgs } = useGuildStore.getState();
+        const currentUserId = useAuthStore.getState().user?.id;
+        const channelLoaded = !!storeMsgs[msg.channelId];
+        if (msg.channelId !== activeChannelId && msg.authorId !== currentUserId && channelLoaded) {
           useGuildStore.setState((s) => ({
             unreadChannels: {
               ...s.unreadChannels,
