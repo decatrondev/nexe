@@ -47,7 +47,7 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*model.User, e
 		       u.twitch_id, u.twitch_login, u.twitch_display_name,
 		       u.twitch_access_token, u.twitch_refresh_token,
 		       u.status, u.custom_status_text, u.custom_status_emoji,
-		       COALESCE(ut.tier, 'free'), u.flags, u.disabled, u.created_at, u.updated_at
+		       COALESCE(ut.tier, 'free'), u.flags, u.disabled, u.totp_secret, COALESCE(u.totp_enabled, false), u.created_at, u.updated_at
 		FROM users u
 		LEFT JOIN user_tiers ut ON ut.user_id = u.id
 		WHERE u.id = $1 AND u.disabled = false`, id))
@@ -59,7 +59,7 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*model.U
 		       u.twitch_id, u.twitch_login, u.twitch_display_name,
 		       u.twitch_access_token, u.twitch_refresh_token,
 		       u.status, u.custom_status_text, u.custom_status_emoji,
-		       COALESCE(ut.tier, 'free'), u.flags, u.disabled, u.created_at, u.updated_at
+		       COALESCE(ut.tier, 'free'), u.flags, u.disabled, u.totp_secret, COALESCE(u.totp_enabled, false), u.created_at, u.updated_at
 		FROM users u
 		LEFT JOIN user_tiers ut ON ut.user_id = u.id
 		WHERE u.email = $1`, email))
@@ -71,7 +71,7 @@ func (r *UserRepository) GetByUsername(ctx context.Context, username string) (*m
 		       u.twitch_id, u.twitch_login, u.twitch_display_name,
 		       u.twitch_access_token, u.twitch_refresh_token,
 		       u.status, u.custom_status_text, u.custom_status_emoji,
-		       COALESCE(ut.tier, 'free'), u.flags, u.disabled, u.created_at, u.updated_at
+		       COALESCE(ut.tier, 'free'), u.flags, u.disabled, u.totp_secret, COALESCE(u.totp_enabled, false), u.created_at, u.updated_at
 		FROM users u
 		LEFT JOIN user_tiers ut ON ut.user_id = u.id
 		WHERE u.username = $1`, username))
@@ -83,7 +83,7 @@ func (r *UserRepository) GetByTwitchID(ctx context.Context, twitchID string) (*m
 		       u.twitch_id, u.twitch_login, u.twitch_display_name,
 		       u.twitch_access_token, u.twitch_refresh_token,
 		       u.status, u.custom_status_text, u.custom_status_emoji,
-		       COALESCE(ut.tier, 'free'), u.flags, u.disabled, u.created_at, u.updated_at
+		       COALESCE(ut.tier, 'free'), u.flags, u.disabled, u.totp_secret, COALESCE(u.totp_enabled, false), u.created_at, u.updated_at
 		FROM users u
 		LEFT JOIN user_tiers ut ON ut.user_id = u.id
 		WHERE u.twitch_id = $1`, twitchID))
@@ -142,7 +142,7 @@ func (r *UserRepository) scanUser(row *sql.Row) (*model.User, error) {
 		&u.TwitchID, &u.TwitchLogin, &u.TwitchDisplayName,
 		&u.TwitchAccessToken, &u.TwitchRefreshToken,
 		&u.Status, &u.CustomStatusText, &u.CustomStatusEmoji,
-		&u.Tier, &u.Flags, &u.Disabled, &u.CreatedAt, &u.UpdatedAt,
+		&u.Tier, &u.Flags, &u.Disabled, &u.TOTPSecret, &u.TOTPEnabled, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -151,4 +151,47 @@ func (r *UserRepository) scanUser(row *sql.Row) (*model.User, error) {
 		return nil, fmt.Errorf("scan user: %w", err)
 	}
 	return u, nil
+}
+
+// ── TOTP / 2FA ──
+
+func (r *UserRepository) SetTOTPSecret(ctx context.Context, userID, secret string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE users SET totp_secret = $1 WHERE id = $2`, secret, userID)
+	return err
+}
+
+func (r *UserRepository) EnableTOTP(ctx context.Context, userID string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE users SET totp_enabled = true WHERE id = $1`, userID)
+	return err
+}
+
+func (r *UserRepository) DisableTOTP(ctx context.Context, userID string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE users SET totp_enabled = false, totp_secret = NULL WHERE id = $1`, userID)
+	return err
+}
+
+func (r *UserRepository) SaveRecoveryCodes(ctx context.Context, userID string, codes []string) error {
+	// Delete old codes first
+	_, _ = r.db.ExecContext(ctx, `DELETE FROM recovery_codes WHERE user_id = $1`, userID)
+	for _, code := range codes {
+		_, err := r.db.ExecContext(ctx,
+			`INSERT INTO recovery_codes (user_id, code) VALUES ($1, $2)`, userID, code)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *UserRepository) UseRecoveryCode(ctx context.Context, userID, code string) (bool, error) {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE recovery_codes SET used = true WHERE user_id = $1 AND code = $2 AND used = false`, userID, code)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
 }

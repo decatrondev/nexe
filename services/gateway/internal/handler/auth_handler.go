@@ -86,6 +86,14 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 2FA required — tokens is nil, user is set
+	if tokens == nil && user != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"requiresTOTP": true,
+		})
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
 			"accessToken":  tokens.AccessToken,

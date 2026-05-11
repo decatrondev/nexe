@@ -437,6 +437,28 @@ export const api = {
     return request<void>("DELETE", "/users/@me/banner");
   },
 
+  // ---- 2FA TOTP ----
+
+  enable2FA() {
+    return request<{ secret: string; uri: string }>("POST", "/auth/2fa/enable");
+  },
+
+  verify2FA(code: string) {
+    return request<{ enabled: boolean; recoveryCodes: string[] }>("POST", "/auth/2fa/verify", { code });
+  },
+
+  disable2FA(code: string) {
+    return request<{ disabled: boolean }>("POST", "/auth/2fa/disable", { code });
+  },
+
+  login2FA(email: string, password: string, code: string) {
+    return request<{ accessToken: string; refreshToken: string; user: unknown }>("POST", "/auth/2fa/login", { email, password, code });
+  },
+
+  recover2FA(email: string, password: string, recoveryCode: string) {
+    return request<{ accessToken: string; refreshToken: string; user: unknown }>("POST", "/auth/2fa/recover", { email, password, recoveryCode });
+  },
+
   updatePresence(status: string, clearAfter?: number) {
     const body: Record<string, unknown> = { status };
     if (clearAfter) body.clearAfter = clearAfter;

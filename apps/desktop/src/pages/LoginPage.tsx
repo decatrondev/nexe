@@ -3,13 +3,15 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../stores/auth";
 import { api } from "../lib/api";
 
-type Step = "login" | "verify";
+type Step = "login" | "verify" | "totp";
 
 export default function LoginPage() {
   const [step, setStep] = useState<Step>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
+  const [totpCode, setTotpCode] = useState("");
+  const [useRecovery, setUseRecovery] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState("");
@@ -28,7 +30,11 @@ export default function LoginPage() {
       navigate("/");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Login failed";
-      if (msg.includes("email_not_verified") || msg.includes("verify your email") || msg.includes("not verified")) {
+      if (msg === "requires_totp") {
+        setStep("totp");
+        setTotpCode("");
+        setError("");
+      } else if (msg.includes("email_not_verified") || msg.includes("verify your email") || msg.includes("not verified")) {
         setStep("verify");
         setError("");
         setFeedback("Your email is not verified. Enter the code sent to your email, or resend it.");
@@ -80,6 +86,34 @@ export default function LoginPage() {
     }
   }
 
+  async function handleTOTPSubmit(e: FormEvent) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const res: any = useRecovery
+        ? await api.recover2FA(email, password, totpCode)
+        : await api.login2FA(email, password, totpCode);
+      api.setToken(res.accessToken);
+      api.setRefreshToken(res.refreshToken);
+      localStorage.setItem("token", res.accessToken);
+      localStorage.setItem("refreshToken", res.refreshToken);
+      localStorage.setItem("user", JSON.stringify(res.user));
+      useAuthStore.setState({
+        user: res.user,
+        token: res.accessToken,
+        refreshToken: res.refreshToken,
+        isAuthenticated: true,
+      });
+      navigate("/");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Invalid code");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-dark-900">
       <div className="w-full max-w-md rounded-2xl bg-dark-850 p-8 shadow-2xl">
@@ -91,6 +125,8 @@ export default function LoginPage() {
           <p className="mt-2 text-sm text-slate-400">
             {step === "login"
               ? "Welcome back! Log in to continue."
+              : step === "totp"
+              ? "Enter the code from your authenticator app."
               : "Verify your email to continue."}
           </p>
         </div>
@@ -106,7 +142,54 @@ export default function LoginPage() {
           </div>
         )}
 
-        {step === "login" ? (
+        {step === "totp" ? (
+          <form onSubmit={handleTOTPSubmit} className="space-y-4">
+            <div className="flex justify-center">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-nexe-600/20 text-nexe-400">
+                <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+              </div>
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-300">
+                {useRecovery ? "Recovery Code" : "Authentication Code"}
+              </label>
+              <input
+                type="text"
+                maxLength={useRecovery ? 20 : 6}
+                value={totpCode}
+                onChange={(e) => setTotpCode(useRecovery ? e.target.value : e.target.value.replace(/\D/g, ""))}
+                placeholder={useRecovery ? "Enter recovery code" : "000000"}
+                className={`w-full rounded-lg border border-dark-700 bg-dark-900 px-4 py-3 text-slate-200 outline-none transition-colors placeholder:text-slate-500 focus:border-nexe-500 ${useRecovery ? "text-sm" : "text-center text-2xl font-mono tracking-[0.5em]"}`}
+                autoFocus
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading || (useRecovery ? !totpCode.trim() : totpCode.length !== 6)}
+              className="w-full rounded-lg bg-nexe-500 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-nexe-600 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? "Verifying..." : "Verify"}
+            </button>
+            <div className="flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => { setUseRecovery(!useRecovery); setTotpCode(""); setError(""); }}
+                className="text-xs text-nexe-400 hover:text-nexe-300"
+              >
+                {useRecovery ? "Use authenticator app" : "Use a recovery code"}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setStep("login"); setTotpCode(""); setError(""); }}
+                className="text-xs text-slate-500 hover:text-slate-300"
+              >
+                Back to login
+              </button>
+            </div>
+          </form>
+        ) : step === "login" ? (
           <>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>

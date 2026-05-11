@@ -28,7 +28,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   authLoading: true, // starts true — don't render routes until checked
 
   async login(email: string, password: string) {
-    const res = await api.login(email, password);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const res: any = await api.login(email, password);
+    // 2FA required — backend returns { requiresTOTP: true } instead of tokens
+    if (res.requiresTOTP) {
+      throw new Error("requires_totp");
+    }
     api.setToken(res.accessToken);
     api.setRefreshToken(res.refreshToken);
     localStorage.setItem("token", res.accessToken);

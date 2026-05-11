@@ -4,11 +4,12 @@ import { api, type SocialLink } from "../lib/api";
 import ImageCropModal from "./ImageCropModal";
 
 interface Props { onClose: () => void }
-type Tab = "account" | "profile" | "appearance";
+type Tab = "account" | "profile" | "security" | "appearance";
 
 const tabs: { id: Tab; label: string }[] = [
   { id: "account", label: "My Account" },
   { id: "profile", label: "Profiles" },
+  { id: "security", label: "Security" },
   { id: "appearance", label: "Appearance" },
 ];
 
@@ -81,6 +82,7 @@ export default function UserSettingsModal({ onClose }: Props) {
           <div className="min-h-0 flex-1 overflow-y-auto p-6">
             {activeTab === "account" && <AccountTab />}
             {activeTab === "profile" && <ProfileTab />}
+            {activeTab === "security" && <SecurityTab />}
             {activeTab === "appearance" && <AppearanceTab />}
           </div>
         </div>
@@ -594,6 +596,216 @@ function ProfileTab() {
           onConfirm={handleCropConfirm}
           onClose={() => setCropModal(null)}
         />
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════
+// Security (2FA)
+// ═══════════════════════════
+
+function SecurityTab() {
+  const user = useAuthStore((s) => s.user);
+  const [totpEnabled, setTotpEnabled] = useState(false);
+  const [step, setStep] = useState<"idle" | "setup" | "verify" | "codes" | "disable">("idle");
+  const [secret, setSecret] = useState("");
+  const [uri, setUri] = useState("");
+  const [code, setCode] = useState("");
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    api.getProfile(user.id).then(() => {
+      // Check totp status from user object
+      setTotpEnabled(!!(user as unknown as { totpEnabled?: boolean }).totpEnabled);
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
+  }, [user]);
+
+  async function handleEnable() {
+    setLoading(true); setError("");
+    try {
+      const data = await api.enable2FA();
+      setSecret(data.secret);
+      setUri(data.uri);
+      setStep("setup");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to enable 2FA");
+    } finally { setLoading(false); }
+  }
+
+  async function handleVerify() {
+    if (code.length !== 6) return;
+    setLoading(true); setError("");
+    try {
+      const data = await api.verify2FA(code);
+      setRecoveryCodes(data.recoveryCodes);
+      setTotpEnabled(true);
+      setStep("codes");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Invalid code");
+    } finally { setLoading(false); setCode(""); }
+  }
+
+  async function handleDisable() {
+    if (code.length !== 6) return;
+    setLoading(true); setError("");
+    try {
+      await api.disable2FA(code);
+      setTotpEnabled(false);
+      setStep("idle");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Invalid code");
+    } finally { setLoading(false); setCode(""); }
+  }
+
+  if (!loaded) {
+    return <div className="flex justify-center py-8"><div className="h-5 w-5 animate-spin rounded-full border-2 border-nexe-500 border-t-transparent" /></div>;
+  }
+
+  return (
+    <div className="max-w-lg space-y-6">
+      <div>
+        <h3 className="text-lg font-semibold text-slate-100">Two-Factor Authentication</h3>
+        <p className="mt-1 text-sm text-slate-400">
+          Add an extra layer of security to your account using an authenticator app like Google Authenticator or Authy.
+        </p>
+      </div>
+
+      {error && (
+        <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-2.5 text-sm text-red-400">{error}</div>
+      )}
+
+      {/* Idle state — show enable/disable button */}
+      {step === "idle" && (
+        <div className="rounded-lg border border-dark-700 bg-dark-800 p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`flex h-10 w-10 items-center justify-center rounded-full ${totpEnabled ? "bg-green-600/20 text-green-400" : "bg-dark-700 text-slate-500"}`}>
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-slate-200">{totpEnabled ? "2FA is enabled" : "2FA is not enabled"}</p>
+                <p className="text-xs text-slate-500">{totpEnabled ? "Your account is protected with an authenticator app" : "Protect your account with an authenticator app"}</p>
+              </div>
+            </div>
+            {totpEnabled ? (
+              <button onClick={() => { setStep("disable"); setCode(""); setError(""); }}
+                className="rounded-lg bg-red-600/20 px-4 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-600/30">
+                Disable
+              </button>
+            ) : (
+              <button onClick={handleEnable} disabled={loading}
+                className="rounded-lg bg-nexe-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-nexe-500 disabled:opacity-50">
+                {loading ? "Loading..." : "Enable 2FA"}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Setup — show QR code + secret */}
+      {step === "setup" && (
+        <div className="space-y-4 rounded-lg border border-dark-700 bg-dark-800 p-5">
+          <p className="text-sm font-medium text-slate-200">Step 1: Scan the QR code</p>
+          <p className="text-xs text-slate-400">Open your authenticator app and scan this QR code, or enter the secret manually.</p>
+
+          <div className="flex justify-center rounded-lg bg-white p-4">
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(uri)}`}
+              alt="QR Code"
+              className="h-48 w-48"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[11px] font-bold uppercase text-slate-400">Manual Entry Key</label>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 rounded-md bg-dark-900 px-3 py-2 text-sm font-mono text-nexe-300 select-text">{secret}</code>
+              <button onClick={() => navigator.clipboard?.writeText(secret)}
+                className="rounded-md bg-dark-700 px-3 py-2 text-xs text-slate-300 hover:bg-dark-600">Copy</button>
+            </div>
+          </div>
+
+          <div className="h-px bg-dark-700" />
+          <p className="text-sm font-medium text-slate-200">Step 2: Enter the 6-digit code</p>
+          <input
+            type="text"
+            maxLength={6}
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+            placeholder="000000"
+            className="w-full rounded-lg border border-dark-700 bg-dark-900 px-4 py-3 text-center text-2xl font-mono tracking-[0.5em] text-slate-200 outline-none focus:border-nexe-500"
+            autoFocus
+            onKeyDown={(e) => { if (e.key === "Enter") handleVerify(); }}
+          />
+          <div className="flex gap-3">
+            <button onClick={() => { setStep("idle"); setCode(""); setError(""); }}
+              className="flex-1 rounded-lg bg-dark-700 px-4 py-2.5 text-sm font-medium text-slate-300 hover:bg-dark-600">Cancel</button>
+            <button onClick={handleVerify} disabled={loading || code.length !== 6}
+              className="flex-1 rounded-lg bg-nexe-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-nexe-500 disabled:opacity-50">
+              {loading ? "Verifying..." : "Verify & Enable"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Recovery codes */}
+      {step === "codes" && (
+        <div className="space-y-4 rounded-lg border border-green-500/20 bg-green-500/5 p-5">
+          <div className="flex items-center gap-2">
+            <svg className="h-5 w-5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p className="text-sm font-semibold text-green-400">2FA Enabled Successfully!</p>
+          </div>
+          <p className="text-xs text-slate-400">Save these recovery codes in a safe place. You can use them to login if you lose your authenticator device. Each code can only be used once.</p>
+          <div className="grid grid-cols-2 gap-2">
+            {recoveryCodes.map((c) => (
+              <code key={c} className="rounded-md bg-dark-900 px-3 py-1.5 text-center text-sm font-mono text-slate-200 select-text">{c}</code>
+            ))}
+          </div>
+          <button onClick={() => { navigator.clipboard?.writeText(recoveryCodes.join("\n")); }}
+            className="w-full rounded-lg bg-dark-700 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-dark-600">
+            Copy All Codes
+          </button>
+          <button onClick={() => { setStep("idle"); setRecoveryCodes([]); }}
+            className="w-full rounded-lg bg-nexe-600 px-4 py-2 text-sm font-medium text-white hover:bg-nexe-500">
+            Done
+          </button>
+        </div>
+      )}
+
+      {/* Disable confirmation */}
+      {step === "disable" && (
+        <div className="space-y-4 rounded-lg border border-red-500/20 bg-red-500/5 p-5">
+          <p className="text-sm font-medium text-red-400">Disable Two-Factor Authentication</p>
+          <p className="text-xs text-slate-400">Enter your current authenticator code to disable 2FA.</p>
+          <input
+            type="text"
+            maxLength={6}
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+            placeholder="000000"
+            className="w-full rounded-lg border border-dark-700 bg-dark-900 px-4 py-3 text-center text-2xl font-mono tracking-[0.5em] text-slate-200 outline-none focus:border-red-500"
+            autoFocus
+            onKeyDown={(e) => { if (e.key === "Enter") handleDisable(); }}
+          />
+          <div className="flex gap-3">
+            <button onClick={() => { setStep("idle"); setCode(""); setError(""); }}
+              className="flex-1 rounded-lg bg-dark-700 px-4 py-2.5 text-sm font-medium text-slate-300 hover:bg-dark-600">Cancel</button>
+            <button onClick={handleDisable} disabled={loading || code.length !== 6}
+              className="flex-1 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">
+              {loading ? "Disabling..." : "Disable 2FA"}
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );

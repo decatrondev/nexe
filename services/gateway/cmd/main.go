@@ -59,6 +59,7 @@ func main() {
 	wsHandler := handler.NewWSHandler(jwtSvc, rdb, cfg.GuildsURL, cfg.PresenceURL, cfg.VoiceURL)
 	profileHandler := handler.NewProfileHandler(profileRepo)
 	uploadHandler := handler.NewUploadHandler(storageSvc, profileRepo)
+	totpHandler := handler.NewTOTPHandler(userRepo, authSvc)
 	twitchHandler := handler.NewTwitchHandler(twitchSvc, userRepo, authSvc, jwtSvc, rdb, cfg.TwitchEventSubSecret, cfg.BaseURL, cfg.FrontendURL, cfg.MessagingURL, cfg.GuildsURL)
 	botHandler := handler.NewBotHandler(botRepo, jwtSvc)
 	proxyHandler := handler.NewProxyHandler(cfg.GuildsURL, cfg.MessagingURL, cfg.PresenceURL, cfg.VoiceURL, cfg.NotificationsURL)
@@ -105,6 +106,13 @@ func main() {
 	mux.Handle("POST /users/@me/banner", authMiddleware(http.HandlerFunc(uploadHandler.UploadBanner)))
 	mux.Handle("DELETE /users/@me/avatar", authMiddleware(http.HandlerFunc(uploadHandler.DeleteAvatar)))
 	mux.Handle("DELETE /users/@me/banner", authMiddleware(http.HandlerFunc(uploadHandler.DeleteBanner)))
+
+	// 2FA TOTP routes
+	mux.Handle("POST /auth/2fa/enable", authMiddleware(http.HandlerFunc(totpHandler.Enable)))
+	mux.Handle("POST /auth/2fa/verify", authMiddleware(http.HandlerFunc(totpHandler.Verify)))
+	mux.Handle("POST /auth/2fa/disable", authMiddleware(http.HandlerFunc(totpHandler.Disable)))
+	mux.Handle("POST /auth/2fa/login", apiRateLimiter.Middleware(http.HandlerFunc(totpHandler.LoginVerify)))
+	mux.Handle("POST /auth/2fa/recover", apiRateLimiter.Middleware(http.HandlerFunc(totpHandler.RecoverLogin)))
 
 	// Twitch routes
 	mux.HandleFunc("GET /auth/twitch", twitchHandler.TwitchAuth)

@@ -19,8 +19,18 @@ type User struct {
 	Tier                 string     `json:"tier"`
 	Flags                int64      `json:"flags"`
 	Disabled             bool       `json:"disabled"`
+	TOTPSecret           *string    `json:"-"`
+	TOTPEnabled          bool       `json:"totpEnabled"`
 	CreatedAt            time.Time  `json:"createdAt"`
 	UpdatedAt            time.Time  `json:"updatedAt"`
+}
+
+type RecoveryCode struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"userId"`
+	Code      string    `json:"code"`
+	Used      bool      `json:"used"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 type Session struct {

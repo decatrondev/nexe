@@ -215,6 +215,11 @@ func (s *AuthService) Login(ctx context.Context, input LoginInput, ip, userAgent
 		return nil, nil, fmt.Errorf("email not verified")
 	}
 
+	// If 2FA is enabled, return user without tokens — handler sends requiresTOTP
+	if user.TOTPEnabled {
+		return nil, user, nil
+	}
+
 	tokens, err := s.createSession(ctx, user, ip, userAgent)
 	if err != nil {
 		return nil, nil, err
