@@ -28,6 +28,19 @@ func (r *UserRepository) Create(ctx context.Context, user *model.User) error {
 	).Scan(&user.ID, &user.CreatedAt, &user.UpdatedAt)
 }
 
+func (r *UserRepository) Delete(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx, `DELETE FROM profiles WHERE user_id = $1`, id)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = $1`, id)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, `DELETE FROM users WHERE id = $1`, id)
+	return err
+}
+
 func (r *UserRepository) GetByID(ctx context.Context, id string) (*model.User, error) {
 	return r.scanUser(r.db.QueryRowContext(ctx, `
 		SELECT u.id, u.username, u.email, u.email_verified, u.password_hash,

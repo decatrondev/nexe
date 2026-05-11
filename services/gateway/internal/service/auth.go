@@ -95,7 +95,12 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*model
 		return nil, "", fmt.Errorf("check email: %w", err)
 	}
 	if existing != nil {
-		return nil, "", fmt.Errorf("email already registered")
+		if !existing.EmailVerified {
+			// Email exists but not verified — delete the old account and let them re-register
+			s.users.Delete(ctx, existing.ID)
+		} else {
+			return nil, "", fmt.Errorf("email already registered")
+		}
 	}
 
 	existing, err = s.users.GetByUsername(ctx, input.Username)
@@ -103,7 +108,11 @@ func (s *AuthService) Register(ctx context.Context, input RegisterInput) (*model
 		return nil, "", fmt.Errorf("check username: %w", err)
 	}
 	if existing != nil {
-		return nil, "", fmt.Errorf("username already taken")
+		if !existing.EmailVerified {
+			s.users.Delete(ctx, existing.ID)
+		} else {
+			return nil, "", fmt.Errorf("username already taken")
+		}
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(input.Password), 12)
