@@ -4,88 +4,12 @@ import { useAuthStore } from "../stores/auth";
 import { api, type Message, type Role, type ReactionGroup } from "../lib/api";
 import { nexeWS } from "../lib/websocket";
 import { hasPermission, computePermissions, Permissions } from "../lib/permissions";
+import { copyToClipboard, formatTimestamp, userColor, getRoleColor } from "../lib/utils";
 import MiniProfilePopover from "./MiniProfilePopover";
 import ProfileModal from "./ProfileModal";
 import EmojiPicker from "./EmojiPicker";
 import MessageContent from "./MessageContent";
-
-function copyToClipboard(text: string) {
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
-  } else {
-    fallbackCopy(text);
-  }
-}
-
-function fallbackCopy(text: string) {
-  const ta = document.createElement("textarea");
-  ta.value = text;
-  ta.style.position = "fixed";
-  ta.style.left = "-9999px";
-  document.body.appendChild(ta);
-  ta.select();
-  document.execCommand("copy");
-  document.body.removeChild(ta);
-}
-
-function formatTimestamp(iso: string): string {
-  try {
-    const date = new Date(iso);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMin = Math.floor(diffMs / 60000);
-
-    if (diffMin < 1) return "Just now";
-    if (diffMin < 60) return `${diffMin}m ago`;
-
-    const isToday = date.toDateString() === now.toDateString();
-    if (isToday) {
-      return `Today at ${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
-    }
-
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    if (date.toDateString() === yesterday.toDateString()) {
-      return `Yesterday at ${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
-    }
-
-    return date.toLocaleDateString([], {
-      month: "short",
-      day: "numeric",
-      year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
-    }) + ` at ${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
-  } catch {
-    return "";
-  }
-}
-
-function userColor(userId: string): string {
-  const colors = [
-    "#a78bfa", "#34d399", "#f472b6", "#60a5fa", "#fbbf24",
-    "#fb923c", "#c084fc", "#2dd4bf", "#f87171", "#a3e635",
-  ];
-  let hash = 0;
-  for (let i = 0; i < userId.length; i++) {
-    hash = ((hash << 5) - hash + userId.charCodeAt(i)) | 0;
-  }
-  return colors[Math.abs(hash) % colors.length];
-}
-
-/** Returns the color of the user's highest-position role, or undefined if none */
-function getRoleColor(
-  userId: string,
-  memberRoles: Record<string, string[]>,
-  roles: Role[],
-): string | undefined {
-  const userRoleIds = memberRoles[userId];
-  if (!userRoleIds || userRoleIds.length === 0) return undefined;
-
-  const colored = roles
-    .filter((r) => userRoleIds.includes(r.id) && r.color)
-    .sort((a, b) => b.position - a.position);
-
-  return colored.length > 0 ? colored[0].color : undefined;
-}
+import MessageActions from "./MessageActions";
 
 const EMPTY_MSGS: Message[] = [];
 const EMPTY_ROLES: Role[] = [];
@@ -103,17 +27,6 @@ interface ContextMenuState {
 interface TypingUser {
   username: string;
   timestamp: number;
-}
-
-// Extract Twitch clip slug from message text
-function extractTwitchClipSlug(text: string): string | null {
-  // Match https://clips.twitch.tv/SLUG
-  const m1 = text.match(/https?:\/\/clips\.twitch\.tv\/(\S+)/);
-  if (m1) return m1[1];
-  // Match https://www.twitch.tv/CHANNEL/clip/SLUG
-  const m2 = text.match(/https?:\/\/(?:www\.)?twitch\.tv\/\w+\/clip\/(\S+)/);
-  if (m2) return m2[1];
-  return null;
 }
 
 // Highlight search query matches in text
@@ -762,7 +675,7 @@ export default function ChatArea() {
 
           {/* Search results dropdown */}
           {searchResults.length > 0 && (
-            <div className="absolute left-0 right-0 top-full z-40 max-h-80 overflow-y-auto border-b border-dark-700 bg-dark-900 shadow-xl">
+            <div className="absolute left-0 right-0 top-full z-40 max-h-80 overflow-y-auto border-b border-dark-700 bg-dark-900 shadow-xl animate-slide-down">
               <div className="px-3 py-2 text-xs font-medium text-slate-500">
                 {searchResults.length} result{searchResults.length !== 1 ? "s" : ""}
               </div>
@@ -801,7 +714,7 @@ export default function ChatArea() {
             </div>
           )}
           {searchQuery && searchResults.length === 0 && !searchLoading && (
-            <div className="absolute left-0 right-0 top-full z-40 border-b border-dark-700 bg-dark-900 px-4 py-4 text-center shadow-xl">
+            <div className="absolute left-0 right-0 top-full z-40 border-b border-dark-700 bg-dark-900 px-4 py-4 text-center shadow-xl animate-slide-down">
               <p className="text-sm text-slate-500">No results found</p>
             </div>
           )}
@@ -823,10 +736,10 @@ export default function ChatArea() {
             )}
 
             {messages.length === 0 ? (
-              <div className="flex flex-1 flex-col items-center justify-center">
-                <div className="mb-3 text-5xl text-slate-700">#</div>
-                <h3 className="text-lg font-semibold text-slate-300">Welcome to #{channelName}</h3>
-                <p className="mt-1 text-sm text-slate-500">No messages yet. Be the first to say something!</p>
+              <div className="flex flex-1 flex-col items-center justify-center animate-fade-in">
+                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-dark-800 text-4xl text-slate-600">#</div>
+                <h3 className="text-lg font-semibold text-slate-200">Welcome to #{channelName}</h3>
+                <p className="mt-1 text-sm text-slate-500">This is the start of the channel. Say something!</p>
               </div>
             ) : (
               messages.map((msg, idx) => {
@@ -847,7 +760,7 @@ export default function ChatArea() {
                     key={msg.id}
                     id={`msg-${msg.id}`}
                     onContextMenu={(e) => handleContextMenu(e, msg)}
-                    className={`group relative flex gap-4 rounded px-2 py-0.5 transition-colors hover:bg-dark-800/30 ${!isGrouped ? "mt-3" : ""}`}
+                    className={`group relative flex gap-4 rounded-md px-2 py-0.5 transition-[background-color] duration-100 hover:bg-dark-800/40 ${!isGrouped ? "mt-3" : ""}`}
                   >
                     {/* Avatar column */}
                     <div className="w-10 shrink-0">
@@ -947,23 +860,6 @@ export default function ChatArea() {
                             )}
                             <MessageContent content={msg.content} usernames={usernames} />
                           </div>
-                          {(() => {
-                            // Legacy clip embed — now handled by MessageContent
-                            const clipSlug = extractTwitchClipSlug(msg.content);
-                            if (!clipSlug) return null;
-                            return null; // MessageContent handles this now
-                            return (
-                              <div className="mt-2 overflow-hidden rounded-lg border border-dark-700 bg-dark-800">
-                                <iframe
-                                  src={`https://clips.twitch.tv/embed?clip=${clipSlug}&parent=${window.location.hostname}`}
-                                  height="300"
-                                  width="100%"
-                                  allowFullScreen
-                                  className="border-0"
-                                />
-                              </div>
-                            );
-                          })()}
                         </>
                       )}
 
@@ -990,49 +886,16 @@ export default function ChatArea() {
 
                     {/* Hover actions */}
                     {!isEditing && (
-                      <div className="absolute -top-3 right-2 hidden gap-0.5 rounded border border-dark-700 bg-dark-900 p-0.5 shadow-lg group-hover:flex">
-                        {/* Reaction button */}
-                        <button
-                          onClick={(e) => handleEmojiPickerClick(e, msg.id)}
-                          className="rounded p-1 text-slate-400 hover:bg-dark-700 hover:text-white"
-                          title="Add Reaction"
-                        >
-                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => startReply(msg)}
-                          className="rounded p-1 text-slate-400 hover:bg-dark-700 hover:text-white"
-                          title="Reply"
-                        >
-                          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a5 5 0 015 5v4M3 10l6 6m-6-6l6-6" />
-                          </svg>
-                        </button>
-                        {msg.authorId !== "" && msg.authorId === currentUser?.id && (
-                          <button
-                            onClick={() => startEdit(msg)}
-                            className="rounded p-1 text-slate-400 hover:bg-dark-700 hover:text-white"
-                            title="Edit"
-                          >
-                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                            </svg>
-                          </button>
-                        )}
-                        {(msg.authorId !== "" && msg.authorId === currentUser?.id || canManageMessages) && (
-                          <button
-                            onClick={() => setDeleteConfirm(msg.id)}
-                            className="rounded p-1 text-slate-400 hover:bg-red-500/20 hover:text-red-400"
-                            title="Delete"
-                          >
-                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        )}
-                      </div>
+                      <MessageActions
+                        messageId={msg.id}
+                        authorId={msg.authorId}
+                        currentUserId={currentUser?.id}
+                        canManageMessages={canManageMessages}
+                        onReaction={handleEmojiPickerClick}
+                        onReply={() => startReply(msg)}
+                        onEdit={() => startEdit(msg)}
+                        onDelete={() => setDeleteConfirm(msg.id)}
+                      />
                     )}
                   </div>
                 );
@@ -1045,25 +908,26 @@ export default function ChatArea() {
           {showScrollBottom && (
             <button
               onClick={() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })}
-              className="absolute bottom-2 right-6 z-30 flex h-8 w-8 items-center justify-center rounded-full bg-dark-700 text-slate-300 shadow-lg ring-1 ring-dark-600 transition-all hover:bg-dark-600 hover:text-white"
+              className="absolute bottom-4 left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-nexe-600 px-4 py-1.5 text-xs font-medium text-white shadow-lg shadow-nexe-600/20 transition-all hover:bg-nexe-500 hover:shadow-nexe-500/30 animate-slide-up"
               title="Jump to latest"
             >
-              <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
+              <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
                 <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z" />
               </svg>
+              New messages
             </button>
           )}
 
           {/* Typing indicator */}
           <div className="h-5 shrink-0 px-4">
             {typingText && (
-              <p className="text-xs text-slate-400 animate-pulse">{typingText}</p>
+              <p className="text-xs text-slate-400 animate-fade-in animate-pulse-subtle">{typingText}</p>
             )}
           </div>
 
           {/* Reply bar */}
           {replyTo && (
-            <div className="mx-4 flex items-center gap-2 rounded-t-lg border border-b-0 border-dark-700 bg-dark-800/50 px-3 py-2">
+            <div className="mx-4 flex items-center gap-2 rounded-t-lg border border-b-0 border-dark-700 bg-dark-800/50 px-3 py-2 animate-slide-up">
               <span className="text-xs text-slate-400">Replying to</span>
               <span className="text-xs font-medium" style={{ color: getRoleColor(replyTo.authorId, memberRolesMap, guildRoles) || userColor(replyTo.authorId) }}>
                 {usernames[replyTo.authorId] || "Unknown"}
@@ -1081,7 +945,7 @@ export default function ChatArea() {
           <div className="shrink-0 px-4 pb-4">
             {/* @mention autocomplete */}
             {mentionQuery !== null && mentionSuggestions.length > 0 && (
-              <div className="mb-1 overflow-hidden rounded-lg border border-dark-700 bg-dark-800 shadow-xl">
+              <div className="mb-1 overflow-hidden rounded-lg border border-dark-700 bg-dark-800 shadow-xl animate-slide-up">
                 {mentionSuggestions.map((m, i) => {
                   const name = usernames[m.userId] || "Unknown";
                   const roleColor = getRoleColor(m.userId, memberRolesMap, guildRoles);
@@ -1109,7 +973,7 @@ export default function ChatArea() {
               </div>
             )}
             <form onSubmit={handleSubmit}>
-              <div className={`bg-dark-800 px-4 ${replyTo ? "rounded-b-lg" : "rounded-lg"}`}>
+              <div className={`bg-dark-800 px-4 transition-colors ${replyTo ? "rounded-b-lg" : "rounded-lg"}`}>
                 <div className="flex items-end">
                 <textarea
                   ref={inputRef}
@@ -1244,8 +1108,8 @@ export default function ChatArea() {
       {/* Context menu */}
       {ctxMenu && (
         <div
-          className="fixed z-50 min-w-44 rounded-lg border border-dark-700 bg-dark-900 py-1 shadow-xl"
-          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          className="fixed z-50 min-w-44 rounded-lg border border-dark-700 bg-dark-900 py-1 shadow-xl animate-scale-in"
+          style={{ left: ctxMenu.x, top: ctxMenu.y, transformOrigin: "top left" }}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Add Reaction */}
@@ -1397,8 +1261,8 @@ export default function ChatArea() {
 
       {/* Delete confirmation modal */}
       {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setDeleteConfirm(null)}>
-          <div className="w-full max-w-sm rounded-xl bg-dark-800 p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 animate-modal-backdrop" onClick={() => setDeleteConfirm(null)}>
+          <div className="w-full max-w-sm rounded-xl bg-dark-800 p-6 shadow-2xl animate-modal-content" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-white">Delete Message</h3>
             <p className="mt-2 text-sm text-slate-400">Are you sure you want to delete this message? This cannot be undone.</p>
             <div className="mt-4 flex justify-end gap-3">

@@ -3,18 +3,7 @@ import { api, type UserProfile, type UserBadge } from "../lib/api";
 import { useAuthStore } from "../stores/auth";
 import { useGuildStore } from "../stores/guild";
 import { hasPermission, computePermissions, Permissions } from "../lib/permissions";
-
-function userColor(userId: string): string {
-  const colors = ["#a78bfa","#34d399","#f472b6","#60a5fa","#fbbf24","#fb923c","#c084fc","#2dd4bf","#f87171","#a3e635"];
-  let hash = 0;
-  for (let i = 0; i < userId.length; i++) hash = ((hash << 5) - hash + userId.charCodeAt(i)) | 0;
-  return colors[Math.abs(hash) % colors.length];
-}
-
-function formatDate(iso: string): string {
-  try { return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); }
-  catch { return ""; }
-}
+import { userColor, formatJoinDate as formatDate } from "../lib/utils";
 
 // Extended profile type — backend may include twitch fields
 interface UserProfileWithTwitch extends UserProfile {
@@ -226,7 +215,7 @@ export default function MiniProfilePopover({ userId, x, y, onClose, onViewFull }
   return (
     <div
       ref={cardRef}
-      className="fixed z-[60] overflow-hidden rounded-lg shadow-xl"
+      className="fixed z-[60] overflow-hidden rounded-lg shadow-xl animate-scale-in"
       style={{ left, top, width: W, backgroundColor: "#111827", border: "1px solid #1e293b" }}
     >
       {/* Banner */}

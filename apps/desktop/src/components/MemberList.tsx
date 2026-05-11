@@ -1,17 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useGuildStore } from "../stores/guild";
 import { api, type GuildMember, type Role } from "../lib/api";
+import { formatJoinDate } from "../lib/utils";
 import MiniProfilePopover from "./MiniProfilePopover";
 import ProfileModal from "./ProfileModal";
-
-function formatJoinDate(iso: string): string {
-  const date = new Date(iso);
-  return date.toLocaleDateString([], {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
 
 /** Get the highest-position role with a color for a user */
 function getHighestRoleColor(
@@ -170,7 +162,7 @@ export default function MemberList() {
                   <button
                     key={member.id}
                     onClick={(e) => setProfilePopover({ userId: member.userId, x: e.clientX, y: e.clientY })}
-                    className="flex w-full items-center gap-3 rounded-md px-2 py-1.5 transition-colors hover:bg-dark-800"
+                    className="flex w-full items-center gap-3 rounded-md px-2 py-1.5 transition-all duration-150 hover:bg-dark-800/70"
                   >
                     <div className="relative">
                       <div
@@ -185,7 +177,7 @@ export default function MemberList() {
                           </span>
                         )}
                       </div>
-                      <div className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-dark-850 ${
+                      <div className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-dark-850 transition-colors duration-300 ${
                         presenceMap[member.userId] === "idle" ? "bg-yellow-500" :
                         presenceMap[member.userId] === "dnd" ? "bg-red-500" :
                         presenceMap[member.userId] === "offline" ? "bg-slate-500" :
@@ -203,7 +195,7 @@ export default function MemberList() {
                           </span>
                         </p>
                         {liveUsers.has(member.userId) && (
-                          <span className="shrink-0 rounded bg-red-600 px-1 py-px text-[9px] font-bold uppercase text-white">
+                          <span className="shrink-0 rounded bg-red-600 px-1 py-px text-[9px] font-bold uppercase text-white animate-pulse-subtle">
                             Live
                           </span>
                         )}

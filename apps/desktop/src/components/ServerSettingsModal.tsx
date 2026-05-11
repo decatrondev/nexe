@@ -59,7 +59,7 @@ export default function ServerSettingsModal({ guildId, onClose }: ServerSettings
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex bg-dark-900/95">
+    <div className="fixed inset-0 z-50 flex bg-dark-900/95 animate-fade-in">
       {/* Sidebar */}
       <div className="flex w-56 shrink-0 flex-col border-r border-dark-800 bg-dark-900 pt-14">
         <div className="px-3 pb-2">

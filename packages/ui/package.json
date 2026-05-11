@@ -9,6 +9,7 @@
     "lint": "echo 'no lint configured yet'"
   },
   "devDependencies": {
+    "@nexe/config": "workspace:*",
     "typescript": "^5.8.0",
     "react": "^19.0.0",
     "@types/react": "^19.0.0"

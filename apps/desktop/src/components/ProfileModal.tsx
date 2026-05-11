@@ -1,12 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type UserProfile, type UserBadge } from "../lib/api";
-
-function userColor(userId: string): string {
-  const colors = ["#a78bfa","#34d399","#f472b6","#60a5fa","#fbbf24","#fb923c","#c084fc","#2dd4bf","#f87171","#a3e635"];
-  let hash = 0;
-  for (let i = 0; i < userId.length; i++) hash = ((hash << 5) - hash + userId.charCodeAt(i)) | 0;
-  return colors[Math.abs(hash) % colors.length];
-}
+import { userColor } from "../lib/utils";
 
 function formatDate(iso: string): string {
   try { return new Date(iso).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }); }
@@ -54,9 +48,9 @@ export default function ProfileModal({ userId, onClose }: Props) {
   const totalXp = profile?.totalXp ?? 0;
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-6" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-6 animate-modal-backdrop" onClick={onClose}>
       <div
-        className="relative w-full max-w-lg overflow-hidden rounded-lg shadow-2xl"
+        className="relative w-full max-w-lg overflow-hidden rounded-lg shadow-2xl animate-modal-content"
         style={{ backgroundColor: "#111827" }}
         onClick={(e) => e.stopPropagation()}
       >

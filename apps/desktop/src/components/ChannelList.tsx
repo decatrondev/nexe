@@ -5,20 +5,13 @@ import { useVoiceStore } from "../stores/voice";
 import { hasPermission, computePermissions, Permissions } from "../lib/permissions";
 import { type Channel, api } from "../lib/api";
 import { FREE_TIER_LIMITS } from "../lib/limits";
+import { statusColors } from "../lib/utils";
 import CreateChannelModal from "./CreateChannelModal";
 import ServerSettingsModal from "./ServerSettingsModal";
 import InviteModal from "./InviteModal";
 import UserSettingsModal from "./UserSettingsModal";
 import VoicePanel from "./VoicePanel";
 import NotificationBell from "./NotificationBell";
-
-const statusColors: Record<string, string> = {
-  online: "bg-green-500",
-  idle: "bg-yellow-500",
-  dnd: "bg-red-500",
-  offline: "bg-slate-500",
-  invisible: "bg-slate-500",
-};
 
 const EMPTY_CHANNELS: Channel[] = [];
 
@@ -92,7 +85,7 @@ export default function ChannelList() {
         >
           <svg
             viewBox="0 0 24 24"
-            className={`h-3 w-3 fill-current transition-transform ${isCollapsed ? "-rotate-90" : ""}`}
+            className={`h-3 w-3 fill-current transition-transform duration-200 ${isCollapsed ? "-rotate-90" : ""}`}
           >
             <path d="M7 10l5 5 5-5z" />
           </svg>
@@ -174,16 +167,16 @@ export default function ChannelList() {
             return (
               <button
                 key={ch.id}
-                className={`group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors ${
+                className={`group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-all duration-150 ${
                   activeChannelId === ch.id
-                    ? "bg-dark-700/50 text-white"
+                    ? "bg-dark-700/60 text-white"
                     : unread > 0
-                    ? "text-white font-semibold hover:bg-dark-800"
-                    : "text-slate-400 hover:bg-dark-800 hover:text-slate-200"
+                    ? "text-white font-semibold hover:bg-dark-800/80"
+                    : "text-slate-400 hover:bg-dark-800/60 hover:text-slate-200"
                 }`}
                 onClick={() => setActiveChannel(ch.id)}
               >
-                <span className={`text-lg leading-none ${unread > 0 ? "text-white" : "text-slate-500"}`}>#</span>
+                <span className={`text-lg leading-none transition-colors duration-150 ${activeChannelId === ch.id ? "text-white" : unread > 0 ? "text-white" : "text-slate-500 group-hover:text-slate-400"}`}>#</span>
                 <span className="truncate">{ch.name}</span>
                 {unread > 0 && activeChannelId !== ch.id && (
                   <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
@@ -201,7 +194,7 @@ export default function ChannelList() {
     <>
       <div className="flex h-full w-60 shrink-0 flex-col bg-dark-900">
         {/* Server header */}
-        <div className="flex h-12 shrink-0 items-center justify-between border-b border-dark-950 px-4">
+        <div className="flex h-12 shrink-0 items-center justify-between border-b border-dark-950 px-4 transition-colors">
           <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-100">
             {serverName}
           </h2>
@@ -270,7 +263,7 @@ export default function ChannelList() {
         <VoicePanel />
 
         {/* User info bar */}
-        <div className="flex shrink-0 items-center gap-2 border-t border-dark-950 bg-dark-950/50 px-2 py-2">
+        <div className="flex shrink-0 items-center gap-2 border-t border-dark-950 bg-dark-950/50 px-2 py-2 transition-colors">
           <div className="relative" ref={statusMenuRef}>
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-nexe-600 text-xs font-semibold text-white">
               {(user?.username || "U").charAt(0).toUpperCase()}
@@ -339,8 +332,8 @@ export default function ChannelList() {
 
       {showInvite && activeGuildId && (
         channels.length === 0 ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setShowInvite(false)}>
-            <div className="w-full max-w-sm rounded-xl bg-dark-800 p-6 text-center shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 animate-modal-backdrop" onClick={() => setShowInvite(false)}>
+            <div className="w-full max-w-sm rounded-xl bg-dark-800 p-6 text-center shadow-2xl animate-modal-content" onClick={(e) => e.stopPropagation()}>
               <p className="text-sm text-slate-300">Create a channel first before inviting people.</p>
               <button onClick={() => setShowInvite(false)} className="mt-4 rounded-lg bg-nexe-600 px-4 py-2 text-sm font-medium text-white hover:bg-nexe-500">OK</button>
             </div>
@@ -409,7 +402,7 @@ function StatusMenu({
   return (
     <div
       ref={menuRef}
-      className="absolute bottom-full left-0 mb-2 w-52 overflow-hidden rounded-lg border border-dark-700 bg-dark-800 py-1 shadow-xl"
+      className="absolute bottom-full left-0 mb-2 w-52 overflow-hidden rounded-lg border border-dark-700 bg-dark-800 py-1 shadow-xl animate-slide-up"
       style={{ zIndex: 100 }}
     >
       {durationFor ? (

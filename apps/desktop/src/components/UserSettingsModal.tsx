@@ -22,7 +22,7 @@ export default function UserSettingsModal({ onClose }: Props) {
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 animate-modal-backdrop" onClick={onClose}>
       {/*
         FIXED size — never changes between tabs.
         Large centered modal: ~90% viewport minus some margin.
