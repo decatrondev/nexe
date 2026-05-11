@@ -78,6 +78,10 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	tokens, user, err := h.auth.Login(r.Context(), input, ip, userAgent)
 	if err != nil {
+		if err.Error() == "email not verified" {
+			writeError(w, http.StatusForbidden, "email_not_verified", "Please verify your email before logging in")
+			return
+		}
 		writeError(w, http.StatusUnauthorized, "login_failed", err.Error())
 		return
 	}

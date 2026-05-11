@@ -373,6 +373,10 @@ export const api = {
     return request<void>("POST", "/auth/verify-email", { email, code });
   },
 
+  resendVerification(email: string) {
+    return request<void>("POST", "/auth/resend-verification", { email });
+  },
+
   forgotPassword(email: string) {
     return request<{ message: string }>("POST", "/auth/forgot-password", { email });
   },
