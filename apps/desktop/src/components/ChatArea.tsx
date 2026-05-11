@@ -7,6 +7,7 @@ import { hasPermission, computePermissions, Permissions } from "../lib/permissio
 import MiniProfilePopover from "./MiniProfilePopover";
 import ProfileModal from "./ProfileModal";
 import EmojiPicker from "./EmojiPicker";
+import MessageContent from "./MessageContent";
 
 function copyToClipboard(text: string) {
   if (navigator.clipboard) {
@@ -859,11 +860,13 @@ export default function ChatArea() {
                                 </svg>
                               </span>
                             )}
-                            <p className="text-sm leading-relaxed text-slate-200 break-words">{msg.content}</p>
+                            <MessageContent content={msg.content} />
                           </div>
                           {(() => {
+                            // Legacy clip embed — now handled by MessageContent
                             const clipSlug = extractTwitchClipSlug(msg.content);
                             if (!clipSlug) return null;
+                            return null; // MessageContent handles this now
                             return (
                               <div className="mt-2 overflow-hidden rounded-lg border border-dark-700 bg-dark-800">
                                 <iframe
