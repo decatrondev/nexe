@@ -6,17 +6,17 @@ const URL_REGEX = /(https?:\/\/[^\s<>"]+)/g;
 const IMAGE_EXTENSIONS = /\.(png|jpg|jpeg|gif|webp|svg|bmp)(\?.*)?$/i;
 const VIDEO_EXTENSIONS = /\.(mp4|webm|mov)(\?.*)?$/i;
 const YOUTUBE_REGEX = /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([\w-]+)/;
-const TWITCH_CLIP_REGEX = /clips\.twitch\.tv\/([\w-]+)/;
+const TWITCH_CLIP_REGEX = /(?:clips\.twitch\.tv\/|twitch\.tv\/\w+\/clip\/)([\w-]+)/;
 const TENOR_REGEX = /tenor\.com\/view\//;
 const GIPHY_REGEX = /giphy\.com\/gifs\//;
 
 // ---- Twitch Emote Detection ----
 
 // Common global Twitch emotes (subset)
+// Real Twitch global emote IDs
 const TWITCH_GLOBAL_EMOTES: Record<string, string> = {
   "Kappa": "25",
   "LUL": "425618",
-  "PogChamp": "305954156",
   "Kreygasm": "41",
   "4Head": "354",
   "BibleThump": "86",
@@ -33,12 +33,30 @@ const TWITCH_GLOBAL_EMOTES: Record<string, string> = {
   "PJSalt": "36",
   "MrDestructoid": "28",
   "Jebaited": "114836",
-  "monkaS": "305954156",
-  "KEKW": "305954156",
-  "catJAM": "305954156",
-  "PepeHands": "305954156",
-  "OMEGALUL": "305954156",
-  "peepoHappy": "305954156",
+  "PogChamp": "305954156",
+  "B)": "7",
+  "R)": "14",
+  "O_o": "6",
+  "<3": "9",
+  "FailFish": "360",
+  "GlitchCat": "304489309",
+  "TwitchLit": "166263",
+  "PopCorn": "724216",
+  "GunRun": "86010",
+  "TBAngel": "143490",
+  "BloodTrail": "69",
+  "PunchTrees": "47",
+  "DBstyle": "73",
+  "EarthDay": "959018",
+  "TheIlluminati": "145315",
+  "PowerUpR": "425688",
+  "PowerUpL": "425671",
+  "TPFufun": "508650",
+  "StinkyCheese": "304489128",
+  "FBtouchdown": "626795",
+  "TehePelo": "160394",
+  "GoldPLNS": "355771",
+  "HSCheers": "444572",
 };
 
 function getTwitchEmoteURL(id: string, size: "1.0" | "2.0" | "3.0" = "2.0") {
@@ -118,8 +136,7 @@ function parseEmotes(text: string, keyBase: number): React.ReactNode {
   for (let w = 0; w < words.length; w++) {
     const word = words[w];
     const emoteId = TWITCH_GLOBAL_EMOTES[word];
-    if (emoteId && emoteId !== "305954156") {
-      // Real emote ID
+    if (emoteId) {
       result.push(
         <img
           key={`${keyBase}-${w}`}
