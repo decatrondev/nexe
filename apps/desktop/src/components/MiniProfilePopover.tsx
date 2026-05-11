@@ -219,17 +219,30 @@ export default function MiniProfilePopover({ userId, x, y, onClose, onViewFull }
       style={{ left, top, width: W, backgroundColor: "#111827", border: "1px solid #1e293b" }}
     >
       {/* Banner */}
-      <div className="h-16" style={{ backgroundColor: accent }} />
+      {profile?.bannerUrl ? (
+        <img src={profile.bannerUrl} alt="Banner" className="h-16 w-full object-cover" />
+      ) : (
+        <div className="h-16" style={{ backgroundColor: accent }} />
+      )}
 
       {/* Avatar area */}
       <div className="relative px-4">
         <div className="relative -mt-8 inline-block">
-          <div
-            className="flex h-16 w-16 items-center justify-center rounded-full text-xl font-bold text-white"
-            style={{ backgroundColor: accent, border: "4px solid #111827" }}
-          >
-            {loading ? "..." : displayName.charAt(0).toUpperCase()}
-          </div>
+          {profile?.avatarUrl ? (
+            <img
+              src={profile.avatarUrl}
+              alt={displayName}
+              className="h-16 w-16 rounded-full object-cover"
+              style={{ border: "4px solid #111827" }}
+            />
+          ) : (
+            <div
+              className="flex h-16 w-16 items-center justify-center rounded-full text-xl font-bold text-white"
+              style={{ backgroundColor: accent, border: "4px solid #111827" }}
+            >
+              {loading ? "..." : displayName.charAt(0).toUpperCase()}
+            </div>
+          )}
           {/* Online dot */}
           <div className="absolute bottom-0 right-0 h-4 w-4 rounded-full border-[3px] bg-green-500" style={{ borderColor: "#111827" }} />
         </div>

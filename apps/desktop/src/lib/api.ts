@@ -405,6 +405,38 @@ export const api = {
     return request<UserProfile>("PATCH", "/users/@me/profile", data);
   },
 
+  async uploadAvatar(file: File): Promise<{ url: string }> {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${API_URL}/users/@me/avatar`, {
+      method: "POST",
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+      body: form,
+    });
+    if (!res.ok) throw new Error("Upload failed");
+    return res.json();
+  },
+
+  async uploadBanner(file: File): Promise<{ url: string }> {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${API_URL}/users/@me/banner`, {
+      method: "POST",
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+      body: form,
+    });
+    if (!res.ok) throw new Error("Upload failed");
+    return res.json();
+  },
+
+  deleteAvatar() {
+    return request<void>("DELETE", "/users/@me/avatar");
+  },
+
+  deleteBanner() {
+    return request<void>("DELETE", "/users/@me/banner");
+  },
+
   updatePresence(status: string, clearAfter?: number) {
     const body: Record<string, unknown> = { status };
     if (clearAfter) body.clearAfter = clearAfter;

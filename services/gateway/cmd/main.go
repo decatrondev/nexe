@@ -51,10 +51,14 @@ func main() {
 	authSvc := service.NewAuthService(userRepo, sessionRepo, verificationRepo, jwtSvc, emailSvc)
 	twitchSvc := service.NewTwitchService(cfg.TwitchClientID, cfg.TwitchClientSecret, cfg.TwitchRedirectURI)
 
+	// Storage
+	storageSvc := service.NewLocalStorage(cfg.UploadPath, cfg.UploadURL)
+
 	// Handlers
 	authHandler := handler.NewAuthHandler(authSvc)
 	wsHandler := handler.NewWSHandler(jwtSvc, rdb, cfg.GuildsURL, cfg.PresenceURL, cfg.VoiceURL)
 	profileHandler := handler.NewProfileHandler(profileRepo)
+	uploadHandler := handler.NewUploadHandler(storageSvc, profileRepo)
 	twitchHandler := handler.NewTwitchHandler(twitchSvc, userRepo, authSvc, jwtSvc, rdb, cfg.TwitchEventSubSecret, cfg.BaseURL, cfg.FrontendURL, cfg.MessagingURL, cfg.GuildsURL)
 	botHandler := handler.NewBotHandler(botRepo, jwtSvc)
 	proxyHandler := handler.NewProxyHandler(cfg.GuildsURL, cfg.MessagingURL, cfg.PresenceURL, cfg.VoiceURL, cfg.NotificationsURL)
@@ -95,6 +99,12 @@ func main() {
 	mux.Handle("GET /users/{id}/badges", authMiddleware(http.HandlerFunc(profileHandler.GetBadges)))
 	mux.Handle("GET /users/{id}/activity", authMiddleware(http.HandlerFunc(profileHandler.GetActivity)))
 	mux.Handle("POST /internal/xp", apiRateLimiter.Middleware(http.HandlerFunc(profileHandler.AddXP)))
+
+	// Upload routes (require auth)
+	mux.Handle("POST /users/@me/avatar", authMiddleware(http.HandlerFunc(uploadHandler.UploadAvatar)))
+	mux.Handle("POST /users/@me/banner", authMiddleware(http.HandlerFunc(uploadHandler.UploadBanner)))
+	mux.Handle("DELETE /users/@me/avatar", authMiddleware(http.HandlerFunc(uploadHandler.DeleteAvatar)))
+	mux.Handle("DELETE /users/@me/banner", authMiddleware(http.HandlerFunc(uploadHandler.DeleteBanner)))
 
 	// Twitch routes
 	mux.HandleFunc("GET /auth/twitch", twitchHandler.TwitchAuth)

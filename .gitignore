@@ -56,3 +56,7 @@ logs/
 tmp/
 temp/
 services/voice/main
+services/gateway/gateway
+
+# Uploads (user files, not code)
+uploads/

@@ -24,6 +24,8 @@ type Config struct {
 	VoiceURL             string
 	NotificationsURL     string
 	FrontendURL          string
+	UploadPath           string
+	UploadURL            string
 }
 
 func Load() *Config {
@@ -46,6 +48,8 @@ func Load() *Config {
 		VoiceURL:             getEnv("NEXE_VOICE_URL", "http://localhost:8085"),
 		NotificationsURL:     getEnv("NEXE_NOTIFICATIONS_URL", "http://localhost:8086"),
 		FrontendURL:          getEnv("NEXE_FRONTEND_URL", "https://nexeapp.decatron.net"),
+		UploadPath:           getEnv("NEXE_UPLOAD_PATH", "/var/www/html/nexe/uploads"),
+		UploadURL:            getEnv("NEXE_UPLOAD_URL", "https://nexeuploads.decatron.net"),
 	}
 }
 

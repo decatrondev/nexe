@@ -1,6 +1,7 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAuthStore } from "../stores/auth";
 import { api, type SocialLink } from "../lib/api";
+import ImageCropModal from "./ImageCropModal";
 
 interface Props { onClose: () => void }
 type Tab = "account" | "profile" | "appearance";
@@ -235,13 +236,19 @@ function ProfileTab() {
   const user = useAuthStore((s) => s.user);
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
   const [showAddLink, setShowAddLink] = useState(false);
   const [newPlatform, setNewPlatform] = useState<string>(SOCIAL_PLATFORMS[0]);
   const [newUrl, setNewUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [uploading, setUploading] = useState<"avatar" | "banner" | null>(null);
+  const [cropModal, setCropModal] = useState<{ src: string; type: "avatar" | "banner" } | null>(null);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -250,11 +257,65 @@ function ProfileTab() {
       if (cancel) return;
       setDisplayName(p.displayName ?? "");
       setBio(p.bio ?? "");
+      setAvatarUrl(p.avatarUrl ?? null);
+      setBannerUrl(p.bannerUrl ?? null);
       setSocialLinks(p.socialLinks ?? []);
       setLoaded(true);
     }).catch(() => { if (!cancel) setLoaded(true); });
     return () => { cancel = true; };
   }, [user?.id]);
+
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>, type: "avatar" | "banner") {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCropModal({ src: reader.result as string, type });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
+
+  async function handleCropConfirm(blob: Blob) {
+    const type = cropModal?.type;
+    if (!type) return;
+    setCropModal(null);
+    setUploading(type);
+    try {
+      const file = new File([blob], `${type}.webp`, { type: "image/webp" });
+      const { url } = type === "avatar" ? await api.uploadAvatar(file) : await api.uploadBanner(file);
+      if (type === "avatar") setAvatarUrl(url);
+      else setBannerUrl(url);
+      setFeedback({ type: "success", msg: `${type === "avatar" ? "Avatar" : "Banner"} updated!` });
+      setTimeout(() => setFeedback(null), 3000);
+    } catch {
+      setFeedback({ type: "error", msg: `Failed to upload ${type}` });
+    } finally {
+      setUploading(null);
+    }
+  }
+
+  async function handleRemoveAvatar() {
+    try {
+      await api.deleteAvatar();
+      setAvatarUrl(null);
+      setFeedback({ type: "success", msg: "Avatar removed" });
+      setTimeout(() => setFeedback(null), 3000);
+    } catch {
+      setFeedback({ type: "error", msg: "Failed to remove avatar" });
+    }
+  }
+
+  async function handleRemoveBanner() {
+    try {
+      await api.deleteBanner();
+      setBannerUrl(null);
+      setFeedback({ type: "success", msg: "Banner removed" });
+      setTimeout(() => setFeedback(null), 3000);
+    } catch {
+      setFeedback({ type: "error", msg: "Failed to remove banner" });
+    }
+  }
 
   async function handleSave(e: FormEvent) {
     e.preventDefault();
@@ -293,6 +354,70 @@ function ProfileTab() {
           feedback.type === "success" ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400" : "border-red-500/20 bg-red-500/10 text-red-400"
         }`}>{feedback.msg}</div>
       )}
+
+      {/* Avatar & Banner uploads */}
+      <div className="flex gap-6">
+        <div>
+          <label className="mb-1.5 block text-[11px] font-bold uppercase text-slate-400">Avatar</label>
+          <div className="group relative h-20 w-20">
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="Avatar" className="h-20 w-20 rounded-full object-cover" />
+            ) : (
+              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-nexe-600 text-2xl font-bold text-white">
+                {(displayName || user?.username || "U").charAt(0).toUpperCase()}
+              </div>
+            )}
+            <div className="absolute inset-0 flex items-center justify-center gap-1 rounded-full bg-black/60 opacity-0 transition-opacity group-hover:opacity-100">
+              <button type="button" onClick={() => avatarInputRef.current?.click()} disabled={uploading === "avatar"}
+                className="rounded-full bg-nexe-600 p-1.5 text-white hover:bg-nexe-500">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </button>
+              {avatarUrl && (
+                <button type="button" onClick={handleRemoveAvatar}
+                  className="rounded-full bg-red-600 p-1.5 text-white hover:bg-red-500">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              )}
+            </div>
+            {uploading === "avatar" && (
+              <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/60">
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-nexe-500 border-t-transparent" />
+              </div>
+            )}
+          </div>
+          <input ref={avatarInputRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="hidden" onChange={(e) => handleFileSelect(e, "avatar")} />
+        </div>
+
+        <div className="flex-1">
+          <label className="mb-1.5 block text-[11px] font-bold uppercase text-slate-400">Banner</label>
+          <div className="group relative h-20 overflow-hidden rounded-lg">
+            {bannerUrl ? (
+              <img src={bannerUrl} alt="Banner" className="h-20 w-full object-cover" />
+            ) : (
+              <div className="h-20 w-full bg-gradient-to-r from-nexe-600 to-nexe-500" />
+            )}
+            <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/60 opacity-0 transition-opacity group-hover:opacity-100">
+              <button type="button" onClick={() => bannerInputRef.current?.click()} disabled={uploading === "banner"}
+                className="rounded-md bg-nexe-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-nexe-500">
+                {uploading === "banner" ? "Uploading..." : "Change Banner"}
+              </button>
+              {bannerUrl && (
+                <button type="button" onClick={handleRemoveBanner}
+                  className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-500">
+                  Remove
+                </button>
+              )}
+            </div>
+          </div>
+          <input ref={bannerInputRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="hidden" onChange={(e) => handleFileSelect(e, "banner")} />
+          <p className="mt-1 text-[10px] text-slate-600">Recommended: 600×240. Max 8MB.</p>
+        </div>
+      </div>
 
       <div className="flex gap-8">
         {/* Form */}
@@ -404,12 +529,20 @@ function ProfileTab() {
           <p className="mb-2 text-[11px] font-bold uppercase text-slate-500">Preview</p>
           <div className="overflow-hidden rounded-lg border border-dark-700" style={{ backgroundColor: "#111827" }}>
             {/* Banner */}
-            <div className="h-24 bg-gradient-to-r from-nexe-600 to-nexe-500" />
+            {bannerUrl ? (
+              <img src={bannerUrl} alt="Banner" className="h-24 w-full object-cover" />
+            ) : (
+              <div className="h-24 bg-gradient-to-r from-nexe-600 to-nexe-500" />
+            )}
             {/* Avatar */}
             <div className="px-5">
-              <div className="-mt-10 flex h-[76px] w-[76px] items-center justify-center rounded-full bg-nexe-600 text-2xl font-bold text-white" style={{ border: "6px solid #111827" }}>
-                {previewName.charAt(0).toUpperCase()}
-              </div>
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="Avatar" className="-mt-10 h-[76px] w-[76px] rounded-full object-cover" style={{ border: "6px solid #111827" }} />
+              ) : (
+                <div className="-mt-10 flex h-[76px] w-[76px] items-center justify-center rounded-full bg-nexe-600 text-2xl font-bold text-white" style={{ border: "6px solid #111827" }}>
+                  {previewName.charAt(0).toUpperCase()}
+                </div>
+              )}
             </div>
             {/* Info */}
             <div className="px-5 pb-5 pt-2">
@@ -452,6 +585,16 @@ function ProfileTab() {
           </div>
         </div>
       </div>
+
+      {/* Crop modal */}
+      {cropModal && (
+        <ImageCropModal
+          imageSrc={cropModal.src}
+          type={cropModal.type}
+          onConfirm={handleCropConfirm}
+          onClose={() => setCropModal(null)}
+        />
+      )}
     </div>
   );
 }

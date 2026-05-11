@@ -71,17 +71,30 @@ export default function ProfileModal({ userId, onClose }: Props) {
         ) : profile ? (
           <>
             {/* Banner */}
-            <div className="h-28" style={{ backgroundColor: accent }} />
+            {profile.bannerUrl ? (
+              <img src={profile.bannerUrl} alt="Banner" className="h-28 w-full object-cover" />
+            ) : (
+              <div className="h-28" style={{ backgroundColor: accent }} />
+            )}
 
             {/* Header */}
             <div className="relative border-b border-slate-700/50 px-6 pb-4">
               <div className="relative -mt-10 mb-2 inline-block">
-                <div
-                  className="flex h-20 w-20 items-center justify-center rounded-full text-2xl font-bold text-white"
-                  style={{ backgroundColor: accent, border: "5px solid #111827" }}
-                >
-                  {displayName.charAt(0).toUpperCase()}
-                </div>
+                {profile.avatarUrl ? (
+                  <img
+                    src={profile.avatarUrl}
+                    alt={displayName}
+                    className="h-20 w-20 rounded-full object-cover"
+                    style={{ border: "5px solid #111827" }}
+                  />
+                ) : (
+                  <div
+                    className="flex h-20 w-20 items-center justify-center rounded-full text-2xl font-bold text-white"
+                    style={{ backgroundColor: accent, border: "5px solid #111827" }}
+                  >
+                    {displayName.charAt(0).toUpperCase()}
+                  </div>
+                )}
                 <div className="absolute bottom-1 right-1 h-5 w-5 rounded-full border-[3px] bg-green-500" style={{ borderColor: "#111827" }} />
               </div>
 
