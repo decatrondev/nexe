@@ -69,7 +69,7 @@ func (r *MessageRepository) Create(ctx context.Context, msg *model.Message) erro
 func (r *MessageRepository) GetByID(ctx context.Context, id string) (*model.Message, error) {
 	var msg model.Message
 	err := r.db.QueryRowContext(ctx,
-		`SELECT id, channel_id, author_id, content, type, reply_to_id, thread_id,
+		`SELECT id, channel_id, COALESCE(author_id::text, ''), content, type, reply_to_id, thread_id,
 		        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at,
 		        bridge_source, bridge_author, bridge_author_id,
 		        bridge_source, bridge_author, bridge_author_id
@@ -112,7 +112,7 @@ func (r *MessageRepository) ListByChannel(ctx context.Context, channelID string,
 
 	if before != nil {
 		rows, err = r.db.QueryContext(ctx,
-			`SELECT id, channel_id, author_id, content, type, reply_to_id, thread_id,
+			`SELECT id, channel_id, COALESCE(author_id::text, ''), content, type, reply_to_id, thread_id,
 			        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at,
 		        bridge_source, bridge_author, bridge_author_id
 			 FROM messages
@@ -123,7 +123,7 @@ func (r *MessageRepository) ListByChannel(ctx context.Context, channelID string,
 		)
 	} else {
 		rows, err = r.db.QueryContext(ctx,
-			`SELECT id, channel_id, author_id, content, type, reply_to_id, thread_id,
+			`SELECT id, channel_id, COALESCE(author_id::text, ''), content, type, reply_to_id, thread_id,
 			        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at,
 		        bridge_source, bridge_author, bridge_author_id
 			 FROM messages
@@ -254,7 +254,7 @@ func (r *MessageRepository) Unpin(ctx context.Context, messageID string) error {
 
 func (r *MessageRepository) ListPins(ctx context.Context, channelID string) ([]model.Message, error) {
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT id, channel_id, author_id, content, type, reply_to_id, thread_id,
+		`SELECT id, channel_id, COALESCE(author_id::text, ''), content, type, reply_to_id, thread_id,
 		        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at,
 		        bridge_source, bridge_author, bridge_author_id
 		 FROM messages
@@ -330,7 +330,7 @@ func (r *MessageRepository) Search(ctx context.Context, channelID, query string,
 	args = append(args, limit)
 
 	sqlQuery := fmt.Sprintf(
-		`SELECT id, channel_id, author_id, content, type, reply_to_id, thread_id,
+		`SELECT id, channel_id, COALESCE(author_id::text, ''), content, type, reply_to_id, thread_id,
 		        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at,
 		        bridge_source, bridge_author, bridge_author_id
 		 FROM messages
