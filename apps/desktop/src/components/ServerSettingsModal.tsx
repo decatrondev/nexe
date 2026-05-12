@@ -4,7 +4,7 @@ import { useAuthStore } from "../stores/auth";
 import { api, type Channel, type Role, type Ban, type AuditLogEntry } from "../lib/api";
 import { hasPermission, computePermissions, Permissions } from "../lib/permissions";
 import { FREE_TIER_LIMITS } from "../lib/limits";
-import { Tabs, TabList, TabPanel, Select, type TabItem } from "@nexe/ui";
+import { Tabs, TabList, TabPanel, Select, Button, ConfirmDialog, type TabItem } from "@nexe/ui";
 
 interface ServerSettingsModalProps {
   guildId: string;
@@ -1620,37 +1620,21 @@ function DangerZoneTab({ guildId, onClose }: { guildId: string; onClose: () => v
 
   const isOwner = guild?.ownerId === user?.id;
   const [showConfirm, setShowConfirm] = useState(false);
-  const [confirmText, setConfirmText] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  async function handleAction() {
-    setLoading(true);
-    setError("");
-    try {
-      if (isOwner) {
-        await deleteGuildStore(guildId);
-      } else {
-        await leaveGuildStore(guildId);
-      }
-      onClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Operation failed");
-      setLoading(false);
-    }
-  }
 
   const actionLabel = isOwner ? "Delete Server" : "Leave Server";
-  const confirmRequired = isOwner ? guild?.name ?? "" : "";
+
+  async function handleConfirm() {
+    if (isOwner) {
+      await deleteGuildStore(guildId);
+    } else {
+      await leaveGuildStore(guildId);
+    }
+    onClose();
+  }
 
   return (
     <>
       <h2 className="mb-6 text-xl font-bold text-red-400">Danger Zone</h2>
-      {error && (
-        <div className="mb-4 rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400 border border-red-500/20">
-          {error}
-        </div>
-      )}
       <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-5">
         <h3 className="text-sm font-semibold text-slate-200">{actionLabel}</h3>
         <p className="mt-1 text-sm text-slate-400">
@@ -1658,51 +1642,21 @@ function DangerZoneTab({ guildId, onClose }: { guildId: string; onClose: () => v
             ? "Permanently delete this server and all its data. This action cannot be undone."
             : "Leave this server. You will lose access to all channels and messages."}
         </p>
-
-        {!showConfirm ? (
-          <button
-            onClick={() => setShowConfirm(true)}
-            className="mt-4 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700"
-          >
-            {actionLabel}
-          </button>
-        ) : (
-          <div className="mt-4 space-y-3">
-            {isOwner && (
-              <div>
-                <label className="mb-1.5 block text-xs text-slate-400">
-                  Type <span className="font-semibold text-slate-200">{guild?.name}</span> to confirm
-                </label>
-                <input
-                  type="text"
-                  value={confirmText}
-                  onChange={(e) => setConfirmText(e.target.value)}
-                  className="w-full rounded-lg border border-dark-700 bg-dark-900 px-4 py-2 text-sm text-slate-200 outline-none focus:border-red-500"
-                  autoFocus
-                />
-              </div>
-            )}
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setShowConfirm(false);
-                  setConfirmText("");
-                }}
-                className="rounded-lg bg-dark-800 px-4 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-dark-700"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleAction}
-                disabled={loading || (isOwner && confirmText !== confirmRequired)}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading ? "Processing..." : `Yes, ${actionLabel}`}
-              </button>
-            </div>
-          </div>
-        )}
+        <Button variant="danger" onClick={() => setShowConfirm(true)} className="mt-4">
+          {actionLabel}
+        </Button>
       </div>
+      <ConfirmDialog
+        open={showConfirm}
+        onClose={() => setShowConfirm(false)}
+        onConfirm={handleConfirm}
+        title={actionLabel}
+        description={isOwner
+          ? "This will permanently delete this server and all its data. This action cannot be undone."
+          : "You will lose access to all channels and messages in this server."}
+        confirmLabel={`Yes, ${actionLabel}`}
+        confirmText={isOwner ? guild?.name : undefined}
+      />
     </>
   );
 }
