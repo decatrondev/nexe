@@ -4,7 +4,7 @@ import { useAuthStore } from "../stores/auth";
 import { api, type Channel, type Role, type Ban, type AuditLogEntry } from "../lib/api";
 import { hasPermission, computePermissions, Permissions } from "../lib/permissions";
 import { FREE_TIER_LIMITS } from "../lib/limits";
-import { Tabs, TabList, TabPanel, type TabItem } from "@nexe/ui";
+import { Tabs, TabList, TabPanel, Select, type TabItem } from "@nexe/ui";
 
 interface ServerSettingsModalProps {
   guildId: string;
@@ -309,16 +309,13 @@ function ChannelsTab({ guildId }: { guildId: string }) {
                     {ch.type === "text" && (
                       <div className="flex items-center gap-2">
                         <label className="text-[11px] font-medium text-slate-400">Slowmode:</label>
-                        <select
-                          value={editSlowmode}
-                          onChange={(e) => setEditSlowmode(Number(e.target.value))}
-                          className="rounded border border-dark-600 bg-dark-900 px-2 py-1 text-[12px] text-slate-200 outline-none focus:border-nexe-500"
+                        <Select
+                          value={String(editSlowmode)}
+                          onChange={(v) => setEditSlowmode(Number(v))}
+                          options={SLOWMODE_OPTIONS.map((opt) => ({ value: String(opt.value), label: opt.label }))}
                           disabled={loading}
-                        >
-                          {SLOWMODE_OPTIONS.map((opt) => (
-                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                          ))}
-                        </select>
+                          className="w-32"
+                        />
                       </div>
                     )}
                   </div>
@@ -1587,16 +1584,13 @@ function BridgeSection({ guildId }: { guildId: string }) {
           </div>
         ) : (
           <div className="space-y-3">
-            <select
+            <Select
               value={selectedChannel}
-              onChange={(e) => setSelectedChannel(e.target.value)}
-              className="w-full rounded-lg border border-dark-600 bg-dark-900 px-3 py-2 text-sm text-slate-200 outline-none focus:border-[#9146FF]"
-            >
-              <option value="">Select a channel...</option>
-              {textChannels.map((ch) => (
-                <option key={ch.id} value={ch.id}>#{ch.name}</option>
-              ))}
-            </select>
+              onChange={setSelectedChannel}
+              placeholder="Select a channel..."
+              options={textChannels.map((ch) => ({ value: ch.id, label: `#${ch.name}` }))}
+              accentClass="border-[#9146FF]"
+            />
             <button
               onClick={handleSetBridge}
               disabled={loading || !selectedChannel}

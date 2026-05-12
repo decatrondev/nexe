@@ -9,3 +9,4 @@ export { Input, TextArea, Alert, type InputProps, type TextAreaProps, type Alert
 export { Tabs, TabList, TabBar, TabPanel, useTabsContext, type TabsProps, type TabListProps, type TabBarProps, type TabPanelProps, type TabItem } from "./Tabs";
 export { Tooltip, type TooltipProps, type TooltipSide } from "./Tooltip";
 export { toast, ToastContainer, useToasts, type Toast, type ToastVariant, type ToastOptions } from "./Toast";
+export { Select, type SelectProps, type SelectOption } from "./Select";

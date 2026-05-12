@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAuthStore } from "../stores/auth";
 import { api, type SocialLink } from "../lib/api";
 import ImageCropModal from "./ImageCropModal";
-import { Tabs, TabList, TabPanel, type TabItem } from "@nexe/ui";
+import { Tabs, TabList, TabPanel, Select, type TabItem } from "@nexe/ui";
 
 interface Props { onClose: () => void }
 
@@ -447,15 +447,11 @@ function ProfileTab() {
 
             {showAddLink ? (
               <div className="space-y-2 rounded-md border border-dark-700 bg-dark-800 p-3">
-                <select
+                <Select
                   value={newPlatform}
-                  onChange={(e) => setNewPlatform(e.target.value)}
-                  className="w-full rounded-md border border-dark-700 bg-dark-900 px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-nexe-500"
-                >
-                  {SOCIAL_PLATFORMS.map((p) => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
+                  onChange={setNewPlatform}
+                  options={SOCIAL_PLATFORMS.map((p) => ({ value: p, label: p }))}
+                />
                 <input
                   type="url"
                   value={newUrl}
