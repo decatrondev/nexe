@@ -204,7 +204,7 @@ export default function EmojiPicker({ x, y, onSelect, onClose }: EmojiPickerProp
   return (
     <div
       ref={pickerRef}
-      className="fixed z-[100] flex flex-col rounded-xl border border-dark-700 bg-dark-900 shadow-2xl"
+      className="fixed z-tooltip flex flex-col rounded-xl border border-dark-700 bg-dark-900 shadow-dropdown"
       style={style}
       onClick={(e) => e.stopPropagation()}
     >

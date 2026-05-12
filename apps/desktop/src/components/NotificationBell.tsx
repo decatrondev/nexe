@@ -162,7 +162,7 @@ export default function NotificationBell() {
 
       {/* Full-screen overlay panel */}
       {open && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center" onClick={() => setOpen(false)}>
+        <div className="fixed inset-0 z-modal flex items-start justify-center" onClick={() => setOpen(false)}>
           {/* Backdrop */}
           <div className="absolute inset-0 bg-black/40" />
 

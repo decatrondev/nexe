@@ -240,7 +240,7 @@ export default function EmotePicker({ x, y, onSelect, onClose }: EmotePickerProp
   return (
     <div
       ref={pickerRef}
-      className="fixed z-50 flex w-[380px] flex-col overflow-hidden rounded-xl border border-dark-700 bg-dark-900 shadow-2xl animate-scale-in"
+      className="fixed z-modal flex w-[380px] flex-col overflow-hidden rounded-xl border border-dark-700 bg-dark-900 shadow-2xl animate-scale-in"
       style={{ left: pos.left, top: pos.top, height: 440 }}
     >
       {/* Search */}

@@ -1258,7 +1258,7 @@ export default function ChatArea() {
 
       {/* Delete confirmation modal */}
       {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 animate-modal-backdrop" onClick={() => setDeleteConfirm(null)}>
+        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/60 animate-modal-backdrop" onClick={() => setDeleteConfirm(null)}>
           <div className="w-full max-w-sm rounded-xl bg-dark-800 p-6 shadow-2xl animate-modal-content" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-white">Delete Message</h3>
             <p className="mt-2 text-sm text-slate-400">Are you sure you want to delete this message? This cannot be undone.</p>

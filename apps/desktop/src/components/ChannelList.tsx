@@ -332,7 +332,7 @@ export default function ChannelList() {
 
       {showInvite && activeGuildId && (
         channels.length === 0 ? (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 animate-modal-backdrop" onClick={() => setShowInvite(false)}>
+          <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/60 animate-modal-backdrop" onClick={() => setShowInvite(false)}>
             <div className="w-full max-w-sm rounded-xl bg-dark-800 p-6 text-center shadow-2xl animate-modal-content" onClick={(e) => e.stopPropagation()}>
               <p className="text-sm text-slate-300">Create a channel first before inviting people.</p>
               <button onClick={() => setShowInvite(false)} className="mt-4 rounded-lg bg-nexe-600 px-4 py-2 text-sm font-medium text-white hover:bg-nexe-500">OK</button>

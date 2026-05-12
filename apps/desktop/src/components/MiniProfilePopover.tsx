@@ -226,7 +226,7 @@ export default function MiniProfilePopover({ userId, x, y, streamStatus, onClose
   return (
     <div
       ref={cardRef}
-      className="fixed z-[60] overflow-hidden rounded-lg shadow-xl animate-scale-in"
+      className="fixed z-modal overflow-hidden rounded-lg shadow-popover animate-scale-in"
       style={{ left, top, width: W, backgroundColor: "#111827", border: "1px solid #1e293b" }}
     >
       {/* Banner */}
