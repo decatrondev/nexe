@@ -5,7 +5,7 @@ import { api, type Message, type Role, type ReactionGroup } from "../lib/api";
 import { nexeWS } from "../lib/websocket";
 import { hasPermission, computePermissions, Permissions } from "../lib/permissions";
 import { copyToClipboard, formatTimestamp, userColor, getRoleColor } from "../lib/utils";
-import { toast } from "@nexe/ui";
+import { toast, ContextMenu, type ContextMenuItem } from "@nexe/ui";
 import MiniProfilePopover from "./MiniProfilePopover";
 import ProfileModal from "./ProfileModal";
 import EmotePicker, { emoteLookup } from "./EmotePicker";
@@ -1205,159 +1205,54 @@ export default function ChatArea() {
       </div>
 
       {/* Context menu */}
-      {ctxMenu && (
-        <div
-          className="fixed z-50 min-w-44 rounded-lg border border-dark-700 bg-dark-900 py-1 shadow-xl animate-scale-in"
-          style={{ left: ctxMenu.x, top: ctxMenu.y, transformOrigin: "top left" }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Add Reaction */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              const rect = e.currentTarget.getBoundingClientRect();
-              setEmojiPicker({ messageId: ctxMenu.messageId, x: rect.right + 4, y: rect.top });
-              setCtxMenu(null);
-            }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-dark-800"
-          >
-            Add Reaction
-          </button>
-
-          <button
-            onClick={() => {
-              const msg = messages.find((m) => m.id === ctxMenu.messageId);
-              if (msg) startReply(msg);
-            }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-dark-800"
-          >
-            Reply
-          </button>
-          {ctxMenu.isOwn && (
-            <button
-              onClick={() => {
-                const msg = messages.find((m) => m.id === ctxMenu.messageId);
-                if (msg) startEdit(msg);
-              }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-dark-800"
-            >
-              Edit Message
-            </button>
-          )}
-          <button
-            onClick={() => {
-              const msg = messages.find((m) => m.id === ctxMenu.messageId);
-              if (msg) { copyToClipboard(msg.content); toast.success("Text copied"); }
-              setCtxMenu(null);
-            }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-dark-800"
-          >
-            Copy Text
-          </button>
-          <button
-            onClick={() => {
-              copyToClipboard(ctxMenu.messageId);
-              toast.success("ID copied");
-              setCtxMenu(null);
-            }}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-dark-800"
-          >
-            Copy ID
-          </button>
-
-          {/* Pin / Unpin */}
-          {canManageMessages && (
-            <>
-              <div className="my-1 h-px bg-dark-700" />
-              {(() => {
-                const msg = messages.find((m) => m.id === ctxMenu.messageId);
-                return msg?.pinned ? (
-                  <button
-                    onClick={() => handleUnpinMessage(ctxMenu.messageId)}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-amber-400 hover:bg-amber-500/10"
-                  >
-                    Unpin Message
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => handlePinMessage(ctxMenu.messageId)}
-                    className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-amber-400 hover:bg-amber-500/10"
-                  >
-                    Pin Message
-                  </button>
-                );
-              })()}
-            </>
-          )}
-
-          {(ctxMenu.isOwn || canManageMessages) && (
-            <>
-              <div className="my-1 h-px bg-dark-700" />
-              <button
-                onClick={() => { setDeleteConfirm(ctxMenu.messageId); setCtxMenu(null); }}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10"
-              >
-                Delete Message
-              </button>
-            </>
-          )}
-          {!ctxMenu.isOwn && activeGuildId && (canKick || canBan || canTimeout) && activeGuild?.ownerId !== ctxMenu.authorId && (
-            <>
-              <div className="my-1 h-px bg-dark-700" />
-              {canKick && (
-                <button
-                  onClick={async () => {
-                    if (window.confirm("Kick this user from the server?")) {
-                      try {
-                        await api.kickMember(activeGuildId, ctxMenu.authorId);
-                        const members = await api.getMembers(activeGuildId, 100);
-                        useGuildStore.setState((s) => ({ members: { ...s.members, [activeGuildId]: Array.isArray(members) ? members : [] } }));
-                      } catch (err) { console.error("Kick failed:", err); }
-                    }
-                    setCtxMenu(null);
-                  }}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-orange-400 hover:bg-orange-500/10"
-                >
-                  Kick User
-                </button>
-              )}
-              {canBan && (
-                <button
-                  onClick={async () => {
-                    const reason = window.prompt("Ban reason (optional):");
-                    if (reason !== null) {
-                      try {
-                        await api.banMember(activeGuildId, ctxMenu.authorId, reason || undefined);
-                        const members = await api.getMembers(activeGuildId, 100);
-                        useGuildStore.setState((s) => ({ members: { ...s.members, [activeGuildId]: Array.isArray(members) ? members : [] } }));
-                      } catch (err) { console.error("Ban failed:", err); }
-                    }
-                    setCtxMenu(null);
-                  }}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-red-400 hover:bg-red-500/10"
-                >
-                  Ban User
-                </button>
-              )}
-              {canTimeout && (
-                <button
-                  onClick={async () => {
-                    if (window.confirm("Timeout this user for 5 minutes?")) {
-                      try {
-                        await api.timeoutMember(activeGuildId, ctxMenu.authorId, 300);
-                      } catch (err) { console.error("Timeout failed:", err); }
-                    }
-                    setCtxMenu(null);
-                  }}
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-yellow-400 hover:bg-yellow-500/10"
-                >
-                  Timeout User
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      )}
+      {ctxMenu && (() => {
+        const ctxMsg = messages.find((m) => m.id === ctxMenu.messageId);
+        const items: ContextMenuItem[] = [
+          { label: "Add Reaction", onClick: () => {
+            setEmojiPicker({ messageId: ctxMenu.messageId, x: ctxMenu.x + 180, y: ctxMenu.y });
+          }},
+          { label: "Reply", onClick: () => { if (ctxMsg) startReply(ctxMsg); } },
+          ...(ctxMenu.isOwn ? [{ label: "Edit Message", onClick: () => { if (ctxMsg) startEdit(ctxMsg); } }] : []),
+          { label: "Copy Text", onClick: () => { if (ctxMsg) { copyToClipboard(ctxMsg.content); toast.success("Text copied"); } } },
+          { label: "Copy ID", onClick: () => { copyToClipboard(ctxMenu.messageId); toast.success("ID copied"); } },
+          ...(canManageMessages ? [
+            ctxMsg?.pinned
+              ? { label: "Unpin Message", onClick: () => handleUnpinMessage(ctxMenu.messageId), color: "text-amber-400", hoverBg: "hover:bg-amber-500/10", separator: true }
+              : { label: "Pin Message", onClick: () => handlePinMessage(ctxMenu.messageId), color: "text-amber-400", hoverBg: "hover:bg-amber-500/10", separator: true },
+          ] : []),
+          ...((ctxMenu.isOwn || canManageMessages) ? [
+            { label: "Delete Message", onClick: () => { setDeleteConfirm(ctxMenu.messageId); }, color: "text-red-400", hoverBg: "hover:bg-red-500/10", separator: true },
+          ] : []),
+          ...(!ctxMenu.isOwn && activeGuildId && activeGuild?.ownerId !== ctxMenu.authorId ? [
+            ...(canKick ? [{ label: "Kick User", onClick: async () => {
+              if (window.confirm("Kick this user from the server?")) {
+                try {
+                  await api.kickMember(activeGuildId, ctxMenu.authorId);
+                  const members = await api.getMembers(activeGuildId, 100);
+                  useGuildStore.setState((s) => ({ members: { ...s.members, [activeGuildId]: Array.isArray(members) ? members : [] } }));
+                } catch (err) { console.error("Kick failed:", err); }
+              }
+            }, color: "text-orange-400", hoverBg: "hover:bg-orange-500/10", separator: !canManageMessages && !ctxMenu.isOwn }] : []),
+            ...(canBan ? [{ label: "Ban User", onClick: async () => {
+              const reason = window.prompt("Ban reason (optional):");
+              if (reason !== null) {
+                try {
+                  await api.banMember(activeGuildId, ctxMenu.authorId, reason || undefined);
+                  const members = await api.getMembers(activeGuildId, 100);
+                  useGuildStore.setState((s) => ({ members: { ...s.members, [activeGuildId]: Array.isArray(members) ? members : [] } }));
+                } catch (err) { console.error("Ban failed:", err); }
+              }
+            }, color: "text-red-400", hoverBg: "hover:bg-red-500/10" }] : []),
+            ...(canTimeout ? [{ label: "Timeout User", onClick: async () => {
+              if (window.confirm("Timeout this user for 5 minutes?")) {
+                try { await api.timeoutMember(activeGuildId, ctxMenu.authorId, 300); }
+                catch (err) { console.error("Timeout failed:", err); }
+              }
+            }, color: "text-yellow-400", hoverBg: "hover:bg-yellow-500/10" }] : []),
+          ] : []),
+        ];
+        return <ContextMenu x={ctxMenu.x} y={ctxMenu.y} items={items} onClose={() => setCtxMenu(null)} />;
+      })()}
 
       {/* Delete confirmation modal */}
       {deleteConfirm && (

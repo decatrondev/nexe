@@ -12,3 +12,4 @@ export { toast, ToastContainer, useToasts, type Toast, type ToastVariant, type T
 export { Select, type SelectProps, type SelectOption } from "./Select";
 export { ConfirmDialog, type ConfirmDialogProps } from "./ConfirmDialog";
 export { Toggle, Checkbox, RadioGroup, type ToggleProps, type CheckboxProps, type RadioGroupProps, type RadioOption } from "./FormControls";
+export { ContextMenu, type ContextMenuProps, type ContextMenuItem } from "./ContextMenu";
