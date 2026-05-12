@@ -4,13 +4,12 @@ import { useAuthStore } from "../stores/auth";
 import { api, type Channel, type Role, type Ban, type AuditLogEntry } from "../lib/api";
 import { hasPermission, computePermissions, Permissions } from "../lib/permissions";
 import { FREE_TIER_LIMITS } from "../lib/limits";
+import { Tabs, TabList, TabPanel, type TabItem } from "@nexe/ui";
 
 interface ServerSettingsModalProps {
   guildId: string;
   onClose: () => void;
 }
-
-type Tab = "overview" | "channels" | "roles" | "bans" | "audit" | "automod" | "twitch" | "danger";
 
 const EMPTY_CHANNELS: Channel[] = [];
 
@@ -28,7 +27,7 @@ export default function ServerSettingsModal({ guildId, onClose }: ServerSettings
 
   // Build tabs based on permissions
   const availableTabs = useMemo(() => {
-    const tabs: { id: Tab; label: string }[] = [];
+    const tabs: TabItem[] = [];
     if (isOwner || hasPermission(myPerms, Permissions.MANAGE_GUILD))
       tabs.push({ id: "overview", label: "Overview" });
     if (isOwner || hasPermission(myPerms, Permissions.MANAGE_CHANNELS))
@@ -42,13 +41,10 @@ export default function ServerSettingsModal({ guildId, onClose }: ServerSettings
     if (isOwner || hasPermission(myPerms, Permissions.MANAGE_GUILD))
       tabs.push({ id: "automod", label: "Automod" });
     if (isOwner)
-      tabs.push({ id: "twitch", label: "Twitch" });
-    // Danger Zone is always visible (Leave Server is for everyone)
-    tabs.push({ id: "danger", label: "Danger Zone" });
+      tabs.push({ id: "twitch", label: "Twitch", color: "text-[#9146FF] hover:text-[#a970ff]" });
+    tabs.push({ id: "danger", label: "Danger Zone", color: "text-red-400 hover:text-red-300" });
     return tabs;
   }, [isOwner, myPerms]);
-
-  const [activeTab, setActiveTab] = useState<Tab>(() => availableTabs[0]?.id ?? "danger");
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -60,63 +56,44 @@ export default function ServerSettingsModal({ guildId, onClose }: ServerSettings
 
   return (
     <div className="fixed inset-0 z-50 flex bg-dark-900/95 animate-fade-in">
-      {/* Sidebar */}
-      <div className="flex w-56 shrink-0 flex-col border-r border-dark-800 bg-dark-900 pt-14">
-        <div className="px-3 pb-2">
-          <p className="px-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Server Settings
-          </p>
-        </div>
-        <nav className="flex-1 space-y-0.5 px-2">
-          {availableTabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`w-full rounded-md px-3 py-1.5 text-left text-sm font-medium transition-colors ${
-                activeTab === tab.id
-                  ? "bg-dark-700 text-slate-100"
-                  : tab.id === "danger"
-                    ? "text-red-400 hover:bg-dark-800 hover:text-red-300"
-                    : tab.id === "twitch"
-                      ? "text-[#9146FF] hover:bg-dark-800 hover:text-[#a970ff]"
-                      : "text-slate-400 hover:bg-dark-800 hover:text-slate-200"
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
-      </div>
-
-      {/* Content */}
-      <div className="flex flex-1 flex-col overflow-hidden">
-        {/* Close button */}
-        <div className="flex shrink-0 justify-end p-4">
-          <button
-            onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-dark-700 text-slate-400 transition-colors hover:border-slate-500 hover:text-slate-200"
-            title="Close (Esc)"
-          >
-            <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
-              <path d="M18.3 5.71a1 1 0 0 0-1.42 0L12 10.59 7.12 5.71A1 1 0 0 0 5.7 7.12L10.59 12l-4.88 4.88a1 1 0 1 0 1.42 1.42L12 13.41l4.88 4.88a1 1 0 0 0 1.42-1.42L13.41 12l4.88-4.88a1 1 0 0 0 0-1.41z" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Tab content */}
-        <div className="flex-1 overflow-y-auto px-10 pb-10">
-          <div className="mx-auto max-w-xl">
-            {activeTab === "overview" && <OverviewTab guildId={guildId} />}
-            {activeTab === "channels" && <ChannelsTab guildId={guildId} />}
-            {activeTab === "roles" && <RolesTab guildId={guildId} />}
-            {activeTab === "bans" && <BansTab guildId={guildId} />}
-            {activeTab === "audit" && <AuditLogTab guildId={guildId} />}
-            {activeTab === "automod" && <AutomodTab guildId={guildId} />}
-            {activeTab === "twitch" && <TwitchTab guildId={guildId} />}
-            {activeTab === "danger" && <DangerZoneTab guildId={guildId} onClose={onClose} />}
+      <Tabs defaultTab={availableTabs[0]?.id ?? "danger"} className="flex w-full">
+        {/* Sidebar */}
+        <div className="flex w-56 shrink-0 flex-col border-r border-dark-800 bg-dark-900 pt-14">
+          <div className="flex-1 px-3">
+            <TabList tabs={availableTabs} label="Server Settings" />
           </div>
         </div>
-      </div>
+
+        {/* Content */}
+        <div className="flex flex-1 flex-col overflow-hidden">
+          {/* Close button */}
+          <div className="flex shrink-0 justify-end p-4">
+            <button
+              onClick={onClose}
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-dark-700 text-slate-400 transition-colors hover:border-slate-500 hover:text-slate-200"
+              title="Close (Esc)"
+            >
+              <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
+                <path d="M18.3 5.71a1 1 0 0 0-1.42 0L12 10.59 7.12 5.71A1 1 0 0 0 5.7 7.12L10.59 12l-4.88 4.88a1 1 0 1 0 1.42 1.42L12 13.41l4.88 4.88a1 1 0 0 0 1.42-1.42L13.41 12l4.88-4.88a1 1 0 0 0 0-1.41z" />
+              </svg>
+            </button>
+          </div>
+
+          {/* Tab content */}
+          <div className="flex-1 overflow-y-auto px-10 pb-10">
+            <div className="mx-auto max-w-xl">
+              <TabPanel id="overview"><OverviewTab guildId={guildId} /></TabPanel>
+              <TabPanel id="channels"><ChannelsTab guildId={guildId} /></TabPanel>
+              <TabPanel id="roles"><RolesTab guildId={guildId} /></TabPanel>
+              <TabPanel id="bans"><BansTab guildId={guildId} /></TabPanel>
+              <TabPanel id="audit"><AuditLogTab guildId={guildId} /></TabPanel>
+              <TabPanel id="automod"><AutomodTab guildId={guildId} /></TabPanel>
+              <TabPanel id="twitch"><TwitchTab guildId={guildId} /></TabPanel>
+              <TabPanel id="danger"><DangerZoneTab guildId={guildId} onClose={onClose} /></TabPanel>
+            </div>
+          </div>
+        </div>
+      </Tabs>
     </div>
   );
 }

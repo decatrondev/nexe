@@ -2,11 +2,11 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAuthStore } from "../stores/auth";
 import { api, type SocialLink } from "../lib/api";
 import ImageCropModal from "./ImageCropModal";
+import { Tabs, TabList, TabPanel, type TabItem } from "@nexe/ui";
 
 interface Props { onClose: () => void }
-type Tab = "account" | "profile" | "security" | "appearance";
 
-const tabs: { id: Tab; label: string }[] = [
+const settingsTabs: TabItem[] = [
   { id: "account", label: "My Account" },
   { id: "profile", label: "Profiles" },
   { id: "security", label: "Security" },
@@ -14,7 +14,6 @@ const tabs: { id: Tab; label: string }[] = [
 ];
 
 export default function UserSettingsModal({ onClose }: Props) {
-  const [activeTab, setActiveTab] = useState<Tab>("account");
   const logout = useAuthStore((s) => s.logout);
 
   useEffect(() => {
@@ -25,67 +24,45 @@ export default function UserSettingsModal({ onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 animate-modal-backdrop" onClick={onClose}>
-      {/*
-        FIXED size — never changes between tabs.
-        Large centered modal: ~90% viewport minus some margin.
-      */}
       <div
         className="flex overflow-hidden rounded-xl border border-dark-700 bg-dark-900 shadow-2xl"
         style={{ width: "calc(100vw - 120px)", maxWidth: "1100px", height: "calc(100vh - 100px)" }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Sidebar — fixed width, fixed height, never changes */}
-        <div className="flex w-52 shrink-0 flex-col border-r border-dark-800 bg-dark-950">
-          <div className="flex-1 overflow-y-auto px-3 pt-6">
-            <p className="mb-2 px-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
-              Settings
-            </p>
-            {tabs.map((tab) => (
+        <Tabs defaultTab="account" className="flex w-full">
+          {/* Sidebar */}
+          <div className="flex w-52 shrink-0 flex-col border-r border-dark-800 bg-dark-950">
+            <div className="flex-1 overflow-y-auto px-3 pt-6">
+              <TabList tabs={settingsTabs} label="Settings" />
+            </div>
+            <div className="border-t border-dark-800 px-3 py-3">
               <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`mb-0.5 w-full rounded-md px-3 py-1.5 text-left text-sm transition-colors ${
-                  activeTab === tab.id
-                    ? "bg-nexe-600/15 text-white font-medium"
-                    : "text-slate-400 hover:bg-dark-800 hover:text-slate-200"
-                }`}
+                onClick={() => { logout(); onClose(); }}
+                className="w-full rounded-md px-3 py-1.5 text-left text-sm text-red-400 transition-colors hover:bg-dark-800"
               >
-                {tab.label}
+                Log Out
               </button>
-            ))}
-          </div>
-          <div className="border-t border-dark-800 px-3 py-3">
-            <button
-              onClick={() => { logout(); onClose(); }}
-              className="w-full rounded-md px-3 py-1.5 text-left text-sm text-red-400 transition-colors hover:bg-dark-800"
-            >
-              Log Out
-            </button>
-          </div>
-        </div>
-
-        {/* Content — fills remaining space, scrolls internally */}
-        <div className="flex min-h-0 flex-1 flex-col">
-          {/* Header — fixed */}
-          <div className="flex shrink-0 items-center justify-between border-b border-dark-800 px-6 py-3">
-            <h2 className="text-base font-semibold text-white">
-              {tabs.find((t) => t.id === activeTab)?.label}
-            </h2>
-            <button onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-dark-800 hover:text-white">
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+            </div>
           </div>
 
-          {/* Scrollable content — always same container size */}
-          <div className="min-h-0 flex-1 overflow-y-auto p-6">
-            {activeTab === "account" && <AccountTab />}
-            {activeTab === "profile" && <ProfileTab />}
-            {activeTab === "security" && <SecurityTab />}
-            {activeTab === "appearance" && <AppearanceTab />}
+          {/* Content */}
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex shrink-0 items-center justify-end border-b border-dark-800 px-6 py-3">
+              <button onClick={onClose} className="flex h-7 w-7 items-center justify-center rounded-md text-slate-400 hover:bg-dark-800 hover:text-white">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-6">
+              <TabPanel id="account"><AccountTab /></TabPanel>
+              <TabPanel id="profile"><ProfileTab /></TabPanel>
+              <TabPanel id="security"><SecurityTab /></TabPanel>
+              <TabPanel id="appearance"><AppearanceTab /></TabPanel>
+            </div>
           </div>
-        </div>
+        </Tabs>
       </div>
     </div>
   );
