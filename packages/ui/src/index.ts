@@ -17,3 +17,5 @@ export { DropdownMenu, type DropdownMenuProps, type DropdownMenuItem } from "./D
 export { Skeleton, SkeletonMessage, SkeletonUser, SkeletonChannel, type SkeletonProps } from "./Skeleton";
 export { Popover, type PopoverProps, type PopoverSide, type PopoverAlign } from "./Popover";
 export { ColorPicker, DEFAULT_PRESETS, type ColorPickerProps } from "./ColorPicker";
+export { ScrollArea, type ScrollAreaProps } from "./ScrollArea";
+export { Separator, type SeparatorProps } from "./Separator";
