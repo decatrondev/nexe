@@ -7,3 +7,4 @@ export { Avatar, statusColors, type AvatarProps, type AvatarSize, type StatusTyp
 export { Badge, type BadgeProps, type BadgeVariant } from "./Badge";
 export { Input, TextArea, Alert, type InputProps, type TextAreaProps, type AlertProps } from "./Input";
 export { Tabs, TabList, TabBar, TabPanel, useTabsContext, type TabsProps, type TabListProps, type TabBarProps, type TabPanelProps, type TabItem } from "./Tabs";
+export { Tooltip, type TooltipProps, type TooltipSide } from "./Tooltip";

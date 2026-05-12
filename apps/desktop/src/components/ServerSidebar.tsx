@@ -1,32 +1,9 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useGuildStore } from "../stores/guild";
 import { FREE_TIER_LIMITS } from "../lib/limits";
+import { Tooltip } from "@nexe/ui";
 import CreateGuildModal from "./CreateGuildModal";
 import JoinServerModal from "./JoinServerModal";
-
-function Tooltip({ text, anchorRef }: { text: string; anchorRef: React.RefObject<HTMLElement | null> }) {
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
-
-  useEffect(() => {
-    if (!anchorRef.current) return;
-    const rect = anchorRef.current.getBoundingClientRect();
-    setPos({
-      top: rect.top + rect.height / 2,
-      left: rect.right + 12,
-    });
-  }, [anchorRef]);
-
-  if (!pos) return null;
-
-  return (
-    <div
-      className="tooltip"
-      style={{ top: pos.top, left: pos.left, transform: "translateY(-50%)" }}
-    >
-      {text}
-    </div>
-  );
-}
 
 function SidebarIcon({
   isActive,
@@ -48,7 +25,6 @@ function SidebarIcon({
   children: React.ReactNode;
 }) {
   const [hovered, setHovered] = useState(false);
-  const ref = useRef<HTMLButtonElement>(null);
 
   return (
     <div className="relative">
@@ -58,25 +34,23 @@ function SidebarIcon({
           isActive ? "h-10" : hovered ? "h-5" : "h-0"
         }`}
       />
-      <button
-        ref={ref}
-        className={`flex h-12 w-12 items-center justify-center transition-all duration-200 ${
-          isActive ? activeClass : disabled ? "rounded-2xl bg-dark-800 text-slate-600 cursor-not-allowed" : inactiveClass
-        }`}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-        onClick={() => !disabled && onClick()}
-        disabled={disabled}
-      >
-        {children}
-      </button>
+      <Tooltip content={title} side="right" delay={150}>
+        <button
+          className={`flex h-12 w-12 items-center justify-center transition-all duration-200 ${
+            isActive ? activeClass : disabled ? "rounded-2xl bg-dark-800 text-slate-600 cursor-not-allowed" : inactiveClass
+          }`}
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+          onClick={() => !disabled && onClick()}
+          disabled={disabled}
+        >
+          {children}
+        </button>
+      </Tooltip>
       {badge !== undefined && badge > 0 && !isActive && (
         <span className="absolute -bottom-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white animate-scale-in">
           {badge > 99 ? "99+" : badge}
         </span>
-      )}
-      {hovered && !isActive && (
-        <Tooltip text={title} anchorRef={ref} />
       )}
     </div>
   );
