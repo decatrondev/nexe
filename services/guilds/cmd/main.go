@@ -57,6 +57,7 @@ func main() {
 
 	// Handler
 	guildHandler := handler.NewGuildHandler(guildService, automodRepo, overrideRepo, rdb)
+	emoteHandler := handler.NewEmoteHandler(guildService, rdb, db)
 
 	// Router
 	mux := http.NewServeMux()
@@ -68,6 +69,8 @@ func main() {
 	})
 
 	guildHandler.RegisterRoutes(mux)
+	mux.HandleFunc("GET /guilds/{id}/emotes", emoteHandler.GetEmotes)
+	mux.HandleFunc("POST /guilds/{id}/emotes/validate", emoteHandler.ValidateEmotes)
 
 	addr := ":" + cfg.Port
 	slog.Info("guilds starting", "addr", addr, "env", cfg.Env)

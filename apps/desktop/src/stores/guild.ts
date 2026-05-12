@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { loadGuildEmotes } from "../components/EmotePicker";
 import {
   api,
   type Guild,
@@ -21,6 +22,7 @@ interface GuildState {
   presenceMap: Record<string, string>; // userId → status (online/idle/dnd/offline)
   unreadChannels: Record<string, number>; // channelId → unread count
   lastReadMessageIds: Record<string, string>; // channelId → last read message id (for divider)
+  emotesReady: number; // increment to trigger re-render when emotes load
   loading: boolean;
   loadingGuilds: boolean;
   hasMoreMessages: Record<string, boolean>;
@@ -67,6 +69,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
   presenceMap: {},
   unreadChannels: {},
   lastReadMessageIds: {},
+  emotesReady: 0,
   loading: false,
   loadingGuilds: false,
   hasMoreMessages: {},
@@ -112,6 +115,13 @@ export const useGuildStore = create<GuildState>((set, get) => ({
           set({ unreadChannels: countMap, lastReadMessageIds: readMap });
         }
       }).catch(() => {});
+
+      // Load emotes for ALL guilds so :emote: resolves everywhere
+      Promise.all(
+        list.map((g) => loadGuildEmotes(g.id, g.name).catch(() => {}))
+      ).then(() => {
+        set((s) => ({ emotesReady: s.emotesReady + 1 }));
+      });
     } catch (err) {
       console.error("Failed to load guilds:", err);
       set({ guilds: [], loadingGuilds: false, error: "Failed to load servers" });
@@ -126,6 +136,8 @@ export const useGuildStore = create<GuildState>((set, get) => ({
         api.getMembers(guildId, 100),
         api.getRoles(guildId),
       ]);
+
+      // Emotes are loaded for all guilds at startup — no need to reload here
 
       // Race condition guard: if user switched guild while loading, abort
       if (get().activeGuildId !== guildId) return;

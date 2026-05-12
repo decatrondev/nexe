@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { emoteLookup } from "./EmotePicker";
 
 // ---- URL Detection ----
 
@@ -212,29 +213,56 @@ function parseMarkdownAndEmotes(text: string, keyBase: number, usernames?: Recor
 }
 
 function parseEmotes(text: string, keyBase: number): React.ReactNode {
-  const words = text.split(/(\s+)/);
-  const result: React.ReactNode[] = [];
+  // First pass: resolve :emoteName: syntax from the dynamic emote lookup
+  const colonParts = text.split(/:([a-zA-Z0-9_]+):/g);
+  const resolved: React.ReactNode[] = [];
 
-  for (let w = 0; w < words.length; w++) {
-    const word = words[w];
-    const emoteId = TWITCH_GLOBAL_EMOTES[word];
-    if (emoteId) {
-      result.push(
-        <img
-          key={`${keyBase}-${w}`}
-          src={getTwitchEmoteURL(emoteId)}
-          alt={word}
-          title={word}
-          className="inline-block h-6 align-middle"
-          loading="lazy"
-        />
-      );
-    } else {
-      result.push(word);
+  for (let i = 0; i < colonParts.length; i++) {
+    if (i % 2 === 1) {
+      // This is a potential emote name (between colons)
+      const url = emoteLookup.get(colonParts[i]);
+      if (url) {
+        resolved.push(
+          <img
+            key={`${keyBase}-ce-${i}`}
+            src={url}
+            alt={colonParts[i]}
+            title={`:${colonParts[i]}:`}
+            className="inline-block h-8 align-middle"
+            loading="lazy"
+          />
+        );
+        continue;
+      }
+      // Not found — keep the original text with colons
+      resolved.push(`:${colonParts[i]}:`);
+      continue;
+    }
+
+    // Regular text — only match hardcoded Twitch global emotes as bare words
+    // Custom emotes (7TV, BTTV, etc.) require :emote: syntax
+    const words = colonParts[i].split(/(\s+)/);
+    for (let w = 0; w < words.length; w++) {
+      const word = words[w];
+      const emoteId = TWITCH_GLOBAL_EMOTES[word];
+      if (emoteId) {
+        resolved.push(
+          <img
+            key={`${keyBase}-${i}-${w}`}
+            src={getTwitchEmoteURL(emoteId)}
+            alt={word}
+            title={word}
+            className="inline-block h-8 align-middle"
+            loading="lazy"
+          />
+        );
+      } else {
+        resolved.push(word);
+      }
     }
   }
 
-  return <span key={keyBase}>{result}</span>;
+  return <span key={keyBase}>{resolved}</span>;
 }
 
 // ---- Lightbox ----
@@ -281,9 +309,12 @@ export default function MessageContent({ content, bridgeEmotes, usernames }: Mes
 
   const { segments, embeds } = parseContent(content, usernames);
 
+  // Check if message is only emotes (for bigger rendering)
+  const isOnlyEmotes = /^(\s*:[a-zA-Z0-9_]+:\s*)+$/.test(content.trim());
+
   return (
     <>
-      <p className="text-sm leading-relaxed text-slate-200 break-words">
+      <p className={`leading-relaxed text-slate-200 break-words ${isOnlyEmotes ? "text-lg [&_img]:h-12 [&_img]:w-12" : "text-sm"}`}>
         {processedContent || segments}
       </p>
 

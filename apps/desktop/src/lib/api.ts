@@ -163,8 +163,10 @@ export interface User {
   displayName?: string;
   avatarUrl?: string;
   status?: "online" | "idle" | "dnd" | "offline" | "invisible";
+  tier?: string;
   twitchId?: string;
   twitchLogin?: string;
+  totpEnabled?: boolean;
 }
 
 export interface StreamStatus {
@@ -427,6 +429,18 @@ export const api = {
     });
     if (!res.ok) throw new Error("Upload failed");
     return res.json();
+  },
+
+  getGuildEmotes(guildId: string) {
+    return request<{
+      twitch: { name: string; url: string; animated?: boolean; source: string }[];
+      seventv: { name: string; url: string; animated?: boolean; source: string }[];
+      bttv: { name: string; url: string; animated?: boolean; source: string }[];
+      ffz: { name: string; url: string; animated?: boolean; source: string }[];
+      twitchGlobal: { name: string; url: string; animated?: boolean; source: string }[];
+      seventvGlobal: { name: string; url: string; animated?: boolean; source: string }[];
+      bttvGlobal: { name: string; url: string; animated?: boolean; source: string }[];
+    }>("GET", `/guilds/${guildId}/emotes`);
   },
 
   deleteAvatar() {

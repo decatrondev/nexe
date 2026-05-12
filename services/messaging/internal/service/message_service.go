@@ -35,12 +35,19 @@ func (s *MessageService) SendMessage(ctx context.Context, channelID, authorID, c
 		return nil, fmt.Errorf("message content cannot be empty")
 	}
 
-	// Automod check
+	// Automod + emote validation
 	if s.guildsURL != "" {
 		guildID, _ := s.messages.GetChannelGuildID(ctx, channelID)
 		if guildID != "" {
 			if blocked, reason := s.checkAutomod(ctx, guildID, content, authorID); blocked {
 				return nil, fmt.Errorf("message blocked by automod: %s", reason)
+			}
+			// Validate emotes (tier check, rate limit, strip cross-server for free)
+			if validatedContent, modified := s.validateEmotes(ctx, guildID, content, authorID); modified {
+				if validatedContent == "" {
+					return nil, fmt.Errorf("message blocked: too many emotes")
+				}
+				content = validatedContent
 			}
 		}
 	}
@@ -338,6 +345,26 @@ func (s *MessageService) RemoveAllReactions(ctx context.Context, messageID strin
 		return fmt.Errorf("remove all reactions: %w", err)
 	}
 	return nil
+}
+
+func (s *MessageService) validateEmotes(ctx context.Context, guildID, content, userID string) (string, bool) {
+	body, _ := json.Marshal(map[string]string{"content": content, "userId": userID})
+	resp, err := http.Post(s.guildsURL+"/guilds/"+guildID+"/emotes/validate", "application/json", bytes.NewReader(body))
+	if err != nil || resp.StatusCode != 200 {
+		return content, false // if check fails, allow original
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Content  string `json:"content"`
+		Modified bool   `json:"modified"`
+		Blocked  bool   `json:"blocked"`
+		Reason   string `json:"reason"`
+	}
+	json.NewDecoder(resp.Body).Decode(&result)
+	if result.Blocked {
+		return "", true // will cause error upstream
+	}
+	return result.Content, result.Modified
 }
 
 func (s *MessageService) checkAutomod(ctx context.Context, guildID, content, userID string) (bool, string) {

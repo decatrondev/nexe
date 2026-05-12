@@ -174,6 +174,8 @@ func main() {
 	mux.Handle("PATCH /automod/{id}", guildsProxy(gp))
 	mux.Handle("DELETE /automod/{id}", guildsProxy(gp))
 	mux.Handle("POST /guilds/{id}/automod/check", guildsProxy(gp))
+	mux.Handle("GET /guilds/{id}/emotes", guildsProxy(gp))
+	mux.Handle("POST /guilds/{id}/emotes/validate", guildsProxy(gp))
 	mux.Handle("POST /guilds/{id}/twitch/enable", guildsProxy(gp))
 	mux.Handle("POST /guilds/{id}/twitch/disable", guildsProxy(gp))
 	mux.Handle("PUT /guilds/{id}/members/{uid}/auto-roles/{rid}", guildsProxy(gp))

@@ -7,7 +7,7 @@ import { hasPermission, computePermissions, Permissions } from "../lib/permissio
 import { copyToClipboard, formatTimestamp, userColor, getRoleColor } from "../lib/utils";
 import MiniProfilePopover from "./MiniProfilePopover";
 import ProfileModal from "./ProfileModal";
-import EmojiPicker from "./EmojiPicker";
+import EmotePicker, { emoteLookup } from "./EmotePicker";
 import MessageContent from "./MessageContent";
 import MessageActions from "./MessageActions";
 import EditHistoryModal from "./EditHistoryModal";
@@ -54,6 +54,7 @@ export default function ChatArea() {
   const memberRolesMap = useGuildStore((s) => s.memberRoles);
   const guildRoles = (activeGuildId ? allRoles[activeGuildId] : undefined) ?? EMPTY_ROLES;
   const usernames = useGuildStore((s) => s.usernames);
+  useGuildStore((s) => s.emotesReady); // subscribe to trigger re-render when emotes load
   const sendMessage = useGuildStore((s) => s.sendMessage);
   const editMessage = useGuildStore((s) => s.editMessage);
   const deleteMessage = useGuildStore((s) => s.deleteMessage);
@@ -128,6 +129,7 @@ export default function ChatArea() {
 
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [emoteQuery, setEmoteQuery] = useState<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
   const mentionMapRef = useRef<Map<string, string>>(new Map()); // username → userId
 
@@ -338,8 +340,19 @@ export default function ChatArea() {
     if (atMatch) {
       setMentionQuery(atMatch[1]);
       setMentionIndex(0);
+      setEmoteQuery(null);
     } else {
       setMentionQuery(null);
+    }
+
+    // Detect :emote query (only if not in a mention)
+    if (!atMatch) {
+      const colonMatch = textBeforeCursor.match(/:([a-zA-Z0-9_]{2,})$/);
+      if (colonMatch) {
+        setEmoteQuery(colonMatch[1]);
+      } else {
+        setEmoteQuery(null);
+      }
     }
   }
 
@@ -354,6 +367,27 @@ export default function ChatArea() {
     mentionMapRef.current.set(username, userId);
     setInput(newValue);
     setMentionQuery(null);
+    inputRef.current?.focus();
+  }
+
+  // Emote autocomplete suggestions
+  const emoteSuggestions = emoteQuery
+    ? Array.from(emoteLookup.entries())
+        .filter(([name]) => name.toLowerCase().includes(emoteQuery.toLowerCase()))
+        .slice(0, 8)
+        .map(([name, url]) => ({ name, url }))
+    : [];
+
+  function insertEmote(name: string) {
+    const cursorPos = inputRef.current?.selectionStart ?? input.length;
+    const textBeforeCursor = input.slice(0, cursorPos);
+    const colonIndex = textBeforeCursor.lastIndexOf(":");
+    if (colonIndex === -1) return;
+    const before = input.slice(0, colonIndex);
+    const after = input.slice(cursorPos);
+    const newValue = `${before}:${name}: ${after}`;
+    setInput(newValue);
+    setEmoteQuery(null);
     inputRef.current?.focus();
   }
 
@@ -1001,6 +1035,21 @@ export default function ChatArea() {
                 })}
               </div>
             )}
+            {/* :emote autocomplete */}
+            {emoteQuery && emoteSuggestions.length > 0 && (
+              <div className="mb-1 overflow-hidden rounded-lg border border-dark-700 bg-dark-800 shadow-xl animate-slide-up">
+                {emoteSuggestions.map((e) => (
+                  <button
+                    key={e.name}
+                    onClick={() => insertEmote(e.name)}
+                    className="flex w-full items-center gap-2.5 px-3 py-1.5 text-sm transition-colors text-slate-300 hover:bg-dark-700 hover:text-white"
+                  >
+                    <img src={e.url} alt={e.name} className="h-6 w-6 object-contain" loading="lazy" />
+                    <span>:{e.name}:</span>
+                  </button>
+                ))}
+              </div>
+            )}
             {/* Char counter */}
             {input.length > 0 && (
               <div className="mb-1 text-right">
@@ -1332,9 +1381,9 @@ export default function ChatArea() {
         </div>
       )}
 
-      {/* Emoji picker for reactions */}
+      {/* Emote picker for reactions */}
       {emojiPicker && (
-        <EmojiPicker
+        <EmotePicker
           x={emojiPicker.x}
           y={emojiPicker.y}
           onSelect={(emoji) => {
@@ -1345,9 +1394,9 @@ export default function ChatArea() {
         />
       )}
 
-      {/* Emoji picker for message input */}
+      {/* Emote picker for message input */}
       {inputEmojiPicker && (
-        <EmojiPicker
+        <EmotePicker
           x={inputEmojiPicker.x}
           y={inputEmojiPicker.y}
           onSelect={(emoji) => {
