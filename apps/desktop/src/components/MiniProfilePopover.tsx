@@ -3,6 +3,7 @@ import { api, type UserProfile, type UserBadge, type StreamStatus } from "../lib
 import { useAuthStore } from "../stores/auth";
 import { useGuildStore } from "../stores/guild";
 import { hasPermission, computePermissions, Permissions } from "../lib/permissions";
+import { Skeleton } from "@nexe/ui";
 import { userColor, formatJoinDate as formatDate } from "../lib/utils";
 
 // Extended profile type — backend may include twitch fields
@@ -262,8 +263,8 @@ export default function MiniProfilePopover({ userId, x, y, streamStatus, onClose
       <div className="px-4 pb-4 pt-2">
         {loading ? (
           <div className="space-y-2">
-            <div className="h-5 w-28 animate-pulse rounded bg-slate-800" />
-            <div className="h-3 w-20 animate-pulse rounded bg-slate-800" />
+            <Skeleton className="h-5 w-28" />
+            <Skeleton className="h-3 w-20" />
           </div>
         ) : profile ? (
           <>

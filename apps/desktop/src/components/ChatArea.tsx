@@ -5,7 +5,7 @@ import { api, type Message, type Role, type ReactionGroup } from "../lib/api";
 import { nexeWS } from "../lib/websocket";
 import { hasPermission, computePermissions, Permissions } from "../lib/permissions";
 import { copyToClipboard, formatTimestamp, userColor, getRoleColor } from "../lib/utils";
-import { toast, ContextMenu, type ContextMenuItem } from "@nexe/ui";
+import { toast, ContextMenu, SkeletonMessage, type ContextMenuItem } from "@nexe/ui";
 import MiniProfilePopover from "./MiniProfilePopover";
 import ProfileModal from "./ProfileModal";
 import EmotePicker, { emoteLookup } from "./EmotePicker";
@@ -789,8 +789,10 @@ export default function ChatArea() {
             className="flex flex-1 flex-col gap-1 overflow-y-auto px-4 py-4"
           >
             {loadingMore && (
-              <div className="flex justify-center py-2">
-                <span className="text-xs text-slate-500">Loading older messages...</span>
+              <div className="space-y-1 py-2">
+                <SkeletonMessage />
+                <SkeletonMessage />
+                <SkeletonMessage />
               </div>
             )}
 
