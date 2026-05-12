@@ -4,7 +4,7 @@ import { useAuthStore } from "../stores/auth";
 import { api, type Channel, type Role, type Ban, type AuditLogEntry } from "../lib/api";
 import { hasPermission, computePermissions, Permissions } from "../lib/permissions";
 import { FREE_TIER_LIMITS } from "../lib/limits";
-import { Tabs, TabList, TabPanel, Select, Button, ConfirmDialog, type TabItem } from "@nexe/ui";
+import { Tabs, TabList, TabPanel, Select, Button, ConfirmDialog, ColorPicker, DEFAULT_PRESETS, type TabItem } from "@nexe/ui";
 
 interface ServerSettingsModalProps {
   guildId: string;
@@ -448,12 +448,6 @@ function ChannelsTab({ guildId }: { guildId: string }) {
 
 // ---- Roles Tab ----
 
-const PRESET_COLORS = [
-  "#5865F2", "#57F287", "#FEE75C", "#EB459E", "#ED4245",
-  "#F47B67", "#E67E22", "#1ABC9C", "#3498DB", "#9B59B6",
-  "#E91E63", "#2ECC71", "#00BCD4", "#FF9800", "#8BC34A",
-  "#99AAB5",
-];
 
 const PERMISSION_GROUPS = [
   {
@@ -546,7 +540,7 @@ function RolesTab({ guildId }: { guildId: string }) {
   // Create form
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
-  const [newColor, setNewColor] = useState(PRESET_COLORS[0]);
+  const [newColor, setNewColor] = useState(DEFAULT_PRESETS[0]);
   const [newPerms, setNewPerms] = useState(0);
 
   // Edit state
@@ -581,7 +575,7 @@ function RolesTab({ guildId }: { guildId: string }) {
       const role = await api.createRole(guildId, { name: newName.trim(), color: newColor, permissions: newPerms });
       setRoles((prev) => [...prev, role]);
       setNewName("");
-      setNewColor(PRESET_COLORS[0]);
+      setNewColor(DEFAULT_PRESETS[0]);
       setNewPerms(0);
       setShowCreate(false);
     } catch (err) {
@@ -594,7 +588,7 @@ function RolesTab({ guildId }: { guildId: string }) {
   function startEdit(role: Role) {
     setEditingId(role.id);
     setEditName(role.name);
-    setEditColor(role.color ?? PRESET_COLORS[0]);
+    setEditColor(role.color ?? DEFAULT_PRESETS[0]);
     setEditPerms(role.permissions ?? 0);
     setError("");
   }
@@ -718,39 +712,7 @@ function RolesTab({ guildId }: { guildId: string }) {
               className="w-full rounded-lg border border-dark-600 bg-dark-900 px-4 py-2 text-sm text-slate-200 outline-none transition-colors placeholder:text-slate-500 focus:border-nexe-500"
             />
           </div>
-          <div>
-            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-300">
-              Color
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {PRESET_COLORS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setNewColor(c)}
-                  className={`h-7 w-7 rounded-full border-2 transition-transform ${
-                    newColor === c ? "border-white scale-110" : "border-transparent"
-                  }`}
-                  style={{ backgroundColor: c }}
-                  title={c}
-                />
-              ))}
-              <label
-                className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-dashed border-slate-500 text-xs text-slate-400"
-                title="Custom color"
-              >
-                <input
-                  type="color"
-                  value={newColor}
-                  onChange={(e) => setNewColor(e.target.value)}
-                  className="sr-only"
-                />
-                <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
-                  <path d="M12 22C6.49 22 2 17.51 2 12S6.49 2 12 2s10 4.04 10 9c0 3.31-2.69 6-6 6h-1.77c-.28 0-.5.22-.5.5 0 .12.05.23.13.33.41.47.64 1.06.64 1.67A2.5 2.5 0 0 1 12 22zm0-18c-4.41 0-8 3.59-8 8s3.59 8 8 8c.28 0 .5-.22.5-.5a.54.54 0 0 0-.14-.35c-.41-.46-.63-1.05-.63-1.65a2.5 2.5 0 0 1 2.5-2.5H16c2.21 0 4-1.79 4-4 0-3.86-3.59-7-8-7z" />
-                </svg>
-              </label>
-            </div>
-          </div>
+          <ColorPicker value={newColor} onChange={setNewColor} label="Color" />
           {/* Permissions */}
           <div>
             <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-300">
@@ -830,28 +792,7 @@ function RolesTab({ guildId }: { guildId: string }) {
                       Cancel
                     </button>
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {PRESET_COLORS.map((c) => (
-                      <button
-                        key={c}
-                        type="button"
-                        onClick={() => setEditColor(c)}
-                        className={`h-5 w-5 rounded-full border-2 transition-transform ${
-                          editColor === c ? "border-white scale-110" : "border-transparent"
-                        }`}
-                        style={{ backgroundColor: c }}
-                      />
-                    ))}
-                    <label className="flex h-5 w-5 cursor-pointer items-center justify-center rounded-full border border-dashed border-slate-500 text-xs text-slate-400">
-                      <input
-                        type="color"
-                        value={editColor}
-                        onChange={(e) => setEditColor(e.target.value)}
-                        className="sr-only"
-                      />
-                      <span className="text-[8px]">#</span>
-                    </label>
-                  </div>
+                  <ColorPicker value={editColor} onChange={setEditColor} />
 
                   {/* Permissions */}
                   <div className="mt-3 rounded-lg border border-dark-700 bg-dark-900 p-3 max-h-60 overflow-y-auto">

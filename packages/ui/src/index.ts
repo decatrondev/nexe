@@ -16,3 +16,4 @@ export { ContextMenu, type ContextMenuProps, type ContextMenuItem } from "./Cont
 export { DropdownMenu, type DropdownMenuProps, type DropdownMenuItem } from "./DropdownMenu";
 export { Skeleton, SkeletonMessage, SkeletonUser, SkeletonChannel, type SkeletonProps } from "./Skeleton";
 export { Popover, type PopoverProps, type PopoverSide, type PopoverAlign } from "./Popover";
+export { ColorPicker, DEFAULT_PRESETS, type ColorPickerProps } from "./ColorPicker";
