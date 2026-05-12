@@ -109,7 +109,7 @@ function Tooltip({ content, side = "top", delay = 200, children, className = "" 
           <div
             ref={tooltipRef}
             role="tooltip"
-            className={`fixed z-[100] rounded-md bg-dark-950 px-3 py-1.5 text-sm font-medium text-white shadow-lg border border-dark-700 animate-fade-in pointer-events-none ${className}`}
+            className={`fixed z-tooltip rounded-md bg-dark-950 px-3 py-1.5 text-sm font-medium text-white shadow-tooltip border border-dark-700 animate-fade-in pointer-events-none ${className}`}
             style={{ top: pos.top, left: pos.left }}
           >
             {content}

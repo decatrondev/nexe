@@ -103,7 +103,7 @@ function DropdownMenu({ trigger, items, align = "left", side = "bottom", classNa
         createPortal(
           <div
             ref={menuRef}
-            className={`fixed z-[100] min-w-44 rounded-lg border border-dark-700 bg-dark-900 py-1 shadow-xl animate-fade-in ${className}`}
+            className={`fixed z-tooltip min-w-44 rounded-lg border border-dark-700 bg-dark-900 py-1 shadow-dropdown animate-fade-in ${className}`}
             style={{ top: pos.top, left: pos.left }}
           >
             {items.map((item, i) => (

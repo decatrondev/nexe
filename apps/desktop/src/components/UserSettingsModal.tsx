@@ -23,7 +23,7 @@ export default function UserSettingsModal({ onClose }: Props) {
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 animate-modal-backdrop" onClick={onClose}>
+    <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 animate-modal-backdrop" onClick={onClose}>
       <div
         className="flex overflow-hidden rounded-xl border border-dark-700 bg-dark-900 shadow-2xl"
         style={{ width: "calc(100vw - 120px)", maxWidth: "1100px", height: "calc(100vh - 100px)" }}

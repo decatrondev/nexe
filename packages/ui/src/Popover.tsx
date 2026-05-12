@@ -142,7 +142,7 @@ function Popover({
         createPortal(
           <div
             ref={popoverRef}
-            className={`fixed z-[100] rounded-lg border border-dark-700 bg-dark-900 shadow-xl animate-fade-in ${className}`}
+            className={`fixed z-popover rounded-lg border border-dark-700 bg-dark-900 shadow-popover animate-fade-in ${className}`}
             style={{ top: pos.top, left: pos.left }}
           >
             {content}

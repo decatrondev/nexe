@@ -79,7 +79,7 @@ function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   return createPortal(
     <div
       ref={menuRef}
-      className="fixed z-[100] min-w-44 rounded-lg border border-dark-700 bg-dark-900 py-1 shadow-xl animate-scale-in"
+      className="fixed z-tooltip min-w-44 rounded-lg border border-dark-700 bg-dark-900 py-1 shadow-dropdown animate-scale-in"
       style={{ left: pos.left, top: pos.top, transformOrigin: "top left" }}
       onClick={(e) => e.stopPropagation()}
     >

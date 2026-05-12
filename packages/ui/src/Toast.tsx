@@ -138,7 +138,7 @@ function ToastContainer() {
   if (items.length === 0) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-[200] flex flex-col-reverse gap-2" style={{ maxWidth: 380 }}>
+    <div className="fixed bottom-4 right-4 z-toast flex flex-col-reverse gap-2" style={{ maxWidth: 380 }}>
       {items.map((t) => (
         <ToastItem key={t.id} t={t} />
       ))}

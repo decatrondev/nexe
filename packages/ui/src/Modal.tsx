@@ -30,11 +30,11 @@ function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 animate-modal-backdrop"
+      className="fixed inset-0 z-overlay flex items-center justify-center bg-black/60 animate-modal-backdrop"
       onClick={onClose}
     >
       <div
-        className={`relative w-full ${maxWidth} rounded-2xl bg-dark-850 p-6 shadow-2xl animate-modal-content`}
+        className={`relative w-full ${maxWidth} rounded-2xl bg-dark-850 p-6 shadow-modal animate-modal-content`}
         onClick={(e) => e.stopPropagation()}
       >
         {showClose && (

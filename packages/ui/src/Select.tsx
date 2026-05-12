@@ -114,7 +114,7 @@ function Select({
         createPortal(
           <div
             ref={dropdownRef}
-            className="fixed z-[150] overflow-y-auto rounded-lg border border-dark-700 bg-dark-900 py-1 shadow-xl animate-fade-in"
+            className="fixed z-select overflow-y-auto rounded-lg border border-dark-700 bg-dark-900 py-1 shadow-dropdown animate-fade-in"
             style={{ top: dropPos.top, left: dropPos.left, width: dropPos.width, maxHeight: 240 }}
           >
             {options.map((opt) => (
