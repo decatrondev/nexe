@@ -15,3 +15,4 @@ export { Toggle, Checkbox, RadioGroup, type ToggleProps, type CheckboxProps, typ
 export { ContextMenu, type ContextMenuProps, type ContextMenuItem } from "./ContextMenu";
 export { DropdownMenu, type DropdownMenuProps, type DropdownMenuItem } from "./DropdownMenu";
 export { Skeleton, SkeletonMessage, SkeletonUser, SkeletonChannel, type SkeletonProps } from "./Skeleton";
+export { Popover, type PopoverProps, type PopoverSide, type PopoverAlign } from "./Popover";
