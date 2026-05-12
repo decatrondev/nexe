@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type UserProfile, type UserBadge } from "../lib/api";
+import { api, type UserProfile, type UserBadge, type StreamStatus } from "../lib/api";
 import { userColor } from "../lib/utils";
 
 function formatDate(iso: string): string {
@@ -19,10 +19,19 @@ function timeSince(iso: string): string {
 
 interface Props {
   userId: string;
+  streamStatus?: StreamStatus;
   onClose: () => void;
 }
 
-export default function ProfileModal({ userId, onClose }: Props) {
+function formatUptime(startedAt: string): string {
+  const ms = Date.now() - new Date(startedAt).getTime();
+  const mins = Math.floor(ms / 60000);
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  return `${hrs}h ${mins % 60}m`;
+}
+
+export default function ProfileModal({ userId, streamStatus, onClose }: Props) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [badges, setBadges] = useState<UserBadge[]>([]);
   const [loading, setLoading] = useState(true);
@@ -117,6 +126,45 @@ export default function ProfileModal({ userId, onClose }: Props) {
 
             {/* Content */}
             <div className="space-y-4 p-5">
+              {/* Stream Preview */}
+              {streamStatus?.live && (
+                <div>
+                  <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-red-400">🔴 Live on Twitch</h4>
+                  <a
+                    href={`https://twitch.tv/${username}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block overflow-hidden rounded-lg border border-dark-700 transition-all hover:border-purple-500/50 hover:shadow-lg hover:shadow-purple-500/10"
+                  >
+                    {streamStatus.thumbnail && (
+                      <img
+                        src={streamStatus.thumbnail.replace("{width}", "480").replace("{height}", "270")}
+                        alt="Stream"
+                        className="w-full object-cover"
+                      />
+                    )}
+                    <div className="bg-dark-800 px-3 py-2">
+                      <p className="truncate text-sm font-medium text-slate-200">{streamStatus.title}</p>
+                      <div className="mt-0.5 flex items-center gap-2 text-xs text-slate-400">
+                        <span>{streamStatus.game}</span>
+                        {streamStatus.viewers !== undefined && (
+                          <>
+                            <span>·</span>
+                            <span>{streamStatus.viewers.toLocaleString()} viewers</span>
+                          </>
+                        )}
+                        {streamStatus.startedAt && (
+                          <>
+                            <span>·</span>
+                            <span>{formatUptime(streamStatus.startedAt)}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </a>
+                </div>
+              )}
+
               {/* About Me */}
               {profile.bio && (
                 <div>

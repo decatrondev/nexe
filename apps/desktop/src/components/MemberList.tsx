@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useGuildStore } from "../stores/guild";
-import { api, type GuildMember, type Role } from "../lib/api";
+import { api, type GuildMember, type Role, type StreamStatus } from "../lib/api";
 import { formatJoinDate } from "../lib/utils";
 import MiniProfilePopover from "./MiniProfilePopover";
 import ProfileModal from "./ProfileModal";
@@ -57,7 +57,7 @@ export default function MemberList() {
   const [fullProfileUserId, setFullProfileUserId] = useState<string | null>(null);
 
   // Live status tracking — poll every 60s for members
-  const [liveUsers, setLiveUsers] = useState<Set<string>>(new Set());
+  const [liveUsers, setLiveUsers] = useState<Map<string, StreamStatus>>(new Map());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
@@ -65,12 +65,15 @@ export default function MemberList() {
       const memberIds = members.map((m) => m.userId);
       if (memberIds.length === 0) return;
 
-      const live = new Set<string>();
-      // Check up to 10 members at a time to avoid too many requests
+      const live = new Map<string, StreamStatus>();
+      const presence = useGuildStore.getState().presenceMap;
       for (const id of memberIds.slice(0, 20)) {
+        // Only show stream if user is visibly online (online/idle/dnd)
+        const userPresence = presence[id];
+        if (!userPresence || userPresence === "invisible" || userPresence === "offline") continue;
         try {
           const status = await api.getStreamStatus(id);
-          if (status.live) live.add(id);
+          if (status.live) live.set(id, status);
         } catch { /* skip */ }
       }
       setLiveUsers(live);
@@ -225,6 +228,7 @@ export default function MemberList() {
           userId={profilePopover.userId}
           x={profilePopover.x}
           y={profilePopover.y}
+          streamStatus={liveUsers.get(profilePopover.userId)}
           onClose={() => setProfilePopover(null)}
           onViewFull={() => {
             setFullProfileUserId(profilePopover.userId);
@@ -236,6 +240,7 @@ export default function MemberList() {
       {fullProfileUserId && (
         <ProfileModal
           userId={fullProfileUserId}
+          streamStatus={liveUsers.get(fullProfileUserId)}
           onClose={() => setFullProfileUserId(null)}
         />
       )}

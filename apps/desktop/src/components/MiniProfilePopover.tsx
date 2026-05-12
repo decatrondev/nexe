@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, type UserProfile, type UserBadge } from "../lib/api";
+import { api, type UserProfile, type UserBadge, type StreamStatus } from "../lib/api";
 import { useAuthStore } from "../stores/auth";
 import { useGuildStore } from "../stores/guild";
 import { hasPermission, computePermissions, Permissions } from "../lib/permissions";
@@ -13,6 +13,15 @@ interface UserProfileWithTwitch extends UserProfile {
 
 type ModAction = "kick" | "ban" | "timeout" | "warn" | null;
 
+function formatUptime(startedAt: string): string {
+  const ms = Date.now() - new Date(startedAt).getTime();
+  const mins = Math.floor(ms / 60000);
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  const remainMins = mins % 60;
+  return `${hrs}h ${remainMins}m`;
+}
+
 const TIMEOUT_OPTIONS = [
   { label: "1 min", value: 60 },
   { label: "5 min", value: 300 },
@@ -24,11 +33,12 @@ interface Props {
   userId: string;
   x: number;
   y: number;
+  streamStatus?: StreamStatus;
   onClose: () => void;
   onViewFull?: () => void;
 }
 
-export default function MiniProfilePopover({ userId, x, y, onClose, onViewFull }: Props) {
+export default function MiniProfilePopover({ userId, x, y, streamStatus, onClose, onViewFull }: Props) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -318,6 +328,45 @@ export default function MiniProfilePopover({ userId, x, y, onClose, onViewFull }
                     </span>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Stream Preview */}
+            {streamStatus?.live && (
+              <div className="mb-3">
+                <p className="mb-1.5 text-[11px] font-bold uppercase text-red-400">🔴 Live on Twitch</p>
+                <a
+                  href={`https://twitch.tv/${(profile as UserProfileWithTwitch)?.twitchLogin || ""}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block overflow-hidden rounded-lg border border-dark-700 transition-all hover:border-purple-500/50 hover:shadow-lg hover:shadow-purple-500/10"
+                >
+                  {streamStatus.thumbnail && (
+                    <img
+                      src={streamStatus.thumbnail.replace("{width}", "440").replace("{height}", "248")}
+                      alt="Stream"
+                      className="w-full object-cover"
+                    />
+                  )}
+                  <div className="bg-dark-800 px-2.5 py-2">
+                    <p className="truncate text-[12px] font-medium text-slate-200">{streamStatus.title}</p>
+                    <div className="mt-0.5 flex items-center gap-2 text-[11px] text-slate-400">
+                      <span>{streamStatus.game}</span>
+                      {streamStatus.viewers !== undefined && (
+                        <>
+                          <span>·</span>
+                          <span>{streamStatus.viewers.toLocaleString()} viewers</span>
+                        </>
+                      )}
+                      {streamStatus.startedAt && (
+                        <>
+                          <span>·</span>
+                          <span>{formatUptime(streamStatus.startedAt)}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </a>
               </div>
             )}
 
