@@ -2,7 +2,7 @@ import { type FormEvent, useState } from "react";
 import { useGuildStore } from "../stores/guild";
 import { useAuthStore } from "../stores/auth";
 import { FREE_TIER_LIMITS } from "../lib/limits";
-import { Modal, ModalTitle, ModalDescription, ModalFooter, Button, Input, TextArea, Alert } from "@nexe/ui";
+import { Modal, ModalTitle, ModalDescription, ModalFooter, Button, Input, TextArea, Alert, Toggle } from "@nexe/ui";
 
 interface CreateGuildModalProps {
   onClose: () => void;
@@ -72,15 +72,11 @@ export default function CreateGuildModal({ onClose }: CreateGuildModalProps) {
           placeholder="What is this server about?"
         />
 
-        <label className="flex items-center gap-3 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={isStreamerServer}
-            onChange={(e) => setIsStreamerServer(e.target.checked)}
-            className="h-4 w-4 rounded border-dark-700 bg-dark-900 text-nexe-500 focus:ring-nexe-500"
-          />
-          <span className="text-sm text-slate-300">Streamer Server</span>
-        </label>
+        <Toggle
+          checked={isStreamerServer}
+          onChange={setIsStreamerServer}
+          label="Streamer Server"
+        />
 
         <ModalFooter>
           <Button variant="secondary" type="button" onClick={onClose} fullWidth>
