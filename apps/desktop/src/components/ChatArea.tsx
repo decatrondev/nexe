@@ -5,6 +5,7 @@ import { api, type Message, type Role, type ReactionGroup } from "../lib/api";
 import { nexeWS } from "../lib/websocket";
 import { hasPermission, computePermissions, Permissions } from "../lib/permissions";
 import { copyToClipboard, formatTimestamp, userColor, getRoleColor } from "../lib/utils";
+import { toast } from "@nexe/ui";
 import MiniProfilePopover from "./MiniProfilePopover";
 import ProfileModal from "./ProfileModal";
 import EmotePicker, { emoteLookup } from "./EmotePicker";
@@ -1246,7 +1247,7 @@ export default function ChatArea() {
           <button
             onClick={() => {
               const msg = messages.find((m) => m.id === ctxMenu.messageId);
-              if (msg) copyToClipboard(msg.content);
+              if (msg) { copyToClipboard(msg.content); toast.success("Text copied"); }
               setCtxMenu(null);
             }}
             className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-dark-800"
@@ -1256,6 +1257,7 @@ export default function ChatArea() {
           <button
             onClick={() => {
               copyToClipboard(ctxMenu.messageId);
+              toast.success("ID copied");
               setCtxMenu(null);
             }}
             className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-slate-300 hover:bg-dark-800"

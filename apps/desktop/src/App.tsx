@@ -7,6 +7,7 @@ import TwitchCallbackPage from "./pages/TwitchCallbackPage";
 import HomePage from "./pages/HomePage";
 import { useAuthStore } from "./stores/auth";
 import { checkForUpdates } from "./lib/updater";
+import { ToastContainer } from "@nexe/ui";
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -65,6 +66,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <ToastContainer />
       <Routes>
         <Route
           path="/login"

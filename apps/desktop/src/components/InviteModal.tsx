@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type Invite } from "../lib/api";
 import { copyToClipboard } from "../lib/utils";
-import { Modal, ModalTitle, Button, Input, Alert } from "@nexe/ui";
+import { Modal, ModalTitle, Button, Input, Alert, toast } from "@nexe/ui";
 
 interface InviteModalProps {
   guildId: string;
@@ -13,8 +13,6 @@ export default function InviteModal({ guildId, channelId, onClose }: InviteModal
   const [invite, setInvite] = useState<Invite | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
-
   useEffect(() => {
     let cancelled = false;
     async function createInvite() {
@@ -37,8 +35,7 @@ export default function InviteModal({ guildId, channelId, onClose }: InviteModal
     if (!invite) return;
     const link = `https://nexe.decatron.net/invite/${invite.code}`;
     copyToClipboard(link);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    toast.success("Invite link copied!");
   }
 
   return (
@@ -68,10 +65,10 @@ export default function InviteModal({ guildId, channelId, onClose }: InviteModal
                 value={`https://nexe.decatron.net/invite/${invite.code}`}
               />
               <Button
-                variant={copied ? "success" : "primary"}
+                variant="primary"
                 onClick={handleCopy}
               >
-                {copied ? "Copied!" : "Copy Link"}
+                Copy Link
               </Button>
             </div>
           </div>
