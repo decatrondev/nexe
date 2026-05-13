@@ -939,6 +939,68 @@ func (h *TwitchHandler) autoSyncUserRoles(userID, twitchID string) {
 		}
 
 		slog.Info("auto-sync: synced roles", "user", userID, "guild", g.ID)
+
+		// If this user is the broadcaster (owner of Twitch integration), sync ALL members
+		if *g.StreamerTwitchID == twitchID {
+			slog.Info("auto-sync: broadcaster login, syncing all members", "guild", g.ID)
+			h.syncAllMembersForGuild(ctx, g.ID, twitchID, bTok)
+		}
+	}
+}
+
+// syncAllMembersForGuild syncs Twitch roles for all members in a guild.
+func (h *TwitchHandler) syncAllMembersForGuild(ctx context.Context, guildID, streamerTwitchID, broadcasterToken string) {
+	// Get all members
+	req, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://localhost:8082/guilds/%s/members?limit=200", guildID), nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+
+	var members []struct {
+		UserID string `json:"userId"`
+	}
+	json.NewDecoder(resp.Body).Decode(&members)
+
+	autoRoles, err := h.getAutoRolesFromService(ctx, guildID, "system")
+	if err != nil {
+		return
+	}
+	sourceToRole := make(map[string]string)
+	for _, r := range autoRoles {
+		if r.AutoSource != "" {
+			sourceToRole[r.AutoSource] = r.ID
+		}
+	}
+
+	for _, m := range members {
+		user, err := h.users.GetByID(ctx, m.UserID)
+		if err != nil || user == nil || user.TwitchID == nil || *user.TwitchID == "" {
+			continue
+		}
+
+		status, err := h.twitch.CheckUserTwitchStatus(ctx, streamerTwitchID, *user.TwitchID, broadcasterToken)
+		if err != nil {
+			continue
+		}
+
+		shouldHave := map[string]bool{
+			"twitch_follower": status.IsFollower,
+			"twitch_sub_t1":   status.IsSubscriber && (status.SubTier == "1000" || status.SubTier == "2000" || status.SubTier == "3000"),
+			"twitch_sub_t2":   status.IsSubscriber && (status.SubTier == "2000" || status.SubTier == "3000"),
+			"twitch_sub_t3":   status.IsSubscriber && status.SubTier == "3000",
+			"twitch_vip":      status.IsVIP,
+			"twitch_mod":      status.IsMod,
+		}
+
+		for source, should := range shouldHave {
+			roleID, exists := sourceToRole[source]
+			if !exists || !should {
+				continue
+			}
+			h.assignRoleViaService(ctx, guildID, m.UserID, roleID)
+		}
 	}
 }
 
