@@ -157,6 +157,13 @@ func (s *PresenceService) SetOffline(ctx context.Context, userID string) error {
 	pipe.HSet(ctx, key, "status", "offline", "lastSeen", time.Now().UTC().Format(time.RFC3339))
 	pipe.Expire(ctx, key, 24*time.Hour) // keep offline presence for 24h
 	_, err := pipe.Exec(ctx)
+
+	// Remove from all guild online sets
+	guildKeys, _ := s.rdb.Keys(ctx, guildOnlinePrefix+"*").Result()
+	for _, gk := range guildKeys {
+		s.rdb.SRem(ctx, gk, userID)
+	}
+
 	return err
 }
 
@@ -219,7 +226,7 @@ func (s *PresenceService) GetBulkPresence(ctx context.Context, userIDs []string)
 		}
 
 		bulkStatus := data["status"]
-		if bulkStatus == "invisible" {
+		if bulkStatus == "" || bulkStatus == "invisible" {
 			bulkStatus = "offline"
 		}
 		p := model.UserPresence{
