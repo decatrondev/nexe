@@ -89,6 +89,25 @@ func (r *UserRepository) GetByTwitchID(ctx context.Context, twitchID string) (*m
 		WHERE u.twitch_id = $1`, twitchID))
 }
 
+// GetAllTwitchIDs returns all non-empty twitch_id values from the users table.
+func (r *UserRepository) GetAllTwitchIDs(ctx context.Context) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT twitch_id FROM users WHERE twitch_id IS NOT NULL AND twitch_id != ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	return ids, rows.Err()
+}
+
 func (r *UserRepository) VerifyEmail(ctx context.Context, userID string) error {
 	_, err := r.db.ExecContext(ctx,
 		`UPDATE users SET email_verified = true, updated_at = NOW() WHERE id = $1`, userID)

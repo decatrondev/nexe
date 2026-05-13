@@ -458,17 +458,32 @@ func (h *TwitchHandler) notifyPresenceStreamStatus(ctx context.Context, twitchID
 	defer resp.Body.Close()
 }
 
-// ReconcileStreamStatuses syncs any active streams from Redis to the presence service on startup.
+// ReconcileStreamStatuses checks all Twitch-linked users for active streams and syncs to presence.
 func (h *TwitchHandler) ReconcileStreamStatuses(ctx context.Context) {
-	keys, err := h.rdb.Keys(ctx, "nexe:stream:*").Result()
-	if err != nil || len(keys) == 0 {
-		return
-	}
-
-	slog.Info("reconciling stream statuses", "count", len(keys))
+	// First: check any cached stream keys from EventSub
+	keys, _ := h.rdb.Keys(ctx, "nexe:stream:*").Result()
 	for _, key := range keys {
 		twitchID := key[len("nexe:stream:"):]
 		h.notifyPresenceStreamStatus(ctx, twitchID, true)
+	}
+
+	// Second: check all Twitch-linked users via Twitch API
+	twitchIDs, err := h.users.GetAllTwitchIDs(ctx)
+	if err != nil {
+		slog.Error("reconcile: failed to get twitch IDs", "error", err)
+		return
+	}
+
+	slog.Info("reconciling stream statuses", "cachedKeys", len(keys), "twitchUsers", len(twitchIDs))
+	for _, twitchID := range twitchIDs {
+		stream, err := h.twitch.GetStreamByUserID(ctx, twitchID)
+		if err != nil {
+			continue
+		}
+		if stream != nil {
+			h.rdb.HSet(ctx, "nexe:stream:"+twitchID, "live", "true", "login", stream.UserLogin)
+			h.notifyPresenceStreamStatus(ctx, twitchID, true)
+		}
 	}
 }
 
@@ -563,7 +578,7 @@ func (h *TwitchHandler) SyncTwitchRoles(w http.ResponseWriter, r *http.Request) 
 		"twitch_sub_t3":    status.IsSubscriber && status.SubTier == "3000",
 		"twitch_vip":       status.IsVIP,
 		"twitch_mod":       status.IsMod,
-		"twitch_lead_mod":  false, // Lead mod is manually assigned by the owner
+		"twitch_lead_mod":  false, // Lead mod is manually promoted by the server owner
 	}
 
 	var assigned []string

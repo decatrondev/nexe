@@ -333,10 +333,15 @@ func (s *TwitchService) CheckSubscription(ctx context.Context, broadcasterID, us
 }
 
 // CheckModerator checks if userID is a moderator for broadcasterID.
-func (s *TwitchService) CheckModerator(ctx context.Context, broadcasterID, userID string) (bool, error) {
-	token, err := s.GetAppToken(ctx)
-	if err != nil {
-		return false, err
+// Requires broadcaster access token with moderation:read scope.
+func (s *TwitchService) CheckModerator(ctx context.Context, broadcasterID, userID, broadcasterToken string) (bool, error) {
+	token := broadcasterToken
+	if token == "" {
+		var err error
+		token, err = s.GetAppToken(ctx)
+		if err != nil {
+			return false, err
+		}
 	}
 
 	req, _ := http.NewRequestWithContext(ctx, "GET",
@@ -360,10 +365,15 @@ func (s *TwitchService) CheckModerator(ctx context.Context, broadcasterID, userI
 }
 
 // CheckVIP checks if userID is a VIP for broadcasterID.
-func (s *TwitchService) CheckVIP(ctx context.Context, broadcasterID, userID string) (bool, error) {
-	token, err := s.GetAppToken(ctx)
-	if err != nil {
-		return false, err
+// Requires broadcaster access token with channel:read:vips scope.
+func (s *TwitchService) CheckVIP(ctx context.Context, broadcasterID, userID, broadcasterToken string) (bool, error) {
+	token := broadcasterToken
+	if token == "" {
+		var err error
+		token, err = s.GetAppToken(ctx)
+		if err != nil {
+			return false, err
+		}
 	}
 
 	req, _ := http.NewRequestWithContext(ctx, "GET",
@@ -415,15 +425,15 @@ func (s *TwitchService) CheckUserTwitchStatus(ctx context.Context, broadcasterID
 	result.IsSubscriber = isSub
 	result.SubTier = tier
 
-	// Check moderator
-	isMod, err := s.CheckModerator(ctx, broadcasterID, userTwitchID)
+	// Check moderator (needs broadcaster token)
+	isMod, err := s.CheckModerator(ctx, broadcasterID, userTwitchID, broadcasterAccessToken)
 	if err != nil {
 		slog.Warn("twitch check moderator failed", "error", err)
 	}
 	result.IsMod = isMod
 
-	// Check VIP
-	isVIP, err := s.CheckVIP(ctx, broadcasterID, userTwitchID)
+	// Check VIP (needs broadcaster token)
+	isVIP, err := s.CheckVIP(ctx, broadcasterID, userTwitchID, broadcasterAccessToken)
 	if err != nil {
 		slog.Warn("twitch check vip failed", "error", err)
 	}
