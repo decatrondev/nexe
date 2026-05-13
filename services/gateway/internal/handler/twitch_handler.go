@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/decatrondev/nexe/services/gateway/internal/middleware"
 	"github.com/decatrondev/nexe/services/gateway/internal/repository"
@@ -1168,6 +1169,17 @@ func (h *TwitchHandler) SendToTwitchChat(w http.ResponseWriter, r *http.Request)
 
 	if guild.StreamerTwitchID == nil || guild.BridgeChannelID == nil || *guild.BridgeChannelID != body.ChannelID {
 		writeError(w, http.StatusBadRequest, "no_bridge", "this channel is not a bridge channel")
+		return
+	}
+
+	// Rate limit: 20 messages per 30 seconds per guild
+	rateLimitKey := fmt.Sprintf("nexe:bridge:ratelimit:%s", body.GuildID)
+	count, _ := h.rdb.Incr(r.Context(), rateLimitKey).Result()
+	if count == 1 {
+		h.rdb.Expire(r.Context(), rateLimitKey, 30*time.Second)
+	}
+	if count > 20 {
+		writeError(w, http.StatusTooManyRequests, "bridge_rate_limited", "Bridge is rate limited — too many messages sent to Twitch (max 20/30s)")
 		return
 	}
 

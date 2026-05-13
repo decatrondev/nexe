@@ -418,7 +418,11 @@ export default function ChatArea() {
         const bridgeContent = content.replace(/<@([a-f0-9-]+)>/g, (_match, uid) => {
           return "@" + (usernames[uid] || uid.slice(0, 8));
         });
-        api.sendToBridge(guild.id, guild.bridgeChannelId, bridgeContent, currentUser.displayName || currentUser.username).catch(() => {});
+        api.sendToBridge(guild.id, guild.bridgeChannelId, bridgeContent, currentUser.displayName || currentUser.username).catch((err) => {
+          if (err instanceof Error && err.message.includes("rate_limited")) {
+            toast.warning("Bridge rate limited — too many messages to Twitch");
+          }
+        });
       }
       setInput("");
       mentionMapRef.current.clear();
