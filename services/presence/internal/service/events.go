@@ -51,7 +51,7 @@ func (p *EventPublisher) PublishPresenceUpdate(ctx context.Context, userID, stat
 }
 
 // PublishStreamStatusUpdate publishes a stream status change to all guilds the user belongs to.
-func (p *EventPublisher) PublishStreamStatusUpdate(ctx context.Context, userID string, live bool, title, game string, viewers int, startedAt string) {
+func (p *EventPublisher) PublishStreamStatusUpdate(ctx context.Context, userID string, live bool, title, game string, viewers int, startedAt, thumbnail string) {
 	guildKeys, err := p.rdb.Keys(ctx, "nexe:guild:online:*").Result()
 	if err != nil {
 		return
@@ -66,6 +66,7 @@ func (p *EventPublisher) PublishStreamStatusUpdate(ctx context.Context, userID s
 		data["game"] = game
 		data["viewers"] = viewers
 		data["startedAt"] = startedAt
+		data["thumbnail"] = thumbnail
 	}
 	payload, _ := json.Marshal(data)
 

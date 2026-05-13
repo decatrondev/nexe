@@ -12,6 +12,7 @@ type UserPresence struct {
 	StreamGame      string     `json:"streamGame,omitempty"`
 	StreamViewers   int        `json:"streamViewers,omitempty"`
 	StreamStartedAt *time.Time `json:"streamStartedAt,omitempty"`
+	StreamThumbnail string     `json:"streamThumbnail,omitempty"`
 	LastSeen        time.Time  `json:"lastSeen"`
 }
 
@@ -28,6 +29,7 @@ type StreamStatus struct {
 	Game      string `json:"game,omitempty"`
 	Viewers   int    `json:"viewers,omitempty"`
 	StartedAt string `json:"startedAt,omitempty"`
+	Thumbnail string `json:"thumbnail,omitempty"`
 }
 
 var ValidStatuses = map[string]bool{

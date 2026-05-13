@@ -492,6 +492,7 @@ export const api = {
       streamGame?: string;
       streamViewers?: number;
       streamStartedAt?: string;
+      streamThumbnail?: string;
     }[]>("POST", "/users/bulk-presence", { userIds });
   },
 

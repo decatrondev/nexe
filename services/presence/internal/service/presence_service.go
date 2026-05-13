@@ -170,13 +170,14 @@ func (s *PresenceService) SetStreamStatus(ctx context.Context, userID string, st
 			"streamGame", stream.Game,
 			"streamViewers", strconv.Itoa(stream.Viewers),
 			"streamStartedAt", stream.StartedAt,
+			"streamThumbnail", stream.Thumbnail,
 		)
 	} else {
-		s.rdb.HDel(ctx, key, "streamingLive", "streamTitle", "streamGame", "streamViewers", "streamStartedAt")
+		s.rdb.HDel(ctx, key, "streamingLive", "streamTitle", "streamGame", "streamViewers", "streamStartedAt", "streamThumbnail")
 	}
 
 	// Broadcast to all guilds the user is in
-	s.events.PublishStreamStatusUpdate(ctx, userID, stream.Live, stream.Title, stream.Game, stream.Viewers, stream.StartedAt)
+	s.events.PublishStreamStatusUpdate(ctx, userID, stream.Live, stream.Title, stream.Game, stream.Viewers, stream.StartedAt, stream.Thumbnail)
 
 	return nil
 }
@@ -234,6 +235,7 @@ func (s *PresenceService) GetBulkPresence(ctx context.Context, userIDs []string)
 			p.StreamingLive = true
 			p.StreamTitle = data["streamTitle"]
 			p.StreamGame = data["streamGame"]
+			p.StreamThumbnail = data["streamThumbnail"]
 			if v, err := strconv.Atoi(data["streamViewers"]); err == nil {
 				p.StreamViewers = v
 			}

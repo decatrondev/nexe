@@ -294,11 +294,11 @@ export default function HomePage() {
       });
 
       nexeWS.on("STREAM_STATUS_UPDATE", (data) => {
-        const d = data as { userId: string; live: boolean; title?: string; game?: string; viewers?: number; startedAt?: string };
+        const d = data as { userId: string; live: boolean; title?: string; game?: string; viewers?: number; startedAt?: string; thumbnail?: string };
         useGuildStore.setState((s) => {
           const newMap = { ...s.streamStatusMap };
           if (d.live) {
-            newMap[d.userId] = { live: true, title: d.title, game: d.game, viewers: d.viewers, startedAt: d.startedAt };
+            newMap[d.userId] = { live: true, title: d.title, game: d.game, viewers: d.viewers, startedAt: d.startedAt, thumbnail: d.thumbnail };
           } else {
             delete newMap[d.userId];
           }

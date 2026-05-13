@@ -442,6 +442,7 @@ func (h *TwitchHandler) notifyPresenceStreamStatus(ctx context.Context, twitchID
 			payload["game"] = stream.GameName
 			payload["viewers"] = stream.ViewerCount
 			payload["startedAt"] = stream.StartedAt
+			payload["thumbnail"] = stream.ThumbnailURL
 		}
 	}
 
