@@ -164,7 +164,17 @@ func (h *TwitchHandler) TwitchCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// If not found by Twitch ID, try by email (user may have unlinked Twitch but still has account)
+	if user == nil && twitchUser.Email != "" {
+		user, _ = h.users.GetByEmail(r.Context(), twitchUser.Email)
+	}
+
 	if user != nil {
+		// Always update Twitch tokens on login (refreshes scopes)
+		if err := h.users.LinkTwitch(r.Context(), user.ID, twitchUser.ID, twitchUser.Login, twitchUser.DisplayName, token.AccessToken, token.RefreshToken); err != nil {
+			slog.Error("twitch login: failed to update tokens", "error", err)
+		}
+
 		// Existing user — create session and redirect with tokens
 		ip := r.Header.Get("X-Real-IP")
 		if ip == "" {
@@ -178,6 +188,9 @@ func (h *TwitchHandler) TwitchCallback(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
 			return
 		}
+
+		// Auto-sync roles with updated scopes
+		go h.autoSyncUserRoles(user.ID, twitchUser.ID)
 
 		redirectURL := fmt.Sprintf("%s/auth/twitch/callback?accessToken=%s&refreshToken=%s&isNew=false",
 			h.frontendURL,
