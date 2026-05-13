@@ -252,6 +252,11 @@ export interface Channel {
   isLiveChannel: boolean;
 }
 
+export interface ThreadInfo {
+  replyCount: number;
+  lastReplyAt?: string;
+}
+
 export interface Message {
   id: string;
   channelId: string;
@@ -259,6 +264,8 @@ export interface Message {
   content: string;
   type: string;
   replyToId?: string;
+  threadId?: string;
+  thread?: ThreadInfo;
   editedAt?: string;
   deleted: boolean;
   pinned: boolean;
@@ -495,6 +502,18 @@ export const api = {
       streamStartedAt?: string;
       streamThumbnail?: string;
     }[]>("POST", "/users/bulk-presence", { userIds });
+  },
+
+  getThreadMessages(messageId: string, limit?: number, before?: string) {
+    const params = new URLSearchParams();
+    if (limit) params.set("limit", String(limit));
+    if (before) params.set("before", before);
+    const qs = params.toString();
+    return request<Message[]>("GET", `/messages/${messageId}/thread${qs ? `?${qs}` : ""}`);
+  },
+
+  sendThreadMessage(messageId: string, content: string) {
+    return request<Message>("POST", `/messages/${messageId}/thread`, { content });
   },
 
   getActivity(userId: string, limit = 20) {

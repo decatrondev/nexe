@@ -79,6 +79,32 @@ export default function HomePage() {
 
       nexeWS.on("MESSAGE_CREATE", (data) => {
         const msg = data as Message;
+
+        // Thread message — add to thread messages, update parent indicator
+        if (msg.threadId) {
+          useGuildStore.setState((s) => {
+            const threadMsgs = s.threadMessages[msg.threadId!] || [];
+            if (threadMsgs.some((m) => m.id === msg.id)) return s;
+
+            // Update parent message thread info in main chat
+            const channelMsgs = s.messages[msg.channelId] || [];
+            const updatedChannelMsgs = channelMsgs.map((m) => {
+              if (m.id === msg.threadId) {
+                const existing = m.thread || { replyCount: 0 };
+                return { ...m, thread: { replyCount: existing.replyCount + 1, lastReplyAt: msg.createdAt } };
+              }
+              return m;
+            });
+
+            return {
+              threadMessages: { ...s.threadMessages, [msg.threadId!]: [...threadMsgs, msg] },
+              messages: { ...s.messages, [msg.channelId]: updatedChannelMsgs },
+            };
+          });
+          return; // Don't add to main chat or increment unread
+        }
+
+        // Normal message — existing logic
         useGuildStore.setState((s) => {
           const channelMsgs = s.messages[msg.channelId] || [];
           if (channelMsgs.some((m) => m.id === msg.id)) return s;
@@ -101,10 +127,7 @@ export default function HomePage() {
             }));
           }).catch(() => {});
         }
-        // Increment unread only if:
-        // 1. Not the active channel
-        // 2. Not own message
-        // 3. Channel messages are loaded (otherwise backend count is already correct)
+        // Increment unread
         const { activeChannelId, messages: storeMsgs } = useGuildStore.getState();
         const currentUserId = useAuthStore.getState().user?.id;
         const channelLoaded = !!storeMsgs[msg.channelId];

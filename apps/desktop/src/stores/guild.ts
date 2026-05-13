@@ -22,6 +22,8 @@ interface GuildState {
   presenceMap: Record<string, string>; // userId → status (online/idle/dnd/offline)
   streamStatusMap: Record<string, { live: boolean; title?: string; game?: string; viewers?: number; startedAt?: string; thumbnail?: string }>;
   liveGuilds: Set<string>; // guildIds that have at least one member streaming
+  activeThreadId: string | null;
+  threadMessages: Record<string, Message[]>;
   unreadChannels: Record<string, number>; // channelId → unread count
   lastReadMessageIds: Record<string, string>; // channelId → last read message id (for divider)
   emotesReady: number; // increment to trigger re-render when emotes load
@@ -45,6 +47,9 @@ interface GuildState {
   updateChannel: (channelId: string, data: { name?: string; topic?: string; slowmodeSeconds?: number }) => Promise<void>;
   deleteChannel: (channelId: string) => Promise<void>;
   reorderChannels: (guildId: string, channelIds: string[]) => Promise<void>;
+  openThread: (parentMessageId: string) => Promise<void>;
+  closeThread: () => void;
+  sendThreadMessage: (content: string) => Promise<void>;
   sendMessage: (content: string, replyToId?: string) => Promise<void>;
   editMessage: (messageId: string, content: string) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
@@ -72,6 +77,8 @@ export const useGuildStore = create<GuildState>((set, get) => ({
   presenceMap: {},
   streamStatusMap: {},
   liveGuilds: new Set<string>(),
+  activeThreadId: null,
+  threadMessages: {},
   unreadChannels: {},
   lastReadMessageIds: {},
   emotesReady: 0,
@@ -94,6 +101,8 @@ export const useGuildStore = create<GuildState>((set, get) => ({
       presenceMap: {},
       streamStatusMap: {},
       liveGuilds: new Set<string>(),
+      activeThreadId: null,
+      threadMessages: {},
       unreadChannels: {},
       lastReadMessageIds: {},
       loading: false,
@@ -374,6 +383,30 @@ export const useGuildStore = create<GuildState>((set, get) => ({
       return { channels: { ...s.channels, [guildId]: [...ordered, ...remaining] } };
     });
     await api.reorderChannels(guildId, channelIds);
+  },
+
+  async openThread(parentMessageId: string) {
+    set({ activeThreadId: parentMessageId });
+    try {
+      const messages = await api.getThreadMessages(parentMessageId);
+      set((s) => ({
+        threadMessages: { ...s.threadMessages, [parentMessageId]: messages ?? [] },
+      }));
+    } catch {
+      set((s) => ({
+        threadMessages: { ...s.threadMessages, [parentMessageId]: [] },
+      }));
+    }
+  },
+
+  closeThread() {
+    set({ activeThreadId: null });
+  },
+
+  async sendThreadMessage(content: string) {
+    const threadId = get().activeThreadId;
+    if (!threadId) return;
+    await api.sendThreadMessage(threadId, content);
   },
 
   async deleteChannel(channelId: string) {

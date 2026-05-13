@@ -6,6 +6,7 @@ import { nexeWS } from "../lib/websocket";
 import { hasPermission, computePermissions, Permissions } from "../lib/permissions";
 import { copyToClipboard, formatTimestamp, userColor, getRoleColor } from "../lib/utils";
 import { toast, ContextMenu, SkeletonMessage, type ContextMenuItem } from "@nexe/ui";
+import ThreadPanel from "./ThreadPanel";
 import MiniProfilePopover from "./MiniProfilePopover";
 import ProfileModal from "./ProfileModal";
 import EmotePicker, { emoteLookup } from "./EmotePicker";
@@ -76,6 +77,9 @@ export default function ChatArea() {
   const canKick = isOwner || hasPermission(myPerms, Permissions.KICK_MEMBERS);
   const canBan = isOwner || hasPermission(myPerms, Permissions.BAN_MEMBERS);
   const canTimeout = isOwner || hasPermission(myPerms, Permissions.TIMEOUT_MEMBERS);
+  const activeThreadId = useGuildStore((s) => s.activeThreadId);
+  const openThread = useGuildStore((s) => s.openThread);
+  const closeThread = useGuildStore((s) => s.closeThread);
 
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -663,6 +667,7 @@ export default function ChatArea() {
   }
 
   return (
+    <div className="flex min-w-0 flex-1">
     <div className="flex min-w-0 flex-1 flex-col bg-dark-850">
       {/* Channel header */}
       <div className="flex h-12 shrink-0 items-center gap-2 border-b border-dark-900 px-4">
@@ -959,6 +964,22 @@ export default function ChatArea() {
                           ))}
                         </div>
                       )}
+
+                      {/* Thread indicator */}
+                      {msg.thread && msg.thread.replyCount > 0 && (
+                        <button
+                          onClick={() => openThread(msg.id)}
+                          className="mt-1 flex items-center gap-1.5 text-xs text-nexe-400 hover:text-nexe-300 transition-colors"
+                        >
+                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                          </svg>
+                          <span>{msg.thread.replyCount} {msg.thread.replyCount === 1 ? "reply" : "replies"}</span>
+                          {msg.thread.lastReplyAt && (
+                            <span className="text-slate-500">· {formatTimestamp(msg.thread.lastReplyAt)}</span>
+                          )}
+                        </button>
+                      )}
                     </div>
 
                     {/* Hover actions */}
@@ -1218,6 +1239,7 @@ export default function ChatArea() {
             setEmojiPicker({ messageId: ctxMenu.messageId, x: ctxMenu.x + 180, y: ctxMenu.y });
           }},
           { label: "Reply", onClick: () => { if (ctxMsg) startReply(ctxMsg); } },
+          { label: "Create Thread", onClick: () => { openThread(ctxMenu.messageId); } },
           ...(ctxMenu.isOwn ? [{ label: "Edit Message", onClick: () => { if (ctxMsg) startEdit(ctxMsg); } }] : []),
           { label: "Copy Text", onClick: () => { if (ctxMsg) { copyToClipboard(ctxMsg.content); toast.success("Text copied"); } } },
           { label: "Copy ID", onClick: () => { copyToClipboard(ctxMenu.messageId); toast.success("ID copied"); } },
@@ -1340,6 +1362,12 @@ export default function ChatArea() {
           onClose={() => setEditHistoryMsg(null)}
         />
       )}
+    </div>
+
+    {/* Thread panel */}
+    {activeThreadId && (
+      <ThreadPanel parentMessageId={activeThreadId} onClose={closeThread} />
+    )}
     </div>
   );
 }

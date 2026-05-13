@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/decatrondev/nexe/services/messaging/internal/model"
+	"github.com/lib/pq"
 )
 
 type MessageRepository struct {
@@ -115,7 +116,7 @@ func (r *MessageRepository) ListByChannel(ctx context.Context, channelID string,
 			        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at,
 		        bridge_source, bridge_author, bridge_author_id
 			 FROM messages
-			 WHERE channel_id = $1 AND deleted = false AND created_at < (SELECT created_at FROM messages WHERE id = $2)
+			 WHERE channel_id = $1 AND deleted = false AND thread_id IS NULL AND created_at < (SELECT created_at FROM messages WHERE id = $2)
 			 ORDER BY created_at DESC
 			 LIMIT $3`,
 			channelID, *before, limit,
@@ -126,7 +127,7 @@ func (r *MessageRepository) ListByChannel(ctx context.Context, channelID string,
 			        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at,
 		        bridge_source, bridge_author, bridge_author_id
 			 FROM messages
-			 WHERE channel_id = $1 AND deleted = false
+			 WHERE channel_id = $1 AND deleted = false AND thread_id IS NULL
 			 ORDER BY created_at DESC
 			 LIMIT $2`,
 			channelID, limit,
@@ -170,12 +171,114 @@ func (r *MessageRepository) ListByChannel(ctx context.Context, channelID string,
 		return nil, err
 	}
 
+	// Batch fetch thread info for messages that might have threads
+	threadInfo, err := r.BatchGetThreadInfo(ctx, messageIDs)
+	if err != nil {
+		return nil, err
+	}
+
 	for i := range messages {
 		messages[i].Attachments = attachments[messages[i].ID]
 		messages[i].Reactions = reactions[messages[i].ID]
+		if ti, ok := threadInfo[messages[i].ID]; ok {
+			messages[i].Thread = &ti
+		}
 	}
 
 	return messages, nil
+}
+
+func (r *MessageRepository) ListByThread(ctx context.Context, threadID string, before *string, limit int) ([]model.Message, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+
+	var rows *sql.Rows
+	var err error
+
+	if before != nil {
+		rows, err = r.db.QueryContext(ctx,
+			`SELECT id, channel_id, COALESCE(author_id::text, ''), content, type, reply_to_id, thread_id,
+			        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at,
+			        bridge_source, bridge_author, bridge_author_id
+			 FROM messages
+			 WHERE thread_id = $1 AND deleted = false AND created_at < (SELECT created_at FROM messages WHERE id = $2)
+			 ORDER BY created_at ASC
+			 LIMIT $3`,
+			threadID, *before, limit,
+		)
+	} else {
+		rows, err = r.db.QueryContext(ctx,
+			`SELECT id, channel_id, COALESCE(author_id::text, ''), content, type, reply_to_id, thread_id,
+			        edited_at, deleted, pinned, pinned_by, embeds, mention_everyone, created_at,
+			        bridge_source, bridge_author, bridge_author_id
+			 FROM messages
+			 WHERE thread_id = $1 AND deleted = false
+			 ORDER BY created_at ASC
+			 LIMIT $2`,
+			threadID, limit,
+		)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("message list by thread: %w", err)
+	}
+	defer rows.Close()
+
+	var messages []model.Message
+	var messageIDs []string
+	for rows.Next() {
+		var msg model.Message
+		if err := rows.Scan(
+			&msg.ID, &msg.ChannelID, &msg.AuthorID, &msg.Content, &msg.Type,
+			&msg.ReplyToID, &msg.ThreadID, &msg.EditedAt, &msg.Deleted,
+			&msg.Pinned, &msg.PinnedBy, scanJSON(&msg.Embeds), &msg.MentionEveryone, &msg.CreatedAt,
+			&msg.BridgeSource, &msg.BridgeAuthor, &msg.BridgeAuthorID,
+		); err != nil {
+			return nil, fmt.Errorf("message list by thread scan: %w", err)
+		}
+		messages = append(messages, msg)
+		messageIDs = append(messageIDs, msg.ID)
+	}
+
+	if len(messageIDs) > 0 {
+		attachments, _ := r.fetchAttachments(ctx, messageIDs)
+		reactions, _ := r.fetchReactions(ctx, messageIDs)
+		for i := range messages {
+			messages[i].Attachments = attachments[messages[i].ID]
+			messages[i].Reactions = reactions[messages[i].ID]
+		}
+	}
+
+	return messages, nil
+}
+
+func (r *MessageRepository) BatchGetThreadInfo(ctx context.Context, messageIDs []string) (map[string]model.ThreadInfo, error) {
+	result := make(map[string]model.ThreadInfo)
+	if len(messageIDs) == 0 {
+		return result, nil
+	}
+
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT thread_id, COUNT(*), MAX(created_at)
+		 FROM messages
+		 WHERE thread_id = ANY($1) AND deleted = false
+		 GROUP BY thread_id`,
+		pq.Array(messageIDs),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("batch get thread info: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var threadID string
+		var ti model.ThreadInfo
+		if err := rows.Scan(&threadID, &ti.ReplyCount, &ti.LastReplyAt); err != nil {
+			return nil, fmt.Errorf("batch get thread info scan: %w", err)
+		}
+		result[threadID] = ti
+	}
+	return result, rows.Err()
 }
 
 func (r *MessageRepository) Update(ctx context.Context, id, newContent string) error {

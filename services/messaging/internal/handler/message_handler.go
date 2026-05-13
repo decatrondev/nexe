@@ -29,6 +29,8 @@ func (h *MessageHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /messages/{id}", h.EditMessage)
 	mux.HandleFunc("DELETE /messages/{id}", h.DeleteMessage)
 	mux.HandleFunc("GET /messages/{id}/edits", h.GetEditHistory)
+	mux.HandleFunc("GET /messages/{id}/thread", h.ListThreadMessages)
+	mux.HandleFunc("POST /messages/{id}/thread", h.SendThreadMessage)
 	mux.HandleFunc("PUT /messages/{id}/pin", h.PinMessage)
 	mux.HandleFunc("DELETE /messages/{id}/pin", h.UnpinMessage)
 
@@ -247,6 +249,54 @@ func (h *MessageHandler) GetEditHistory(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	writeJSON(w, http.StatusOK, edits)
+}
+
+func (h *MessageHandler) ListThreadMessages(w http.ResponseWriter, r *http.Request) {
+	parentID := r.PathValue("id")
+	limit := 50
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil {
+			limit = v
+		}
+	}
+	var before *string
+	if b := r.URL.Query().Get("before"); b != "" {
+		before = &b
+	}
+
+	messages, err := h.svc.ListThreadMessages(r.Context(), parentID, before, limit)
+	if err != nil {
+		classifyError(w, err)
+		return
+	}
+	if messages == nil {
+		writeJSON(w, http.StatusOK, []struct{}{})
+		return
+	}
+	writeJSON(w, http.StatusOK, messages)
+}
+
+func (h *MessageHandler) SendThreadMessage(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	parentID := r.PathValue("id")
+
+	var body struct {
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "invalid request body")
+		return
+	}
+
+	msg, err := h.svc.SendThreadMessage(r.Context(), parentID, userID, body.Content)
+	if err != nil {
+		classifyError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, msg)
 }
 
 func (h *MessageHandler) PinMessage(w http.ResponseWriter, r *http.Request) {

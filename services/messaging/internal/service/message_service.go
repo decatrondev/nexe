@@ -130,6 +130,67 @@ func (s *MessageService) GetMessage(ctx context.Context, id string) (*model.Mess
 	return msg, nil
 }
 
+// SendThreadMessage creates a message within a thread (reply to a parent message).
+func (s *MessageService) SendThreadMessage(ctx context.Context, parentMessageID, authorID, content string) (*model.Message, error) {
+	if strings.TrimSpace(content) == "" {
+		return nil, fmt.Errorf("message content cannot be empty")
+	}
+
+	// Fetch parent message to get channelID
+	parent, err := s.messages.GetByID(ctx, parentMessageID)
+	if err != nil || parent == nil {
+		return nil, fmt.Errorf("parent message not found")
+	}
+
+	channelID := parent.ChannelID
+
+	// Automod
+	if s.guildsURL != "" {
+		guildID, _ := s.messages.GetChannelGuildID(ctx, channelID)
+		if guildID != "" {
+			if blocked, reason := s.checkAutomod(ctx, guildID, content, authorID); blocked {
+				return nil, fmt.Errorf("message blocked by automod: %s", reason)
+			}
+		}
+	}
+
+	msg := &model.Message{
+		ChannelID: channelID,
+		AuthorID:  authorID,
+		Content:   content,
+		Type:      "default",
+		ThreadID:  &parentMessageID,
+	}
+
+	if err := s.messages.Create(ctx, msg); err != nil {
+		return nil, fmt.Errorf("send thread message: %w", err)
+	}
+
+	// Publish event
+	if s.events != nil {
+		go func() {
+			guildID, err := s.messages.GetChannelGuildID(context.Background(), channelID)
+			if err != nil {
+				return
+			}
+			s.events.Publish(context.Background(), guildID, channelID, EventMessageCreate, authorID, msg)
+		}()
+	}
+
+	return msg, nil
+}
+
+// ListThreadMessages returns messages within a thread.
+func (s *MessageService) ListThreadMessages(ctx context.Context, parentMessageID string, before *string, limit int) ([]model.Message, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	return s.messages.ListByThread(ctx, parentMessageID, before, limit)
+}
+
 // ListMessages returns paginated messages for a channel.
 func (s *MessageService) ListMessages(ctx context.Context, channelID string, before *string, limit int) ([]model.Message, error) {
 	if limit <= 0 {

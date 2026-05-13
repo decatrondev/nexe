@@ -200,6 +200,8 @@ func main() {
 	mux.Handle("PATCH /messages/{id}", guildsProxy(mp))
 	mux.Handle("DELETE /messages/{id}", guildsProxy(mp))
 	mux.Handle("GET /messages/{id}/edits", guildsProxy(mp))
+	mux.Handle("GET /messages/{id}/thread", guildsProxy(mp))
+	mux.Handle("POST /messages/{id}/thread", guildsProxy(mp))
 	mux.Handle("GET /messages/{id}/reactions", guildsProxy(mp))
 	mux.Handle("PUT /messages/{id}/pin", guildsProxy(mp))
 	mux.Handle("DELETE /messages/{id}/pin", guildsProxy(mp))

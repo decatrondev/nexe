@@ -21,7 +21,13 @@ type Message struct {
 	MentionEveryone bool            `json:"mentionEveryone"`
 	Attachments     []Attachment    `json:"attachments,omitempty"`
 	Reactions       []ReactionGroup `json:"reactions,omitempty"`
+	Thread          *ThreadInfo     `json:"thread,omitempty"`
 	CreatedAt       time.Time       `json:"createdAt"`
+}
+
+type ThreadInfo struct {
+	ReplyCount  int        `json:"replyCount"`
+	LastReplyAt *time.Time `json:"lastReplyAt,omitempty"`
 }
 
 type Embed struct {
