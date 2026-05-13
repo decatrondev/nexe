@@ -205,6 +205,7 @@ export interface UpdateProfileData {
   displayName?: string;
   bio?: string;
   avatarUrl?: string;
+  accentColor?: string;
   status?: "online" | "idle" | "dnd" | "offline" | "invisible";
   socialLinks?: SocialLink[];
 }
@@ -494,6 +495,10 @@ export const api = {
       streamStartedAt?: string;
       streamThumbnail?: string;
     }[]>("POST", "/users/bulk-presence", { userIds });
+  },
+
+  getActivity(userId: string, limit = 20) {
+    return request<{ id: string; type: string; data: Record<string, unknown>; createdAt: string }[]>("GET", `/users/${userId}/activity?limit=${limit}`);
   },
 
   getLiveGuilds(guildIds: string[]) {

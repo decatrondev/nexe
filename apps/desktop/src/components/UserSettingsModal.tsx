@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAuthStore } from "../stores/auth";
 import { api, type SocialLink } from "../lib/api";
 import ImageCropModal from "./ImageCropModal";
-import { Tabs, TabList, TabPanel, Select, type TabItem } from "@nexe/ui";
+import { Tabs, TabList, TabPanel, Select, ColorPicker, type TabItem } from "@nexe/ui";
 
 interface Props { onClose: () => void }
 
@@ -215,6 +215,7 @@ function ProfileTab() {
   const user = useAuthStore((s) => s.user);
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
+  const [accentColor, setAccentColor] = useState("#6366f1");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
@@ -236,6 +237,7 @@ function ProfileTab() {
       if (cancel) return;
       setDisplayName(p.displayName ?? "");
       setBio(p.bio ?? "");
+      setAccentColor(p.accentColor ?? "#6366f1");
       setAvatarUrl(p.avatarUrl ?? null);
       setBannerUrl(p.bannerUrl ?? null);
       setSocialLinks(p.socialLinks ?? []);
@@ -303,6 +305,7 @@ function ProfileTab() {
       await api.updateProfile({
         displayName: displayName.trim() || undefined,
         bio: bio.trim() || undefined,
+        accentColor,
         socialLinks,
       });
       setFeedback({ type: "success", msg: "Profile saved!" });
@@ -412,6 +415,9 @@ function ProfileTab() {
               className="w-full resize-none rounded-md border border-dark-700 bg-dark-800 px-3 py-2 text-sm text-slate-200 outline-none focus:border-nexe-500" />
             <p className="mt-1 text-right text-[11px] text-slate-600">{bio.length}/190</p>
           </div>
+
+          {/* Accent Color */}
+          <ColorPicker value={accentColor} onChange={setAccentColor} label="Profile Color" />
 
           {/* Social Links */}
           <div>

@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { api, type UserProfile, type UserBadge, type StreamStatus } from "../lib/api";
+import { useGuildStore } from "../stores/guild";
+import { useAuthStore } from "../stores/auth";
 import { userColor } from "../lib/utils";
+import { Tooltip } from "@nexe/ui";
 
 function formatDate(iso: string): string {
   try { return new Date(iso).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }); }
@@ -15,6 +18,38 @@ function timeSince(iso: string): string {
     const y = Math.floor(months / 12);
     return `${y} year${y > 1 ? "s" : ""}`;
   } catch { return ""; }
+}
+
+function timeAgo(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return "now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  return `${Math.floor(days / 30)}mo ago`;
+}
+
+function activityIcon(type: string): string {
+  switch (type) {
+    case "level_up": return "⬆";
+    case "badge_earned": return "🏅";
+    case "server_joined": return "📥";
+    case "message_milestone": return "💬";
+    default: return "•";
+  }
+}
+
+function activityLabel(type: string, data: Record<string, unknown>): string {
+  switch (type) {
+    case "level_up": return `Reached level ${data.level ?? "?"}`;
+    case "badge_earned": return `Earned badge "${data.name ?? "?"}"`;
+    case "server_joined": return `Joined ${data.guildName ?? "a server"}`;
+    case "message_milestone": return `Sent ${(data.count as number)?.toLocaleString() ?? "?"} messages`;
+    default: return type.replace(/_/g, " ");
+  }
 }
 
 interface Props {
@@ -34,13 +69,24 @@ function formatUptime(startedAt: string): string {
 export default function ProfileModal({ userId, streamStatus, onClose }: Props) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [badges, setBadges] = useState<UserBadge[]>([]);
+  const [activity, setActivity] = useState<{ id: string; type: string; data: Record<string, unknown>; createdAt: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const color = userColor(userId);
+  const myGuilds = useGuildStore((s) => s.guilds);
+  const allMembers = useGuildStore((s) => s.members);
+  const currentUser = useAuthStore((s) => s.user);
+
+  // Shared servers = guilds where both users are members
+  const sharedServers = myGuilds.filter((g) => {
+    const members = allMembers[g.id];
+    return members?.some((m) => m.userId === userId);
+  });
 
   useEffect(() => {
     let cancel = false;
     api.getProfile(userId).then((p) => { if (!cancel) { setProfile(p); setLoading(false); } }).catch(() => { if (!cancel) setLoading(false); });
     api.getBadges(userId).then((b) => { if (!cancel) setBadges(b ?? []); }).catch(() => {});
+    api.getActivity(userId, 10).then((a) => { if (!cancel) setActivity(a ?? []); }).catch(() => {});
     return () => { cancel = true; };
   }, [userId]);
 
@@ -202,9 +248,9 @@ export default function ProfileModal({ userId, streamStatus, onClose }: Props) {
               <div>
                 <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-400">Stats</h4>
                 <div className="grid grid-cols-3 gap-2">
-                  <StatCard label="Level" value={String(level)} />
-                  <StatCard label="Total XP" value={totalXp.toLocaleString()} />
-                  <StatCard label="Member" value={timeSince(profile.createdAt)} />
+                  <StatCard label="Level" value={String(level)} accent={accent} />
+                  <StatCard label="Total XP" value={totalXp.toLocaleString()} accent={accent} />
+                  <StatCard label="Member" value={timeSince(profile.createdAt)} accent={accent} />
                 </div>
               </div>
 
@@ -214,20 +260,59 @@ export default function ProfileModal({ userId, streamStatus, onClose }: Props) {
                 {badges.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
                     {badges.map((badge) => (
-                      <span
-                        key={badge.id}
-                        title={badge.description || badge.name}
-                        className="flex items-center gap-1.5 rounded-md bg-slate-800 px-3 py-1.5 text-[12px] font-medium text-slate-300"
-                      >
-                        <ProfileBadgeIcon iconUrl={badge.iconUrl} />
-                        {badge.name}
-                      </span>
+                      <Tooltip key={badge.id} content={<div className="text-center"><p className="font-semibold">{badge.name}</p>{badge.description && <p className="text-xs text-slate-400">{badge.description}</p>}</div>} side="top">
+                        <span
+                          className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium text-slate-200 transition-colors hover:brightness-110"
+                          style={{ backgroundColor: accent + "20", border: `1px solid ${accent}30` }}
+                        >
+                          <ProfileBadgeIcon iconUrl={badge.iconUrl} />
+                          {badge.name}
+                        </span>
+                      </Tooltip>
                     ))}
                   </div>
                 ) : (
                   <p className="text-[12px] text-slate-600">No badges earned yet</p>
                 )}
               </div>
+
+              {/* Shared Servers */}
+              {currentUser?.id !== userId && sharedServers.length > 0 && (
+                <div>
+                  <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                    Mutual Servers — {sharedServers.length}
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {sharedServers.map((g) => (
+                      <Tooltip key={g.id} content={g.name} side="top">
+                        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-dark-700 text-xs font-semibold text-slate-300">
+                          {g.iconUrl ? (
+                            <img src={g.iconUrl} alt={g.name} className="h-8 w-8 rounded-full object-cover" />
+                          ) : (
+                            g.name.charAt(0).toUpperCase()
+                          )}
+                        </span>
+                      </Tooltip>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Activity Feed */}
+              {activity.length > 0 && (
+                <div>
+                  <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-400">Recent Activity</h4>
+                  <div className="space-y-1.5">
+                    {activity.map((a) => (
+                      <div key={a.id} className="flex items-center gap-2 rounded-md bg-slate-800/50 px-3 py-2 text-[12px]">
+                        <span className="text-slate-500">{activityIcon(a.type)}</span>
+                        <span className="flex-1 text-slate-300">{activityLabel(a.type, a.data)}</span>
+                        <span className="shrink-0 text-[10px] text-slate-600">{timeAgo(a.createdAt)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Member since */}
               <p className="text-[11px] text-slate-600">Joined {formatDate(profile.createdAt)}</p>
@@ -243,9 +328,12 @@ export default function ProfileModal({ userId, streamStatus, onClose }: Props) {
   );
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
+function StatCard({ label, value, accent }: { label: string; value: string; accent?: string }) {
   return (
-    <div className="rounded-md bg-slate-800/80 px-3 py-3 text-center">
+    <div
+      className="rounded-lg px-3 py-3 text-center"
+      style={accent ? { backgroundColor: accent + "10", border: `1px solid ${accent}20` } : { backgroundColor: "rgba(30,41,59,0.8)" }}
+    >
       <p className="text-sm font-bold text-white">{value}</p>
       <p className="mt-0.5 text-[10px] uppercase text-slate-500">{label}</p>
     </div>
