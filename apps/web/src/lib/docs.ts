@@ -9,21 +9,43 @@ export interface DocMeta {
   title: string;
   preview: string;
   lastModified: Date;
+  category?: string;
 }
 
 export interface Doc extends DocMeta {
   content: string;
 }
 
-function slugFromFilename(filename: string): string {
-  return filename.replace(/\.md$/, "").toLowerCase();
+function slugFromFilename(relativePath: string): string {
+  return relativePath.replace(/\.md$/, "").toLowerCase().replace(/\//g, "--");
 }
 
-function titleFromFilename(filename: string): string {
-  return filename
-    .replace(/\.md$/, "")
+function titleFromFilename(relativePath: string): string {
+  const name = path.basename(relativePath, ".md");
+  return name
     .replace(/[-_]/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function categoryFromPath(relativePath: string): string | undefined {
+  const dir = path.dirname(relativePath);
+  if (dir === ".") return undefined;
+  return dir;
+}
+
+function getAllMdFiles(dir: string, base = ""): string[] {
+  if (!fs.existsSync(dir)) return [];
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  const results: string[] = [];
+  for (const entry of entries) {
+    const rel = base ? `${base}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      results.push(...getAllMdFiles(path.join(dir, entry.name), rel));
+    } else if (entry.name.endsWith(".md")) {
+      results.push(rel);
+    }
+  }
+  return results;
 }
 
 export function getDocList(): DocMeta[] {
@@ -31,11 +53,11 @@ export function getDocList(): DocMeta[] {
     return [];
   }
 
-  const files = fs.readdirSync(DOCS_DIR).filter((f) => f.endsWith(".md"));
+  const files = getAllMdFiles(DOCS_DIR);
 
   return files
-    .map((filename) => {
-      const filePath = path.join(DOCS_DIR, filename);
+    .map((relativePath) => {
+      const filePath = path.join(DOCS_DIR, relativePath);
       const stat = fs.statSync(filePath);
       const content = fs.readFileSync(filePath, "utf-8");
       const firstLines = content.split("\n").slice(0, 4).join(" ").trim();
@@ -45,11 +67,12 @@ export function getDocList(): DocMeta[] {
           : firstLines;
 
       return {
-        slug: slugFromFilename(filename),
-        name: filename,
-        title: titleFromFilename(filename),
+        slug: slugFromFilename(relativePath),
+        name: relativePath,
+        title: titleFromFilename(relativePath),
         preview,
         lastModified: stat.mtime,
+        category: categoryFromPath(relativePath),
       };
     })
     .sort((a, b) => a.title.localeCompare(b.title));
@@ -58,22 +81,27 @@ export function getDocList(): DocMeta[] {
 export interface CategorizedDocs {
   documentation: DocMeta[];
   roadmap: DocMeta[];
+  audit: DocMeta[];
 }
 
 export function getCategorizedDocs(): CategorizedDocs {
   const all = getDocList();
   const documentation: DocMeta[] = [];
   const roadmap: DocMeta[] = [];
+  const audit: DocMeta[] = [];
 
   for (const doc of all) {
-    if (doc.name.toUpperCase().startsWith("ROADMAP-")) {
+    const upper = doc.name.toUpperCase();
+    if (upper.startsWith("AUDIT/")) {
+      audit.push(doc);
+    } else if (path.basename(upper).startsWith("ROADMAP-")) {
       roadmap.push(doc);
     } else {
       documentation.push(doc);
     }
   }
 
-  return { documentation, roadmap };
+  return { documentation, roadmap, audit };
 }
 
 export function getDoc(slug: string): Doc | null {
@@ -81,7 +109,7 @@ export function getDoc(slug: string): Doc | null {
     return null;
   }
 
-  const files = fs.readdirSync(DOCS_DIR).filter((f) => f.endsWith(".md"));
+  const files = getAllMdFiles(DOCS_DIR);
   const match = files.find((f) => slugFromFilename(f) === slug);
 
   if (!match) {

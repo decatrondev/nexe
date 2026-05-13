@@ -57,6 +57,21 @@ func (r *OverrideRepository) Upsert(ctx context.Context, o *ChannelOverride) err
 	return err
 }
 
+func (r *OverrideRepository) GetByID(ctx context.Context, id string) (*ChannelOverride, error) {
+	var o ChannelOverride
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, channel_id, target_id, target_type, allow, deny
+		 FROM channel_overrides WHERE id = $1`, id).
+		Scan(&o.ID, &o.ChannelID, &o.TargetID, &o.TargetType, &o.Allow, &o.Deny)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &o, nil
+}
+
 func (r *OverrideRepository) Delete(ctx context.Context, id string) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM channel_overrides WHERE id = $1`, id)
 	return err

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -18,6 +19,7 @@ type TwitchService struct {
 	redirectURI  string
 	appToken     string
 	tokenExpires time.Time
+	tokenMu      sync.Mutex
 }
 
 func NewTwitchService(clientID, clientSecret, redirectURI string) *TwitchService {
@@ -129,6 +131,9 @@ func (s *TwitchService) GetUser(ctx context.Context, accessToken string) (*Twitc
 
 // GetAppToken gets a client credentials token for app-level API calls
 func (s *TwitchService) GetAppToken(ctx context.Context) (string, error) {
+	s.tokenMu.Lock()
+	defer s.tokenMu.Unlock()
+
 	if s.appToken != "" && time.Now().Before(s.tokenExpires) {
 		return s.appToken, nil
 	}
@@ -298,10 +303,15 @@ func (s *TwitchService) CheckFollower(ctx context.Context, broadcasterID, userID
 }
 
 // CheckSubscription checks if userID is subscribed to broadcasterID and returns the tier ("1000", "2000", "3000") or empty.
-func (s *TwitchService) CheckSubscription(ctx context.Context, broadcasterID, userID string) (bool, string, error) {
-	token, err := s.GetAppToken(ctx)
-	if err != nil {
-		return false, "", err
+// Requires broadcaster access token with channel:read:subscriptions scope.
+func (s *TwitchService) CheckSubscription(ctx context.Context, broadcasterID, userID, broadcasterToken string) (bool, string, error) {
+	token := broadcasterToken
+	if token == "" {
+		var err error
+		token, err = s.GetAppToken(ctx)
+		if err != nil {
+			return false, "", err
+		}
 	}
 
 	req, _ := http.NewRequestWithContext(ctx, "GET",
@@ -418,7 +428,7 @@ func (s *TwitchService) CheckUserTwitchStatus(ctx context.Context, broadcasterID
 	result.IsFollower = isFollower
 
 	// Check subscription
-	isSub, tier, err := s.CheckSubscription(ctx, broadcasterID, userTwitchID)
+	isSub, tier, err := s.CheckSubscription(ctx, broadcasterID, userTwitchID, broadcasterAccessToken)
 	if err != nil {
 		slog.Warn("twitch check subscription failed", "error", err)
 	}

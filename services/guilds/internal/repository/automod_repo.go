@@ -73,6 +73,22 @@ func (r *AutomodRepository) Update(ctx context.Context, id string, enabled *bool
 	return nil
 }
 
+func (r *AutomodRepository) GetByID(ctx context.Context, id string) (*AutomodRule, error) {
+	var rule AutomodRule
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, guild_id, type, enabled, config, action, action_duration_seconds, created_at, updated_at
+		 FROM automod_rules WHERE id = $1`, id).
+		Scan(&rule.ID, &rule.GuildID, &rule.Type, &rule.Enabled, &rule.Config,
+			&rule.Action, &rule.ActionDurationSeconds, &rule.CreatedAt, &rule.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &rule, nil
+}
+
 func (r *AutomodRepository) Delete(ctx context.Context, id string) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM automod_rules WHERE id = $1`, id)
 	return err

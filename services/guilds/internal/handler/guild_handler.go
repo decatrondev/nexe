@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/decatrondev/nexe/services/guilds/internal/model"
 	"github.com/decatrondev/nexe/services/guilds/internal/repository"
 	"github.com/decatrondev/nexe/services/guilds/internal/service"
 	"github.com/redis/go-redis/v9"
@@ -86,6 +87,11 @@ func (h *GuildHandler) RegisterRoutes(mux *http.ServeMux) {
 	// Bridge
 	mux.HandleFunc("POST /guilds/{id}/bridge", h.SetBridgeChannel)
 	mux.HandleFunc("DELETE /guilds/{id}/bridge", h.ClearBridgeChannel)
+
+	// Internal (service-to-service)
+	mux.HandleFunc("GET /internal/channels/{id}/access/{uid}", h.CheckChannelAccess)
+	mux.HandleFunc("GET /internal/guilds/by-streamer/{twitchId}", h.ListGuildsByStreamer)
+	mux.HandleFunc("GET /internal/guilds/with-twitch", h.ListGuildsWithTwitch)
 
 	// Moderation
 	mux.HandleFunc("POST /guilds/{id}/bans", h.BanMember)
@@ -1001,7 +1007,18 @@ func (h *GuildHandler) ListChannelOverrides(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *GuildHandler) UpsertChannelOverride(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
 	channelID := r.PathValue("id")
+
+	access, err := h.svc.CheckChannelAccess(r.Context(), channelID, userID)
+	if err != nil || !access.ManageChannels {
+		writeError(w, http.StatusForbidden, "forbidden", "missing MANAGE_CHANNELS permission")
+		return
+	}
+
 	var o repository.ChannelOverride
 	if err := json.NewDecoder(r.Body).Decode(&o); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "invalid request body")
@@ -1020,7 +1037,25 @@ func (h *GuildHandler) UpsertChannelOverride(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *GuildHandler) DeleteChannelOverride(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
 	id := r.PathValue("id")
+
+	// Get the override to find its channel
+	override, err := h.overrides.GetByID(r.Context(), id)
+	if err != nil || override == nil {
+		writeError(w, http.StatusNotFound, "not_found", "override not found")
+		return
+	}
+
+	access, err := h.svc.CheckChannelAccess(r.Context(), override.ChannelID, userID)
+	if err != nil || !access.ManageChannels {
+		writeError(w, http.StatusForbidden, "forbidden", "missing MANAGE_CHANNELS permission")
+		return
+	}
+
 	if err := h.overrides.Delete(r.Context(), id); err != nil {
 		writeError(w, http.StatusInternalServerError, "override_error", err.Error())
 		return
@@ -1044,7 +1079,15 @@ func (h *GuildHandler) ListAutomodRules(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *GuildHandler) CreateAutomodRule(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
 	guildID := r.PathValue("id")
+	if err := h.svc.CheckPermission(r.Context(), guildID, userID, model.PermManageGuild); err != nil { // PermManageGuild
+		writeError(w, http.StatusForbidden, "forbidden", "missing MANAGE_GUILD permission")
+		return
+	}
 	var rule repository.AutomodRule
 	if err := json.NewDecoder(r.Body).Decode(&rule); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_body", "invalid request body")
@@ -1062,7 +1105,20 @@ func (h *GuildHandler) CreateAutomodRule(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *GuildHandler) UpdateAutomodRule(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
 	id := r.PathValue("id")
+	rule, err := h.automod.GetByID(r.Context(), id)
+	if err != nil || rule == nil {
+		writeError(w, http.StatusNotFound, "not_found", "automod rule not found")
+		return
+	}
+	if err := h.svc.CheckPermission(r.Context(), rule.GuildID, userID, model.PermManageGuild); err != nil {
+		writeError(w, http.StatusForbidden, "forbidden", "missing MANAGE_GUILD permission")
+		return
+	}
 	var body struct {
 		Enabled *bool            `json:"enabled"`
 		Config  *json.RawMessage `json:"config"`
@@ -1080,7 +1136,20 @@ func (h *GuildHandler) UpdateAutomodRule(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *GuildHandler) DeleteAutomodRule(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
 	id := r.PathValue("id")
+	rule, err := h.automod.GetByID(r.Context(), id)
+	if err != nil || rule == nil {
+		writeError(w, http.StatusNotFound, "not_found", "automod rule not found")
+		return
+	}
+	if err := h.svc.CheckPermission(r.Context(), rule.GuildID, userID, model.PermManageGuild); err != nil {
+		writeError(w, http.StatusForbidden, "forbidden", "missing MANAGE_GUILD permission")
+		return
+	}
 	if err := h.automod.Delete(r.Context(), id); err != nil {
 		writeError(w, http.StatusInternalServerError, "automod_error", err.Error())
 		return
@@ -1126,6 +1195,31 @@ func (h *GuildHandler) CheckAutomod(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"blocked": false})
+}
+
+func (h *GuildHandler) ListGuildsByStreamer(w http.ResponseWriter, r *http.Request) {
+	twitchID := r.PathValue("twitchId")
+	guilds, err := h.svc.ListGuildsByStreamer(r.Context(), twitchID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "error", err.Error())
+		return
+	}
+	if guilds == nil {
+		guilds = []model.Guild{}
+	}
+	writeJSON(w, http.StatusOK, guilds)
+}
+
+func (h *GuildHandler) ListGuildsWithTwitch(w http.ResponseWriter, r *http.Request) {
+	guilds, err := h.svc.ListGuildsWithTwitch(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "error", err.Error())
+		return
+	}
+	if guilds == nil {
+		guilds = []model.Guild{}
+	}
+	writeJSON(w, http.StatusOK, guilds)
 }
 
 // checkAntiSpam uses Redis sliding windows to detect message spam and duplicate content.
@@ -1175,4 +1269,18 @@ func (h *GuildHandler) checkAntiSpam(ctx context.Context, guildID, content, user
 	}
 
 	return nil, ""
+}
+
+// CheckChannelAccess is an internal endpoint for service-to-service calls.
+// Returns membership status and permissions for a user in a channel's guild.
+func (h *GuildHandler) CheckChannelAccess(w http.ResponseWriter, r *http.Request) {
+	channelID := r.PathValue("id")
+	userID := r.PathValue("uid")
+
+	access, err := h.svc.CheckChannelAccess(r.Context(), channelID, userID)
+	if err != nil {
+		writeError(w, http.StatusForbidden, "access_denied", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, access)
 }

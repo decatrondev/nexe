@@ -55,7 +55,7 @@ func main() {
 	storageSvc := service.NewLocalStorage(cfg.UploadPath, cfg.UploadURL)
 
 	// Handlers
-	authHandler := handler.NewAuthHandler(authSvc)
+	authHandler := handler.NewAuthHandler(authSvc, rdb)
 	wsHandler := handler.NewWSHandler(jwtSvc, rdb, cfg.GuildsURL, cfg.PresenceURL, cfg.VoiceURL)
 	profileHandler := handler.NewProfileHandler(profileRepo)
 	uploadHandler := handler.NewUploadHandler(storageSvc, profileRepo)
@@ -68,7 +68,7 @@ func main() {
 	go twitchHandler.ReconcileStreamStatuses(context.Background())
 
 	// Middleware
-	authMiddleware := middleware.Auth(jwtSvc)
+	authMiddleware := middleware.Auth(jwtSvc, rdb)
 	authRateLimiter := middleware.NewRateLimiter(rdb, 10, time.Hour)   // 10 req/hr for auth
 	apiRateLimiter := middleware.NewRateLimiter(rdb, 100, time.Minute) // 100 req/min for API
 
@@ -250,9 +250,11 @@ func main() {
 	// Start Redis event subscribers for real-time broadcasting
 	go wsHandler.StartRedisSubscriber(context.Background())
 	go wsHandler.StartNotificationSubscriber(context.Background())
+	go twitchHandler.StartGuildMemberSubscriber(context.Background())
+	go twitchHandler.StartPeriodicSync(context.Background(), 10*time.Minute)
 
 	// CORS middleware
-	corsHandler := corsMiddleware(mux)
+	corsHandler := corsMiddleware(mux, cfg.FrontendURL)
 
 	addr := ":" + cfg.Port
 	slog.Info("gateway starting", "addr", addr, "env", cfg.Env)
@@ -263,9 +265,20 @@ func main() {
 	}
 }
 
-func corsMiddleware(next http.Handler) http.Handler {
+func corsMiddleware(next http.Handler, frontendURL string) http.Handler {
+	allowed := map[string]bool{
+		frontendURL:            true,
+		"http://localhost:1420": true,
+		"http://localhost:3013": true,
+		"https://tauri.localhost": true,
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*") // TODO: restrict in production
+		origin := r.Header.Get("Origin")
+		if allowed[origin] {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		w.Header().Set("Access-Control-Max-Age", "86400")

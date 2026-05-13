@@ -78,7 +78,16 @@ func classifyError(w http.ResponseWriter, err error) {
 // ---------------------------------------------------------------------------
 
 func (h *MessageHandler) ListMessages(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
 	channelID := r.PathValue("id")
+
+	if err := h.svc.VerifyChannelAccess(r.Context(), channelID, userID); err != nil {
+		writeError(w, http.StatusForbidden, "ACCESS_DENIED", "you don't have access to this channel")
+		return
+	}
 
 	var before *string
 	if b := r.URL.Query().Get("before"); b != "" {

@@ -50,15 +50,11 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 }
 
 func extractIP(r *http.Request) string {
-	// Check X-Real-IP (set by nginx)
+	// Only trust X-Real-IP set by nginx (not spoofable by client)
 	if ip := r.Header.Get("X-Real-IP"); ip != "" {
 		return ip
 	}
-	// Check X-Forwarded-For
-	if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
-		return ip
-	}
-	// Fallback to RemoteAddr
+	// Fallback to RemoteAddr (direct connection)
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr

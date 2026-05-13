@@ -17,6 +17,7 @@ const (
 	guildOnlinePrefix   = "nexe:guild:online:"
 	presenceTTL         = 5 * time.Minute
 	preferredTTL        = 30 * 24 * time.Hour // 30 days
+	guildOnlineTTL      = 10 * time.Minute
 )
 
 type PresenceService struct {
@@ -191,7 +192,11 @@ func (s *PresenceService) SetStreamStatus(ctx context.Context, userID string, st
 
 func (s *PresenceService) TrackGuildOnline(ctx context.Context, guildID, userID string) error {
 	key := guildOnlinePrefix + guildID
-	return s.rdb.SAdd(ctx, key, userID).Err()
+	if err := s.rdb.SAdd(ctx, key, userID).Err(); err != nil {
+		return err
+	}
+	s.rdb.Expire(ctx, key, guildOnlineTTL)
+	return nil
 }
 
 func (s *PresenceService) UntrackGuildOnline(ctx context.Context, guildID, userID string) error {

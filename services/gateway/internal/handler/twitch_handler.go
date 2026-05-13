@@ -59,6 +59,155 @@ func NewTwitchHandler(
 	}
 }
 
+// StartGuildMemberSubscriber listens for GUILD_MEMBER_ADD events and triggers Twitch role sync for new members.
+func (h *TwitchHandler) StartGuildMemberSubscriber(ctx context.Context) {
+	pubsub := h.rdb.PSubscribe(ctx, "nexe:events:guild:*")
+	defer pubsub.Close()
+
+	slog.Info("twitch member sync subscriber started")
+
+	ch := pubsub.Channel()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg, ok := <-ch:
+			if !ok {
+				return
+			}
+			var evt struct {
+				Type string          `json:"type"`
+				Data json.RawMessage `json:"data"`
+			}
+			if err := json.Unmarshal([]byte(msg.Payload), &evt); err != nil {
+				continue
+			}
+			if evt.Type != "GUILD_MEMBER_ADD" {
+				continue
+			}
+
+			var data struct {
+				UserID  string `json:"userId"`
+				GuildID string `json:"guildId"`
+			}
+			if err := json.Unmarshal(evt.Data, &data); err != nil {
+				continue
+			}
+
+			// Sync Twitch roles for the new member
+			go h.syncNewMemberRoles(ctx, data.GuildID, data.UserID)
+		}
+	}
+}
+
+func (h *TwitchHandler) syncNewMemberRoles(ctx context.Context, guildID, userID string) {
+	// Get guild info to check if it has Twitch integration
+	guildResp, err := h.getGuildFromService(ctx, guildID, userID)
+	if err != nil || guildResp == nil || guildResp.StreamerTwitchID == "" {
+		return
+	}
+
+	// Get user's Twitch ID
+	user, err := h.users.GetByID(ctx, userID)
+	if err != nil || user == nil || user.TwitchID == nil || *user.TwitchID == "" {
+		return
+	}
+
+	// Get broadcaster token
+	bToken := h.getValidBroadcasterToken(ctx, guildResp.StreamerTwitchID)
+	if bToken == "" {
+		return
+	}
+
+	// Check status
+	status, err := h.twitch.CheckUserTwitchStatus(ctx, guildResp.StreamerTwitchID, *user.TwitchID, bToken)
+	if err != nil {
+		return
+	}
+
+	// Get auto-roles
+	autoRoles, err := h.getAutoRolesFromService(ctx, guildID, userID)
+	if err != nil {
+		return
+	}
+	sourceToRole := make(map[string]string)
+	for _, r := range autoRoles {
+		if r.AutoSource != "" {
+			sourceToRole[r.AutoSource] = r.ID
+		}
+	}
+
+	shouldHave := map[string]bool{
+		"twitch_follower": status.IsFollower,
+		"twitch_sub_t1":   status.IsSubscriber && (status.SubTier == "1000" || status.SubTier == "2000" || status.SubTier == "3000"),
+		"twitch_sub_t2":   status.IsSubscriber && (status.SubTier == "2000" || status.SubTier == "3000"),
+		"twitch_sub_t3":   status.IsSubscriber && status.SubTier == "3000",
+		"twitch_vip":      status.IsVIP,
+		"twitch_mod":      status.IsMod,
+	}
+
+	for source, should := range shouldHave {
+		roleID, exists := sourceToRole[source]
+		if !exists || !should {
+			continue
+		}
+		h.assignRoleViaService(ctx, guildID, userID, roleID)
+	}
+
+	slog.Info("sync-on-join: completed", "user", userID, "guild", guildID)
+}
+
+// StartPeriodicSync runs a background ticker that syncs Twitch roles for all guilds with Twitch integration.
+func (h *TwitchHandler) StartPeriodicSync(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	slog.Info("twitch periodic sync started", "interval", interval)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			h.runPeriodicSync(ctx)
+		}
+	}
+}
+
+func (h *TwitchHandler) runPeriodicSync(ctx context.Context) {
+	req, _ := http.NewRequestWithContext(ctx, "GET", "http://localhost:8082/internal/guilds/with-twitch", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		slog.Error("periodic sync: failed to get twitch guilds", "error", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	var guilds []struct {
+		ID               string  `json:"id"`
+		StreamerTwitchID *string `json:"streamerTwitchId"`
+	}
+	json.NewDecoder(resp.Body).Decode(&guilds)
+
+	if len(guilds) == 0 {
+		return
+	}
+
+	slog.Info("periodic sync: starting", "guilds", len(guilds))
+
+	for _, g := range guilds {
+		if g.StreamerTwitchID == nil || *g.StreamerTwitchID == "" {
+			continue
+		}
+		h.syncAllGuildMembers(ctx, g.ID, *g.StreamerTwitchID)
+
+		// Throttle: 2 second delay between guilds to avoid Twitch rate limits
+		time.Sleep(2 * time.Second)
+	}
+
+	slog.Info("periodic sync: completed", "guilds", len(guilds))
+}
+
 // TwitchAuth redirects to Twitch OAuth
 // Query params: ?action=link&token=JWT (optional — for linking to existing account)
 func (h *TwitchHandler) TwitchAuth(w http.ResponseWriter, r *http.Request) {
@@ -389,6 +538,12 @@ func (h *TwitchHandler) EventSubWebhook(w http.ResponseWriter, r *http.Request) 
 			h.handleFollow(r.Context(), notification.Event)
 		case "channel.subscribe":
 			h.handleSubscribe(r.Context(), notification.Event)
+		case "channel.subscription.end":
+			h.handleSubscriptionEnd(r.Context(), notification.Event)
+		case "channel.moderator.add":
+			h.handleModeratorAdd(r.Context(), notification.Event)
+		case "channel.moderator.remove":
+			h.handleModeratorRemove(r.Context(), notification.Event)
 		case "channel.chat.message":
 			h.handleChatMessage(r.Context(), notification.Event)
 		}
@@ -502,29 +657,130 @@ func (h *TwitchHandler) ReconcileStreamStatuses(ctx context.Context) {
 	}
 }
 
+// findGuildsByStreamer calls guilds service to get all guilds for a broadcaster.
+func (h *TwitchHandler) findGuildsByStreamer(ctx context.Context, broadcasterTwitchID string) ([]struct {
+	ID string `json:"id"`
+}, error) {
+	req, _ := http.NewRequestWithContext(ctx, "GET",
+		fmt.Sprintf("http://localhost:8082/internal/guilds/by-streamer/%s", broadcasterTwitchID), nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var guilds []struct {
+		ID string `json:"id"`
+	}
+	json.NewDecoder(resp.Body).Decode(&guilds)
+	return guilds, nil
+}
+
+// syncAutoRoleBySource assigns or removes a specific auto-role source for a user across all guilds of a broadcaster.
+func (h *TwitchHandler) syncAutoRoleBySource(ctx context.Context, broadcasterTwitchID, userTwitchID, source string, assign bool) {
+	// Find Nexe user by Twitch ID
+	user, err := h.users.GetByTwitchID(ctx, userTwitchID)
+	if err != nil || user == nil {
+		slog.Debug("eventsub: user not found in Nexe", "twitchId", userTwitchID, "source", source)
+		return
+	}
+
+	// Find all guilds with this broadcaster
+	guilds, err := h.findGuildsByStreamer(ctx, broadcasterTwitchID)
+	if err != nil || len(guilds) == 0 {
+		return
+	}
+
+	for _, g := range guilds {
+		autoRoles, err := h.getAutoRolesFromService(ctx, g.ID, user.ID)
+		if err != nil {
+			continue
+		}
+		for _, r := range autoRoles {
+			if r.AutoSource == source {
+				if assign {
+					h.assignRoleViaService(ctx, g.ID, user.ID, r.ID)
+					slog.Info("eventsub: role assigned", "source", source, "user", user.Username, "guild", g.ID)
+				} else {
+					h.removeRoleViaService(ctx, g.ID, user.ID, r.ID)
+					slog.Info("eventsub: role removed", "source", source, "user", user.Username, "guild", g.ID)
+				}
+				break
+			}
+		}
+	}
+}
+
 func (h *TwitchHandler) handleFollow(ctx context.Context, event json.RawMessage) {
 	var e struct {
-		UserID               string `json:"user_id"`
-		UserLogin            string `json:"user_login"`
-		BroadcasterUserID    string `json:"broadcaster_user_id"`
+		UserID            string `json:"user_id"`
+		UserLogin         string `json:"user_login"`
+		BroadcasterUserID string `json:"broadcaster_user_id"`
 	}
 	json.Unmarshal(event, &e)
-
-	slog.Info("new follow", "from", e.UserLogin, "to", e.BroadcasterUserID)
-	// TODO: auto-assign follower role in streamer servers
+	slog.Info("eventsub: new follow", "from", e.UserLogin, "to", e.BroadcasterUserID)
+	go h.syncAutoRoleBySource(context.Background(), e.BroadcasterUserID, e.UserID, "twitch_follower", true)
 }
 
 func (h *TwitchHandler) handleSubscribe(ctx context.Context, event json.RawMessage) {
 	var e struct {
-		UserID               string `json:"user_id"`
-		UserLogin            string `json:"user_login"`
-		BroadcasterUserID    string `json:"broadcaster_user_id"`
-		Tier                 string `json:"tier"`
+		UserID            string `json:"user_id"`
+		UserLogin         string `json:"user_login"`
+		BroadcasterUserID string `json:"broadcaster_user_id"`
+		Tier              string `json:"tier"`
 	}
 	json.Unmarshal(event, &e)
+	slog.Info("eventsub: new subscription", "from", e.UserLogin, "to", e.BroadcasterUserID, "tier", e.Tier)
 
-	slog.Info("new subscription", "from", e.UserLogin, "to", e.BroadcasterUserID, "tier", e.Tier)
-	// TODO: auto-assign subscriber role in streamer servers
+	go func() {
+		ctx := context.Background()
+		// Assign the appropriate tier role(s)
+		h.syncAutoRoleBySource(ctx, e.BroadcasterUserID, e.UserID, "twitch_sub_t1", true)
+		if e.Tier == "2000" || e.Tier == "3000" {
+			h.syncAutoRoleBySource(ctx, e.BroadcasterUserID, e.UserID, "twitch_sub_t2", true)
+		}
+		if e.Tier == "3000" {
+			h.syncAutoRoleBySource(ctx, e.BroadcasterUserID, e.UserID, "twitch_sub_t3", true)
+		}
+	}()
+}
+
+func (h *TwitchHandler) handleSubscriptionEnd(ctx context.Context, event json.RawMessage) {
+	var e struct {
+		UserID            string `json:"user_id"`
+		UserLogin         string `json:"user_login"`
+		BroadcasterUserID string `json:"broadcaster_user_id"`
+	}
+	json.Unmarshal(event, &e)
+	slog.Info("eventsub: subscription ended", "from", e.UserLogin, "to", e.BroadcasterUserID)
+
+	go func() {
+		ctx := context.Background()
+		h.syncAutoRoleBySource(ctx, e.BroadcasterUserID, e.UserID, "twitch_sub_t1", false)
+		h.syncAutoRoleBySource(ctx, e.BroadcasterUserID, e.UserID, "twitch_sub_t2", false)
+		h.syncAutoRoleBySource(ctx, e.BroadcasterUserID, e.UserID, "twitch_sub_t3", false)
+	}()
+}
+
+func (h *TwitchHandler) handleModeratorAdd(ctx context.Context, event json.RawMessage) {
+	var e struct {
+		UserID            string `json:"user_id"`
+		UserLogin         string `json:"user_login"`
+		BroadcasterUserID string `json:"broadcaster_user_id"`
+	}
+	json.Unmarshal(event, &e)
+	slog.Info("eventsub: moderator added", "user", e.UserLogin, "broadcaster", e.BroadcasterUserID)
+	go h.syncAutoRoleBySource(context.Background(), e.BroadcasterUserID, e.UserID, "twitch_mod", true)
+}
+
+func (h *TwitchHandler) handleModeratorRemove(ctx context.Context, event json.RawMessage) {
+	var e struct {
+		UserID            string `json:"user_id"`
+		UserLogin         string `json:"user_login"`
+		BroadcasterUserID string `json:"broadcaster_user_id"`
+	}
+	json.Unmarshal(event, &e)
+	slog.Info("eventsub: moderator removed", "user", e.UserLogin, "broadcaster", e.BroadcasterUserID)
+	go h.syncAutoRoleBySource(context.Background(), e.BroadcasterUserID, e.UserID, "twitch_mod", false)
 }
 
 // SyncTwitchRoles checks the user's Twitch status against a guild's streamer and assigns/removes auto-roles.
@@ -561,6 +817,10 @@ func (h *TwitchHandler) SyncTwitchRoles(w http.ResponseWriter, r *http.Request) 
 
 	// 3. Get valid broadcaster token (auto-refreshes if expired)
 	broadcasterToken := h.getValidBroadcasterToken(r.Context(), guildResp.StreamerTwitchID)
+	if broadcasterToken == "" {
+		writeError(w, http.StatusBadGateway, "token_error", "broadcaster token unavailable for role sync")
+		return
+	}
 
 	// 4. Check Twitch status
 	status, err := h.twitch.CheckUserTwitchStatus(r.Context(), guildResp.StreamerTwitchID, *user.TwitchID, broadcasterToken)
@@ -730,21 +990,25 @@ func (h *TwitchHandler) getValidBroadcasterToken(ctx context.Context, broadcaste
 
 	token := *user.TwitchAccessToken
 
-	// Test if the token works by making a simple API call
-	req, _ := http.NewRequestWithContext(ctx, "GET", "https://api.twitch.tv/helix/users", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Client-Id", h.twitch.GetClientID())
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return token // can't test, return as-is
-	}
-	resp.Body.Close()
-
-	if resp.StatusCode == 200 {
-		return token // token is valid
+	// Check expiration proactively — only refresh if within 5 minutes of expiry or already expired
+	if user.TwitchTokenExpiresAt != nil && time.Until(*user.TwitchTokenExpiresAt) > 5*time.Minute {
+		return token // token still valid, no API call needed
 	}
 
-	// Token expired — refresh it
+	// Token expired — use distributed lock to prevent concurrent refreshes
+	lockKey := fmt.Sprintf("nexe:token_refresh:%s", broadcasterTwitchID)
+	acquired, _ := h.rdb.SetNX(ctx, lockKey, "1", 30*time.Second).Result()
+	if !acquired {
+		// Another goroutine is refreshing — wait briefly and re-read from DB
+		time.Sleep(2 * time.Second)
+		user, err = h.users.GetByTwitchID(ctx, broadcasterTwitchID)
+		if err == nil && user != nil && user.TwitchAccessToken != nil {
+			return *user.TwitchAccessToken
+		}
+		return ""
+	}
+	defer h.rdb.Del(ctx, lockKey)
+
 	if user.TwitchRefreshToken == nil || *user.TwitchRefreshToken == "" {
 		slog.Warn("broadcaster token expired, no refresh token", "twitchId", broadcasterTwitchID)
 		return ""
@@ -787,7 +1051,7 @@ func (h *TwitchHandler) SyncAllMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go h.syncAllGuildMembers(guildID, guildResp.StreamerTwitchID)
+	go h.syncAllGuildMembers(context.Background(), guildID, guildResp.StreamerTwitchID)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]string{"message": "syncing all members in background"},
@@ -796,25 +1060,11 @@ func (h *TwitchHandler) SyncAllMembers(w http.ResponseWriter, r *http.Request) {
 
 // syncAllGuildMembers syncs Twitch auto-roles for ALL members of a guild.
 // Called after enabling Twitch integration.
-func (h *TwitchHandler) syncAllGuildMembers(guildID, streamerTwitchID string) {
-	ctx := context.Background()
-
-	// Get all members of the guild
-	req, _ := http.NewRequestWithContext(ctx, "GET",
-		fmt.Sprintf("http://localhost:8082/guilds/%s/members?limit=100", guildID), nil)
-	req.Header.Set("X-User-ID", "system")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		slog.Error("sync-all: failed to get members", "error", err)
+func (h *TwitchHandler) syncAllGuildMembers(ctx context.Context, guildID, streamerTwitchID string) {
+	members := h.fetchAllGuildMembers(ctx, guildID)
+	if len(members) == 0 {
 		return
 	}
-	defer resp.Body.Close()
-
-	var members []struct {
-		UserID string `json:"userId"`
-	}
-	json.NewDecoder(resp.Body).Decode(&members)
 
 	// Get auto-roles for this guild
 	autoRoles, err := h.getAutoRolesFromService(ctx, guildID, "system")
@@ -832,6 +1082,10 @@ func (h *TwitchHandler) syncAllGuildMembers(guildID, streamerTwitchID string) {
 
 	// Get valid broadcaster token (auto-refreshes if expired)
 	bToken := h.getValidBroadcasterToken(ctx, streamerTwitchID)
+	if bToken == "" {
+		slog.Warn("syncAllGuildMembers: broadcaster token unavailable, skipping", "guild", guildID)
+		return
+	}
 
 	synced := 0
 	for _, member := range members {
@@ -859,10 +1113,20 @@ func (h *TwitchHandler) syncAllGuildMembers(guildID, streamerTwitchID string) {
 
 		for source, should := range shouldHave {
 			roleID, exists := sourceToRole[source]
-			if !exists || !should {
+			if !exists {
 				continue
 			}
-			h.assignRoleViaService(ctx, guildID, member.UserID, roleID)
+			if should {
+				if err := h.assignRoleViaService(ctx, guildID, member.UserID, roleID); err != nil {
+					slog.Error("sync-all: assign failed", "source", source, "user", member.UserID, "error", err)
+				}
+			} else {
+				if err := h.removeRoleViaService(ctx, guildID, member.UserID, roleID); err != nil {
+					slog.Debug("sync-all: remove (no-op or failed)", "source", source, "user", member.UserID, "error", err)
+				} else {
+					slog.Info("sync-all: role removed", "source", source, "user", member.UserID, "guild", guildID)
+				}
+			}
 		}
 		synced++
 	}
@@ -898,6 +1162,10 @@ func (h *TwitchHandler) autoSyncUserRoles(userID, twitchID string) {
 
 		// Get valid broadcaster token (auto-refreshes if expired)
 		bTok := h.getValidBroadcasterToken(ctx, *g.StreamerTwitchID)
+		if bTok == "" {
+			slog.Warn("autoSyncUserRoles: broadcaster token unavailable, skipping guild", "guild", g.ID)
+			continue
+		}
 
 		// Check status against this guild's streamer
 		status, err := h.twitch.CheckUserTwitchStatus(ctx, *g.StreamerTwitchID, twitchID, bTok)
@@ -935,6 +1203,8 @@ func (h *TwitchHandler) autoSyncUserRoles(userID, twitchID string) {
 			}
 			if should {
 				h.assignRoleViaService(ctx, g.ID, userID, roleID)
+			} else {
+				h.removeRoleViaService(ctx, g.ID, userID, roleID)
 			}
 		}
 
@@ -948,20 +1218,50 @@ func (h *TwitchHandler) autoSyncUserRoles(userID, twitchID string) {
 	}
 }
 
-// syncAllMembersForGuild syncs Twitch roles for all members in a guild.
-func (h *TwitchHandler) syncAllMembersForGuild(ctx context.Context, guildID, streamerTwitchID, broadcasterToken string) {
-	// Get all members
-	req, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://localhost:8082/guilds/%s/members?limit=200", guildID), nil)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return
-	}
-	defer resp.Body.Close()
-
-	var members []struct {
+// fetchAllGuildMembers fetches all members from guilds service with pagination.
+func (h *TwitchHandler) fetchAllGuildMembers(ctx context.Context, guildID string) []struct{ UserID string `json:"userId"` } {
+	var all []struct {
 		UserID string `json:"userId"`
 	}
-	json.NewDecoder(resp.Body).Decode(&members)
+	offset := 0
+	limit := 200
+
+	for {
+		url := fmt.Sprintf("http://localhost:8082/guilds/%s/members?limit=%d&offset=%d", guildID, limit, offset)
+		req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+		req.Header.Set("X-User-ID", "system")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			break
+		}
+
+		var batch []struct {
+			UserID string `json:"userId"`
+		}
+		json.NewDecoder(resp.Body).Decode(&batch)
+		resp.Body.Close()
+
+		if len(batch) == 0 {
+			break
+		}
+		all = append(all, batch...)
+
+		if len(batch) < limit {
+			break // last page
+		}
+		offset += limit
+	}
+
+	return all
+}
+
+// syncAllMembersForGuild syncs Twitch roles for all members in a guild.
+func (h *TwitchHandler) syncAllMembersForGuild(ctx context.Context, guildID, streamerTwitchID, broadcasterToken string) {
+	members := h.fetchAllGuildMembers(ctx, guildID)
+	if len(members) == 0 {
+		return
+	}
 
 	autoRoles, err := h.getAutoRolesFromService(ctx, guildID, "system")
 	if err != nil {
@@ -996,10 +1296,14 @@ func (h *TwitchHandler) syncAllMembersForGuild(ctx context.Context, guildID, str
 
 		for source, should := range shouldHave {
 			roleID, exists := sourceToRole[source]
-			if !exists || !should {
+			if !exists {
 				continue
 			}
-			h.assignRoleViaService(ctx, guildID, m.UserID, roleID)
+			if should {
+				h.assignRoleViaService(ctx, guildID, m.UserID, roleID)
+			} else {
+				h.removeRoleViaService(ctx, guildID, m.UserID, roleID)
+			}
 		}
 	}
 }
@@ -1031,6 +1335,9 @@ func (h *TwitchHandler) SetupEventSub(w http.ResponseWriter, r *http.Request) {
 		{"stream.offline", "1", map[string]string{"broadcaster_user_id": twitchID}},
 		{"channel.follow", "2", map[string]string{"broadcaster_user_id": twitchID, "moderator_user_id": twitchID}},
 		{"channel.subscribe", "1", map[string]string{"broadcaster_user_id": twitchID}},
+		{"channel.subscription.end", "1", map[string]string{"broadcaster_user_id": twitchID}},
+		{"channel.moderator.add", "1", map[string]string{"broadcaster_user_id": twitchID}},
+		{"channel.moderator.remove", "1", map[string]string{"broadcaster_user_id": twitchID}},
 		{"channel.chat.message", "1", map[string]string{"broadcaster_user_id": twitchID, "user_id": twitchID}},
 	}
 

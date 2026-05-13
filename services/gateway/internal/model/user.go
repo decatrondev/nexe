@@ -13,6 +13,7 @@ type User struct {
 	TwitchDisplayName    *string    `json:"twitchDisplayName,omitempty"`
 	TwitchAccessToken    *string    `json:"-"`
 	TwitchRefreshToken   *string    `json:"-"`
+	TwitchTokenExpiresAt *time.Time `json:"-"`
 	Status               string     `json:"status"`
 	CustomStatusText     *string    `json:"customStatusText,omitempty"`
 	CustomStatusEmoji    *string    `json:"customStatusEmoji,omitempty"`

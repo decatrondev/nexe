@@ -1,21 +1,56 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/decatrondev/nexe/services/gateway/internal/middleware"
 	"github.com/decatrondev/nexe/services/gateway/internal/service"
+	"github.com/redis/go-redis/v9"
 )
 
 type AuthHandler struct {
 	auth *service.AuthService
+	rdb  *redis.Client
 }
 
-func NewAuthHandler(auth *service.AuthService) *AuthHandler {
-	return &AuthHandler{auth: auth}
+func NewAuthHandler(auth *service.AuthService, rdb *redis.Client) *AuthHandler {
+	return &AuthHandler{auth: auth, rdb: rdb}
+}
+
+const (
+	loginMaxAttempts = 5
+	loginLockWindow  = 15 * time.Minute
+)
+
+func (h *AuthHandler) checkLoginLock(ctx context.Context, email string) error {
+	key := fmt.Sprintf("nexe:login_attempts:%s", email)
+	count, err := h.rdb.Get(ctx, key).Int()
+	if err != nil && err != redis.Nil {
+		return nil // Redis down = allow
+	}
+	if count >= loginMaxAttempts {
+		return fmt.Errorf("account temporarily locked, try again later")
+	}
+	return nil
+}
+
+func (h *AuthHandler) recordFailedLogin(ctx context.Context, email string) {
+	key := fmt.Sprintf("nexe:login_attempts:%s", email)
+	count, _ := h.rdb.Incr(ctx, key).Result()
+	if count == 1 {
+		h.rdb.Expire(ctx, key, loginLockWindow)
+	}
+}
+
+func (h *AuthHandler) clearLoginAttempts(ctx context.Context, email string) {
+	key := fmt.Sprintf("nexe:login_attempts:%s", email)
+	h.rdb.Del(ctx, key)
 }
 
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
@@ -67,6 +102,11 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := h.checkLoginLock(r.Context(), input.Email); err != nil {
+		writeError(w, http.StatusTooManyRequests, "account_locked", err.Error())
+		return
+	}
+
 	ip := r.Header.Get("X-Real-IP")
 	if ip == "" {
 		ip, _, _ = net.SplitHostPort(r.RemoteAddr)
@@ -78,6 +118,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	tokens, user, err := h.auth.Login(r.Context(), input, ip, userAgent)
 	if err != nil {
+		h.recordFailedLogin(r.Context(), input.Email)
 		if err.Error() == "email not verified" {
 			writeError(w, http.StatusForbidden, "email_not_verified", "Please verify your email before logging in")
 			return
@@ -85,6 +126,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "login_failed", err.Error())
 		return
 	}
+
+	h.clearLoginAttempts(r.Context(), input.Email)
 
 	// 2FA required — tokens is nil, user is set
 	if tokens == nil && user != nil {
@@ -100,10 +143,11 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			"refreshToken": tokens.RefreshToken,
 			"expiresIn":    tokens.ExpiresIn,
 			"user": map[string]interface{}{
-				"id":       user.ID,
-				"username": user.Username,
-				"email":    user.Email,
-				"tier":     user.Tier,
+				"id":          user.ID,
+				"username":    user.Username,
+				"email":       user.Email,
+				"tier":        user.Tier,
+				"totpEnabled": user.TOTPEnabled,
 			},
 		},
 	})
@@ -161,6 +205,14 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Blacklist current JWT until it expires
+	if claims.ID != "" && claims.ExpiresAt != nil {
+		ttl := time.Until(claims.ExpiresAt.Time)
+		if ttl > 0 {
+			h.rdb.Set(r.Context(), fmt.Sprintf("nexe:jwt_blacklist:%s", claims.ID), "1", ttl)
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]string{"message": "logged out"},
 	})
@@ -176,6 +228,14 @@ func (h *AuthHandler) LogoutAll(w http.ResponseWriter, r *http.Request) {
 	if err := h.auth.LogoutAll(r.Context(), claims.Subject); err != nil {
 		writeError(w, http.StatusInternalServerError, "logout_failed", err.Error())
 		return
+	}
+
+	// Blacklist current JWT until it expires
+	if claims.ID != "" && claims.ExpiresAt != nil {
+		ttl := time.Until(claims.ExpiresAt.Time)
+		if ttl > 0 {
+			h.rdb.Set(r.Context(), fmt.Sprintf("nexe:jwt_blacklist:%s", claims.ID), "1", ttl)
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -246,10 +306,11 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := map[string]interface{}{
-		"id":       user.ID,
-		"username": user.Username,
-		"email":    user.Email,
-		"tier":     user.Tier,
+		"id":          user.ID,
+		"username":    user.Username,
+		"email":       user.Email,
+		"tier":        user.Tier,
+		"totpEnabled": user.TOTPEnabled,
 	}
 	if user.TwitchID != nil && *user.TwitchID != "" {
 		resp["twitchId"] = *user.TwitchID

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log"
 	"log/slog"
 	"os"
 )
@@ -29,16 +30,16 @@ type Config struct {
 }
 
 func Load() *Config {
-	return &Config{
+	cfg := &Config{
 		Env:                  getEnv("NEXE_ENV", "development"),
 		Port:                 getEnv("NEXE_GATEWAY_PORT", "8090"),
-		DBUrl:                getEnv("NEXE_DB_URL", "postgresql://decatron_user:lfIEcCZ11kIEM573mA0PA@localhost:5432/nexe_dev?sslmode=disable"),
+		DBUrl:                requireEnv("NEXE_DB_URL"),
 		RedisUrl:             getEnv("NEXE_REDIS_URL", "redis://localhost:6379/3"),
-		JWTSecret:            getEnv("NEXE_JWT_SECRET", "nexe-dev-secret-change-in-production"),
+		JWTSecret:            requireEnv("NEXE_JWT_SECRET"),
 		TwitchClientID:       getEnv("NEXE_TWITCH_CLIENT_ID", ""),
 		TwitchClientSecret:   getEnv("NEXE_TWITCH_CLIENT_SECRET", ""),
 		TwitchRedirectURI:    getEnv("NEXE_TWITCH_REDIRECT_URI", "https://api.nexe.decatron.net/auth/twitch/callback"),
-		TwitchEventSubSecret: getEnv("NEXE_TWITCH_EVENTSUB_SECRET", "nexe-eventsub-secret"),
+		TwitchEventSubSecret: requireEnv("NEXE_TWITCH_EVENTSUB_SECRET"),
 		BaseURL:              getEnv("NEXE_BASE_URL", "https://api.nexe.decatron.net"),
 		ResendAPIKey:         getEnv("RESEND_API_KEY", ""),
 		EmailFrom:            getEnv("NEXE_EMAIL_FROM", "Nexe <nexe@decatron.net>"),
@@ -51,6 +52,7 @@ func Load() *Config {
 		UploadPath:           getEnv("NEXE_UPLOAD_PATH", "/var/www/html/nexe/uploads"),
 		UploadURL:            getEnv("NEXE_UPLOAD_URL", "https://nexeuploads.decatron.net"),
 	}
+	return cfg
 }
 
 func (c *Config) LogLevel() slog.Level {
@@ -65,4 +67,12 @@ func getEnv(key, fallback string) string {
 		return val
 	}
 	return fallback
+}
+
+func requireEnv(key string) string {
+	val := os.Getenv(key)
+	if val == "" {
+		log.Fatalf("FATAL: environment variable %s is required but not set", key)
+	}
+	return val
 }

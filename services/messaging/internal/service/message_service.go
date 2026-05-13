@@ -29,10 +29,54 @@ func NewMessageService(messages *repository.MessageRepository, reactions *reposi
 	}
 }
 
+type ChannelAccess struct {
+	GuildID        string `json:"guildId"`
+	IsMember       bool   `json:"isMember"`
+	ManageMessages bool   `json:"manageMessages"`
+	ManageChannels bool   `json:"manageChannels"`
+	ManageGuild    bool   `json:"manageGuild"`
+	Administrator  bool   `json:"administrator"`
+}
+
+func (s *MessageService) checkChannelAccess(ctx context.Context, channelID, userID string) (*ChannelAccess, error) {
+	if s.guildsURL == "" {
+		return &ChannelAccess{IsMember: true}, nil
+	}
+	url := fmt.Sprintf("%s/internal/channels/%s/access/%s", s.guildsURL, channelID, userID)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("access check: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("access check: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("access denied")
+	}
+	var access ChannelAccess
+	if err := json.NewDecoder(resp.Body).Decode(&access); err != nil {
+		return nil, fmt.Errorf("access check: %w", err)
+	}
+	return &access, nil
+}
+
+// VerifyChannelAccess checks if a user is a member of the channel's guild.
+func (s *MessageService) VerifyChannelAccess(ctx context.Context, channelID, userID string) error {
+	_, err := s.checkChannelAccess(ctx, channelID, userID)
+	return err
+}
+
 // SendMessage validates content and creates a new message.
 func (s *MessageService) SendMessage(ctx context.Context, channelID, authorID, content string, replyToID *string) (*model.Message, error) {
 	if strings.TrimSpace(content) == "" {
 		return nil, fmt.Errorf("message content cannot be empty")
+	}
+
+	// Verify membership
+	if _, err := s.checkChannelAccess(ctx, channelID, authorID); err != nil {
+		return nil, err
 	}
 
 	// Automod + emote validation
@@ -261,7 +305,17 @@ func (s *MessageService) DeleteMessage(ctx context.Context, messageID, requester
 		return fmt.Errorf("message not found")
 	}
 
-	// For now anyone can delete; permission check will be added when gateway proxies.
+	// Permission check: author can delete own, MANAGE_MESSAGES can delete any
+	if msg.AuthorID != requesterID {
+		access, err := s.checkChannelAccess(ctx, msg.ChannelID, requesterID)
+		if err != nil {
+			return fmt.Errorf("access denied")
+		}
+		if !access.ManageMessages {
+			return fmt.Errorf("missing permission to delete this message")
+		}
+	}
+
 	if err := s.messages.Delete(ctx, messageID); err != nil {
 		return fmt.Errorf("delete message: %w", err)
 	}

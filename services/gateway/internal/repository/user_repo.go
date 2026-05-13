@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/decatrondev/nexe/services/gateway/internal/model"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type UserRepository struct {
@@ -45,7 +46,7 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*model.User, e
 	return r.scanUser(r.db.QueryRowContext(ctx, `
 		SELECT u.id, u.username, u.email, u.email_verified, u.password_hash,
 		       u.twitch_id, u.twitch_login, u.twitch_display_name,
-		       u.twitch_access_token, u.twitch_refresh_token,
+		       u.twitch_access_token, u.twitch_refresh_token, u.twitch_token_expires_at,
 		       u.status, u.custom_status_text, u.custom_status_emoji,
 		       COALESCE(ut.tier, 'free'), u.flags, u.disabled, u.totp_secret, COALESCE(u.totp_enabled, false), u.created_at, u.updated_at
 		FROM users u
@@ -57,7 +58,7 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*model.U
 	return r.scanUser(r.db.QueryRowContext(ctx, `
 		SELECT u.id, u.username, u.email, u.email_verified, u.password_hash,
 		       u.twitch_id, u.twitch_login, u.twitch_display_name,
-		       u.twitch_access_token, u.twitch_refresh_token,
+		       u.twitch_access_token, u.twitch_refresh_token, u.twitch_token_expires_at,
 		       u.status, u.custom_status_text, u.custom_status_emoji,
 		       COALESCE(ut.tier, 'free'), u.flags, u.disabled, u.totp_secret, COALESCE(u.totp_enabled, false), u.created_at, u.updated_at
 		FROM users u
@@ -69,7 +70,7 @@ func (r *UserRepository) GetByUsername(ctx context.Context, username string) (*m
 	return r.scanUser(r.db.QueryRowContext(ctx, `
 		SELECT u.id, u.username, u.email, u.email_verified, u.password_hash,
 		       u.twitch_id, u.twitch_login, u.twitch_display_name,
-		       u.twitch_access_token, u.twitch_refresh_token,
+		       u.twitch_access_token, u.twitch_refresh_token, u.twitch_token_expires_at,
 		       u.status, u.custom_status_text, u.custom_status_emoji,
 		       COALESCE(ut.tier, 'free'), u.flags, u.disabled, u.totp_secret, COALESCE(u.totp_enabled, false), u.created_at, u.updated_at
 		FROM users u
@@ -81,7 +82,7 @@ func (r *UserRepository) GetByTwitchID(ctx context.Context, twitchID string) (*m
 	return r.scanUser(r.db.QueryRowContext(ctx, `
 		SELECT u.id, u.username, u.email, u.email_verified, u.password_hash,
 		       u.twitch_id, u.twitch_login, u.twitch_display_name,
-		       u.twitch_access_token, u.twitch_refresh_token,
+		       u.twitch_access_token, u.twitch_refresh_token, u.twitch_token_expires_at,
 		       u.status, u.custom_status_text, u.custom_status_emoji,
 		       COALESCE(ut.tier, 'free'), u.flags, u.disabled, u.totp_secret, COALESCE(u.totp_enabled, false), u.created_at, u.updated_at
 		FROM users u
@@ -159,7 +160,7 @@ func (r *UserRepository) scanUser(row *sql.Row) (*model.User, error) {
 	err := row.Scan(
 		&u.ID, &u.Username, &u.Email, &u.EmailVerified, &u.PasswordHash,
 		&u.TwitchID, &u.TwitchLogin, &u.TwitchDisplayName,
-		&u.TwitchAccessToken, &u.TwitchRefreshToken,
+		&u.TwitchAccessToken, &u.TwitchRefreshToken, &u.TwitchTokenExpiresAt,
 		&u.Status, &u.CustomStatusText, &u.CustomStatusEmoji,
 		&u.Tier, &u.Flags, &u.Disabled, &u.TOTPSecret, &u.TOTPEnabled, &u.CreatedAt, &u.UpdatedAt,
 	)
@@ -193,11 +194,14 @@ func (r *UserRepository) DisableTOTP(ctx context.Context, userID string) error {
 }
 
 func (r *UserRepository) SaveRecoveryCodes(ctx context.Context, userID string, codes []string) error {
-	// Delete old codes first
 	_, _ = r.db.ExecContext(ctx, `DELETE FROM recovery_codes WHERE user_id = $1`, userID)
 	for _, code := range codes {
-		_, err := r.db.ExecContext(ctx,
-			`INSERT INTO recovery_codes (user_id, code) VALUES ($1, $2)`, userID, code)
+		hash, err := bcrypt.GenerateFromPassword([]byte(code), bcrypt.DefaultCost)
+		if err != nil {
+			return fmt.Errorf("hash recovery code: %w", err)
+		}
+		_, err = r.db.ExecContext(ctx,
+			`INSERT INTO recovery_codes (user_id, code) VALUES ($1, $2)`, userID, string(hash))
 		if err != nil {
 			return err
 		}
@@ -206,11 +210,23 @@ func (r *UserRepository) SaveRecoveryCodes(ctx context.Context, userID string, c
 }
 
 func (r *UserRepository) UseRecoveryCode(ctx context.Context, userID, code string) (bool, error) {
-	res, err := r.db.ExecContext(ctx,
-		`UPDATE recovery_codes SET used = true WHERE user_id = $1 AND code = $2 AND used = false`, userID, code)
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, code FROM recovery_codes WHERE user_id = $1 AND used = false`, userID)
 	if err != nil {
 		return false, err
 	}
-	n, _ := res.RowsAffected()
-	return n > 0, nil
+	defer rows.Close()
+
+	for rows.Next() {
+		var id, hash string
+		if err := rows.Scan(&id, &hash); err != nil {
+			return false, err
+		}
+		if bcrypt.CompareHashAndPassword([]byte(hash), []byte(code)) == nil {
+			_, err := r.db.ExecContext(ctx,
+				`UPDATE recovery_codes SET used = true WHERE id = $1`, id)
+			return err == nil, err
+		}
+	}
+	return false, nil
 }

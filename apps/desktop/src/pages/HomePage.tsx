@@ -64,16 +64,23 @@ export default function HomePage() {
     }
 
     // Connect WebSocket
+    let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+    let idleTimeout: ReturnType<typeof setTimeout> | null = null;
+    let isIdle = false;
+    // eslint-disable-next-line @typescript-eslint/no-empty-function
+    let resetIdle = () => {};
+
     if (token) {
-      // Clear any stale handlers before registering (prevents duplicates on re-mount)
-      nexeWS.off("MESSAGE_CREATE");
-      nexeWS.off("MESSAGE_UPDATE");
-      nexeWS.off("MESSAGE_DELETE");
-      nexeWS.off("GUILD_MEMBER_ADD");
-      nexeWS.off("VOICE_STATE_UPDATE");
-      nexeWS.off("PRESENCE_UPDATE");
-      nexeWS.off("STREAM_STATUS_UPDATE");
-      nexeWS.off("NOTIFICATION_CREATE");
+      // Clear all stale handlers before registering (prevents duplicates on re-mount)
+      const events = [
+        "MESSAGE_CREATE", "MESSAGE_UPDATE", "MESSAGE_DELETE",
+        "GUILD_MEMBER_ADD", "GUILD_MEMBER_REMOVE", "GUILD_MEMBER_UPDATE",
+        "CHANNEL_UPDATE", "GUILD_BAN_REMOVE",
+        "GUILD_ROLE_CREATE", "GUILD_ROLE_UPDATE", "GUILD_ROLE_DELETE",
+        "VOICE_STATE_UPDATE", "PRESENCE_UPDATE", "STREAM_STATUS_UPDATE",
+        "NOTIFICATION_CREATE",
+      ];
+      events.forEach((e) => nexeWS.off(e));
 
       nexeWS.connect(token);
 
@@ -338,13 +345,11 @@ export default function HomePage() {
       });
 
       // Presence heartbeat every 60s
-      setInterval(() => {
+      heartbeatInterval = setInterval(() => {
         api.presenceHeartbeat().catch(() => {});
       }, 60000);
 
       // Auto-idle after 5 minutes of inactivity
-      let idleTimeout: ReturnType<typeof setTimeout> | null = null;
-      let isIdle = false;
       const IDLE_DELAY = 5 * 60 * 1000; // 5 minutes
 
       const setStatus = (status: string) => {
@@ -360,7 +365,7 @@ export default function HomePage() {
         }
       };
 
-      const resetIdle = () => {
+      resetIdle = () => {
         if (isIdle) {
           isIdle = false;
           setStatus("online");
@@ -406,6 +411,11 @@ export default function HomePage() {
 
     return () => {
       window.removeEventListener("beforeunload", handleUnload);
+      window.removeEventListener("mousemove", resetIdle);
+      window.removeEventListener("keydown", resetIdle);
+      window.removeEventListener("click", resetIdle);
+      if (idleTimeout) clearTimeout(idleTimeout);
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
       nexeWS.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

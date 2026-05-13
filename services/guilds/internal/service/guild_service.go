@@ -57,6 +57,11 @@ func NewGuildService(
 // Permission helper
 // ---------------------------------------------------------------------------
 
+// CheckPermission verifies that a user has a specific permission in a guild.
+func (s *GuildService) CheckPermission(ctx context.Context, guildID, userID string, perm int64) error {
+	return s.checkPermission(ctx, guildID, userID, perm)
+}
+
 func (s *GuildService) checkPermission(ctx context.Context, guildID, userID string, perm int64) error {
 	guild, err := s.guilds.GetByID(ctx, guildID)
 	if err != nil {
@@ -209,6 +214,9 @@ func (s *GuildService) CreateChannel(ctx context.Context, guildID, name, channel
 	if err := s.channels.Create(ctx, ch); err != nil {
 		return nil, fmt.Errorf("create channel: %w", err)
 	}
+
+	go s.events.Publish(context.Background(), guildID, "CHANNEL_CREATE", ch)
+
 	return ch, nil
 }
 
@@ -255,6 +263,12 @@ func (s *GuildService) DeleteChannel(ctx context.Context, channelID, requesterID
 	if err := s.channels.Delete(ctx, channelID); err != nil {
 		return fmt.Errorf("delete channel: %w", err)
 	}
+
+	go s.events.Publish(context.Background(), ch.GuildID, "CHANNEL_DELETE", map[string]string{
+		"id":      channelID,
+		"guildId": ch.GuildID,
+	})
+
 	return nil
 }
 
@@ -1123,4 +1137,74 @@ func (s *GuildService) checkAntiRaid(ctx context.Context, guildID, userID string
 	}
 
 	return ""
+}
+
+// ChannelAccess is the response for internal access checks.
+type ChannelAccess struct {
+	GuildID          string `json:"guildId"`
+	IsMember         bool   `json:"isMember"`
+	IsOwner          bool   `json:"isOwner"`
+	ManageMessages   bool   `json:"manageMessages"`
+	ManageChannels   bool   `json:"manageChannels"`
+	ManageGuild      bool   `json:"manageGuild"`
+	Administrator    bool   `json:"administrator"`
+}
+
+// ListGuildsWithTwitch returns all guilds that have Twitch integration enabled.
+func (s *GuildService) ListGuildsWithTwitch(ctx context.Context) ([]model.Guild, error) {
+	return s.guilds.ListWithTwitch(ctx)
+}
+
+// ListGuildsByStreamer returns all guilds with a given streamer Twitch ID.
+func (s *GuildService) ListGuildsByStreamer(ctx context.Context, twitchID string) ([]model.Guild, error) {
+	return s.guilds.ListByStreamerTwitchID(ctx, twitchID)
+}
+
+// CheckChannelAccess verifies if a user has access to a channel and returns their permissions.
+func (s *GuildService) CheckChannelAccess(ctx context.Context, channelID, userID string) (*ChannelAccess, error) {
+	ch, err := s.channels.GetByID(ctx, channelID)
+	if err != nil || ch == nil {
+		return nil, fmt.Errorf("channel not found")
+	}
+
+	guild, err := s.guilds.GetByID(ctx, ch.GuildID)
+	if err != nil || guild == nil {
+		return nil, fmt.Errorf("guild not found")
+	}
+
+	access := &ChannelAccess{GuildID: ch.GuildID}
+
+	if guild.OwnerID == userID {
+		access.IsMember = true
+		access.IsOwner = true
+		access.ManageMessages = true
+		access.ManageChannels = true
+		access.ManageGuild = true
+		access.Administrator = true
+		return access, nil
+	}
+
+	member, err := s.members.GetByGuildAndUser(ctx, ch.GuildID, userID)
+	if err != nil || member == nil {
+		return nil, fmt.Errorf("not a member of this guild")
+	}
+	access.IsMember = true
+
+	perms, err := s.members.GetMemberPermissions(ctx, member.ID, ch.GuildID)
+	if err != nil {
+		return access, nil
+	}
+
+	if model.HasPermission(perms, model.PermAdministrator) {
+		access.Administrator = true
+		access.ManageMessages = true
+		access.ManageChannels = true
+		access.ManageGuild = true
+	} else {
+		access.ManageMessages = model.HasPermission(perms, model.PermManageMessages)
+		access.ManageChannels = model.HasPermission(perms, model.PermManageChannels)
+		access.ManageGuild = model.HasPermission(perms, model.PermManageGuild)
+	}
+
+	return access, nil
 }

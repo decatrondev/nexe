@@ -2,17 +2,19 @@ package middleware
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/decatrondev/nexe/services/gateway/internal/service"
+	"github.com/redis/go-redis/v9"
 )
 
 type contextKey string
 
 const UserClaimsKey contextKey = "userClaims"
 
-func Auth(jwtSvc *service.JWTService) func(http.Handler) http.Handler {
+func Auth(jwtSvc *service.JWTService, rdb *redis.Client) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
@@ -31,6 +33,15 @@ func Auth(jwtSvc *service.JWTService) func(http.Handler) http.Handler {
 			if err != nil {
 				http.Error(w, `{"error":{"code":"unauthorized","message":"invalid or expired token"}}`, http.StatusUnauthorized)
 				return
+			}
+
+			// Check JWT blacklist
+			if claims.ID != "" {
+				blacklisted, _ := rdb.Exists(r.Context(), fmt.Sprintf("nexe:jwt_blacklist:%s", claims.ID)).Result()
+				if blacklisted > 0 {
+					http.Error(w, `{"error":{"code":"unauthorized","message":"token has been revoked"}}`, http.StatusUnauthorized)
+					return
+				}
 			}
 
 			ctx := context.WithValue(r.Context(), UserClaimsKey, claims)

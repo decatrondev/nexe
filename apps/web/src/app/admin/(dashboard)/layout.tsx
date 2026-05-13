@@ -15,7 +15,7 @@ export default async function AdminDashboardLayout({
     redirect("/admin/login");
   }
 
-  const { documentation, roadmap } = getCategorizedDocs();
+  const { documentation, roadmap, audit } = getCategorizedDocs();
 
   return (
     <div className="flex min-h-screen bg-dark-950">
@@ -58,6 +58,26 @@ export default async function AdminDashboardLayout({
               </li>
             ))}
           </ul>
+
+          {audit.length > 0 && (
+            <>
+              <p className="mb-3 mt-6 px-2 text-xs font-medium uppercase tracking-wider text-red-500">
+                Audit
+              </p>
+              <ul className="space-y-1">
+                {audit.map((doc) => (
+                  <li key={doc.slug}>
+                    <Link
+                      href={`/admin/${doc.slug}`}
+                      className="block rounded-lg px-3 py-2 text-sm text-slate-400 transition-colors hover:bg-dark-800 hover:text-white"
+                    >
+                      {doc.title}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
 
           {roadmap.length > 0 && (
             <>

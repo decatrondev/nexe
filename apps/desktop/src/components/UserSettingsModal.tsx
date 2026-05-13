@@ -598,12 +598,11 @@ function SecurityTab() {
 
   useEffect(() => {
     if (!user?.id) return;
-    api.getProfile(user.id).then(() => {
-      // Check totp status from user object
-      setTotpEnabled(!!(user as unknown as { totpEnabled?: boolean }).totpEnabled);
+    api.getMe().then((me) => {
+      if (me) setTotpEnabled(!!me.totpEnabled);
       setLoaded(true);
     }).catch(() => setLoaded(true));
-  }, [user]);
+  }, [user?.id]);
 
   async function handleEnable() {
     setLoading(true); setError("");

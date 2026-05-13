@@ -148,6 +148,54 @@ func (r *GuildRepository) ListByUser(ctx context.Context, userID string) ([]mode
 	return guilds, rows.Err()
 }
 
+func (r *GuildRepository) ListByStreamerTwitchID(ctx context.Context, twitchID string) ([]model.Guild, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, name, description, icon_url, banner_url, owner_id,
+		        is_streamer_server, streamer_twitch_id, bridge_channel_id, member_count, features, created_at, updated_at
+		 FROM guilds WHERE streamer_twitch_id = $1`, twitchID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var guilds []model.Guild
+	for rows.Next() {
+		var g model.Guild
+		if err := rows.Scan(
+			&g.ID, &g.Name, &g.Description, &g.IconUrl, &g.BannerUrl, &g.OwnerID,
+			&g.IsStreamerServer, &g.StreamerTwitchID, &g.BridgeChannelID, &g.MemberCount, pqJSONArray(&g.Features), &g.CreatedAt, &g.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		guilds = append(guilds, g)
+	}
+	return guilds, nil
+}
+
+func (r *GuildRepository) ListWithTwitch(ctx context.Context) ([]model.Guild, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT id, name, description, icon_url, banner_url, owner_id,
+		        is_streamer_server, streamer_twitch_id, bridge_channel_id, member_count, features, created_at, updated_at
+		 FROM guilds WHERE streamer_twitch_id IS NOT NULL AND streamer_twitch_id != ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var guilds []model.Guild
+	for rows.Next() {
+		var g model.Guild
+		if err := rows.Scan(
+			&g.ID, &g.Name, &g.Description, &g.IconUrl, &g.BannerUrl, &g.OwnerID,
+			&g.IsStreamerServer, &g.StreamerTwitchID, &g.BridgeChannelID, &g.MemberCount, pqJSONArray(&g.Features), &g.CreatedAt, &g.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		guilds = append(guilds, g)
+	}
+	return guilds, nil
+}
+
 func (r *GuildRepository) SetStreamerTwitchID(ctx context.Context, guildID, twitchID string) error {
 	_, err := r.db.ExecContext(ctx,
 		`UPDATE guilds SET streamer_twitch_id = $1, updated_at = NOW() WHERE id = $2`,
