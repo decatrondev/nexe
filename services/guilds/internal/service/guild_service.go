@@ -258,6 +258,13 @@ func (s *GuildService) DeleteChannel(ctx context.Context, channelID, requesterID
 	return nil
 }
 
+func (s *GuildService) ReorderChannels(ctx context.Context, guildID, requesterID string, channelIDs []string) error {
+	if err := s.checkPermission(ctx, guildID, requesterID, model.PermManageChannels); err != nil {
+		return err
+	}
+	return s.channels.ReorderChannels(ctx, guildID, channelIDs)
+}
+
 // ---------------------------------------------------------------------------
 // Categories
 // ---------------------------------------------------------------------------

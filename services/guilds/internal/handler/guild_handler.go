@@ -40,6 +40,7 @@ func (h *GuildHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /guilds/{id}/channels", h.ListChannels)
 	mux.HandleFunc("PATCH /channels/{id}", h.UpdateChannel)
 	mux.HandleFunc("DELETE /channels/{id}", h.DeleteChannel)
+	mux.HandleFunc("PUT /guilds/{id}/channels/reorder", h.ReorderChannels)
 
 	// Categories
 	mux.HandleFunc("POST /guilds/{id}/categories", h.CreateCategory)
@@ -360,6 +361,28 @@ func (h *GuildHandler) DeleteChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	channelID := r.PathValue("id")
 	if err := h.svc.DeleteChannel(r.Context(), channelID, userID); err != nil {
+		classifyError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *GuildHandler) ReorderChannels(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	guildID := r.PathValue("id")
+
+	var body struct {
+		ChannelIDs []string `json:"channelIds"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.ChannelIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "invalid_body", "channelIds array is required")
+		return
+	}
+
+	if err := h.svc.ReorderChannels(r.Context(), guildID, userID, body.ChannelIDs); err != nil {
 		classifyError(w, err)
 		return
 	}

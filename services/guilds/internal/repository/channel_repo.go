@@ -104,6 +104,25 @@ func (r *ChannelRepository) CountByGuild(ctx context.Context, guildID string) (i
 	return count, nil
 }
 
+func (r *ChannelRepository) ReorderChannels(ctx context.Context, guildID string, channelIDs []string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("channel reorder begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	for i, id := range channelIDs {
+		_, err := tx.ExecContext(ctx,
+			`UPDATE channels SET position = $1, updated_at = NOW() WHERE id = $2 AND guild_id = $3`,
+			i, id, guildID)
+		if err != nil {
+			return fmt.Errorf("channel reorder update: %w", err)
+		}
+	}
+
+	return tx.Commit()
+}
+
 func (r *ChannelRepository) Delete(ctx context.Context, id string) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM channels WHERE id = $1`, id)
 	if err != nil {

@@ -602,6 +602,10 @@ export const api = {
     return request<Channel>("PATCH", `/channels/${id}`, data);
   },
 
+  reorderChannels(guildId: string, channelIds: string[]) {
+    return request<void>("PUT", `/guilds/${guildId}/channels/reorder`, { channelIds });
+  },
+
   deleteChannel(id: string) {
     return request<void>("DELETE", `/channels/${id}`);
   },

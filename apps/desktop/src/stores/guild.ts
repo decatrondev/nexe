@@ -44,6 +44,7 @@ interface GuildState {
   createChannel: (name: string, type: string) => Promise<void>;
   updateChannel: (channelId: string, data: { name?: string; topic?: string; slowmodeSeconds?: number }) => Promise<void>;
   deleteChannel: (channelId: string) => Promise<void>;
+  reorderChannels: (guildId: string, channelIds: string[]) => Promise<void>;
   sendMessage: (content: string, replyToId?: string) => Promise<void>;
   editMessage: (messageId: string, content: string) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
@@ -357,6 +358,22 @@ export const useGuildStore = create<GuildState>((set, get) => ({
       }
       return { channels: newChannels };
     });
+  },
+
+  async reorderChannels(guildId: string, channelIds: string[]) {
+    // Optimistic update
+    set((s) => {
+      const chs = s.channels[guildId];
+      if (!chs) return s;
+      const ordered = channelIds.map((id, i) => {
+        const ch = chs.find((c) => c.id === id);
+        return ch ? { ...ch, position: i } : null;
+      }).filter(Boolean) as Channel[];
+      // Keep any channels not in the reorder list (shouldn't happen but safe)
+      const remaining = chs.filter((c) => !channelIds.includes(c.id));
+      return { channels: { ...s.channels, [guildId]: [...ordered, ...remaining] } };
+    });
+    await api.reorderChannels(guildId, channelIds);
   },
 
   async deleteChannel(channelId: string) {

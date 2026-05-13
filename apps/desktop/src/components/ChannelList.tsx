@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useGuildStore } from "../stores/guild";
 import { useAuthStore } from "../stores/auth";
 import { useVoiceStore } from "../stores/voice";
@@ -6,6 +6,9 @@ import { hasPermission, computePermissions, Permissions } from "../lib/permissio
 import { type Channel, api } from "../lib/api";
 import { FREE_TIER_LIMITS } from "../lib/limits";
 import { statusColors } from "../lib/utils";
+import { DndContext, closestCenter, type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import CreateChannelModal from "./CreateChannelModal";
 import ServerSettingsModal from "./ServerSettingsModal";
 import InviteModal from "./InviteModal";
@@ -14,6 +17,50 @@ import VoicePanel from "./VoicePanel";
 import NotificationBell from "./NotificationBell";
 
 const EMPTY_CHANNELS: Channel[] = [];
+
+function SortableChannel({ ch, isActive, unread, onClick, canDrag }: {
+  ch: Channel;
+  isActive: boolean;
+  unread: number;
+  onClick: () => void;
+  canDrag: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: ch.id,
+    disabled: !canDrag,
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <button
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...(canDrag ? listeners : {})}
+      className={`group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-all duration-150 ${
+        isActive
+          ? "bg-dark-700/60 text-white"
+          : unread > 0
+          ? "text-white font-semibold hover:bg-dark-800/80"
+          : "text-slate-400 hover:bg-dark-800/60 hover:text-slate-200"
+      } ${canDrag ? "cursor-grab active:cursor-grabbing" : ""}`}
+      onClick={onClick}
+    >
+      <span className={`text-lg leading-none transition-colors duration-150 ${isActive ? "text-white" : unread > 0 ? "text-white" : "text-slate-500 group-hover:text-slate-400"}`}>#</span>
+      <span className="truncate">{ch.name}</span>
+      {unread > 0 && !isActive && (
+        <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+          {unread > 99 ? "99+" : unread}
+        </span>
+      )}
+    </button>
+  );
+}
 
 export default function ChannelList() {
   const activeGuildId = useGuildStore((s) => s.activeGuildId);
@@ -48,6 +95,23 @@ export default function ChannelList() {
 
   const textChannels = channels.filter((c) => c.type === "text");
   const voiceChannels = channels.filter((c) => c.type === "voice");
+  const reorderChannels = useGuildStore((s) => s.reorderChannels);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id || !activeGuildId) return;
+
+    const oldIndex = textChannels.findIndex((c) => c.id === active.id);
+    const newIndex = textChannels.findIndex((c) => c.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(textChannels, oldIndex, newIndex);
+    reorderChannels(activeGuildId, reordered.map((c) => c.id));
+  }, [textChannels, activeGuildId, reorderChannels]);
 
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
     new Set(),
@@ -165,25 +229,14 @@ export default function ChannelList() {
             // Text channel
             const unread = unreadChannels[ch.id] || 0;
             return (
-              <button
+              <SortableChannel
                 key={ch.id}
-                className={`group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-all duration-150 ${
-                  activeChannelId === ch.id
-                    ? "bg-dark-700/60 text-white"
-                    : unread > 0
-                    ? "text-white font-semibold hover:bg-dark-800/80"
-                    : "text-slate-400 hover:bg-dark-800/60 hover:text-slate-200"
-                }`}
+                ch={ch}
+                isActive={activeChannelId === ch.id}
+                unread={unread}
                 onClick={() => setActiveChannel(ch.id)}
-              >
-                <span className={`text-lg leading-none transition-colors duration-150 ${activeChannelId === ch.id ? "text-white" : unread > 0 ? "text-white" : "text-slate-500 group-hover:text-slate-400"}`}>#</span>
-                <span className="truncate">{ch.name}</span>
-                {unread > 0 && activeChannelId !== ch.id && (
-                  <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
-                    {unread > 99 ? "99+" : unread}
-                  </span>
-                )}
-              </button>
+                canDrag={canManageChannels && icon === "text"}
+              />
             );
           })}
       </div>
@@ -253,7 +306,11 @@ export default function ChannelList() {
             </p>
           ) : (
             <>
-              {renderSection("Text Channels", textChannels, "text")}
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                <SortableContext items={textChannels.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+                  {renderSection("Text Channels", textChannels, "text")}
+                </SortableContext>
+              </DndContext>
               {renderSection("Voice Channels", voiceChannels, "voice")}
             </>
           )}

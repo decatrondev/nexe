@@ -148,6 +148,7 @@ func main() {
 	mux.Handle("GET /guilds/{id}/channels", guildsProxy(gp))
 	mux.Handle("PATCH /channels/{id}", guildsProxy(gp))
 	mux.Handle("DELETE /channels/{id}", guildsProxy(gp))
+	mux.Handle("PUT /guilds/{id}/channels/reorder", guildsProxy(gp))
 	mux.Handle("GET /channels/{id}/overrides", guildsProxy(gp))
 	mux.Handle("PUT /channels/{id}/overrides", guildsProxy(gp))
 	mux.Handle("DELETE /overrides/{id}", guildsProxy(gp))
