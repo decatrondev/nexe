@@ -1172,13 +1172,24 @@ func (h *TwitchHandler) SendToTwitchChat(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Rate limit: 20 messages per 30 seconds per guild
-	rateLimitKey := fmt.Sprintf("nexe:bridge:ratelimit:%s", body.GuildID)
-	count, _ := h.rdb.Incr(r.Context(), rateLimitKey).Result()
-	if count == 1 {
-		h.rdb.Expire(r.Context(), rateLimitKey, 30*time.Second)
+	// Rate limit per user: 5 msg/30s
+	userKey := fmt.Sprintf("nexe:bridge:ratelimit:user:%s:%s", body.GuildID, claims.Subject)
+	userCount, _ := h.rdb.Incr(r.Context(), userKey).Result()
+	if userCount == 1 {
+		h.rdb.Expire(r.Context(), userKey, 30*time.Second)
 	}
-	if count > 20 {
+	if userCount > 5 {
+		writeError(w, http.StatusTooManyRequests, "bridge_rate_limited", "You're sending too fast to Twitch (max 5/30s)")
+		return
+	}
+
+	// Rate limit per guild: 20 msg/30s (Twitch channel limit)
+	guildKey := fmt.Sprintf("nexe:bridge:ratelimit:guild:%s", body.GuildID)
+	guildCount, _ := h.rdb.Incr(r.Context(), guildKey).Result()
+	if guildCount == 1 {
+		h.rdb.Expire(r.Context(), guildKey, 30*time.Second)
+	}
+	if guildCount > 20 {
 		writeError(w, http.StatusTooManyRequests, "bridge_rate_limited", "Bridge is rate limited — too many messages sent to Twitch (max 20/30s)")
 		return
 	}
