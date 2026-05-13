@@ -506,6 +506,7 @@ type twitchAutoRoleDef struct {
 }
 
 var twitchAutoRoles = []twitchAutoRoleDef{
+	{"Lead Moderator", "twitch_lead_mod", "#00AD03", 7},
 	{"Twitch Mod", "twitch_mod", "#2ECC71", 6},
 	{"Twitch VIP", "twitch_vip", "#E91E63", 5},
 	{"Twitch Sub T3", "twitch_sub_t3", "#6610F2", 4},
@@ -517,6 +518,8 @@ var twitchAutoRoles = []twitchAutoRoleDef{
 // defaultPermsForSource returns the default permissions bitmask for a given auto-role source.
 func defaultPermsForSource(source string) int64 {
 	switch source {
+	case "twitch_lead_mod":
+		return model.PermAdministrator
 	case "twitch_mod":
 		return model.PermKickMembers | model.PermBanMembers | model.PermTimeoutMembers | model.PermManageMessages
 	default:

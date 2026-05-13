@@ -577,8 +577,8 @@ func (h *TwitchHandler) SyncTwitchRoles(w http.ResponseWriter, r *http.Request) 
 		"twitch_sub_t2":    status.IsSubscriber && (status.SubTier == "2000" || status.SubTier == "3000"),
 		"twitch_sub_t3":    status.IsSubscriber && status.SubTier == "3000",
 		"twitch_vip":       status.IsVIP,
+		"twitch_lead_mod":  false, // Twitch API doesn't distinguish lead mod from mod — assigned manually or via chat badge
 		"twitch_mod":       status.IsMod,
-		"twitch_lead_mod":  false, // Lead mod is manually promoted by the server owner
 	}
 
 	var assigned []string
