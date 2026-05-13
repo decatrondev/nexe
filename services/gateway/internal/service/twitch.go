@@ -38,7 +38,7 @@ func (s *TwitchService) GetAuthURL(state string) string {
 		"client_id":     {s.clientID},
 		"redirect_uri":  {s.redirectURI},
 		"response_type": {"code"},
-		"scope":         {"user:read:email user:read:subscriptions user:read:follows moderator:read:followers channel:read:subscriptions user:read:chat user:write:chat user:bot"},
+		"scope":         {"user:read:email user:read:subscriptions user:read:follows moderator:read:followers channel:read:subscriptions moderation:read channel:read:vips user:read:chat user:write:chat user:bot"},
 		"state":         {state},
 	}
 	return "https://id.twitch.tv/oauth2/authorize?" + params.Encode()
