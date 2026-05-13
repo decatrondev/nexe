@@ -72,6 +72,7 @@ export default function HomePage() {
       nexeWS.off("GUILD_MEMBER_ADD");
       nexeWS.off("VOICE_STATE_UPDATE");
       nexeWS.off("PRESENCE_UPDATE");
+      nexeWS.off("STREAM_STATUS_UPDATE");
       nexeWS.off("NOTIFICATION_CREATE");
 
       nexeWS.connect(token);
@@ -290,6 +291,19 @@ export default function HomePage() {
             user: s.user ? { ...s.user, status: d.status as "online" | "idle" | "dnd" | "offline" } : null,
           }));
         }
+      });
+
+      nexeWS.on("STREAM_STATUS_UPDATE", (data) => {
+        const d = data as { userId: string; live: boolean; title?: string; game?: string; viewers?: number; startedAt?: string };
+        useGuildStore.setState((s) => {
+          const newMap = { ...s.streamStatusMap };
+          if (d.live) {
+            newMap[d.userId] = { live: true, title: d.title, game: d.game, viewers: d.viewers, startedAt: d.startedAt };
+          } else {
+            delete newMap[d.userId];
+          }
+          return { streamStatusMap: newMap };
+        });
       });
 
       // Presence heartbeat every 60s

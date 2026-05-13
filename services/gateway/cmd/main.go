@@ -60,9 +60,12 @@ func main() {
 	profileHandler := handler.NewProfileHandler(profileRepo)
 	uploadHandler := handler.NewUploadHandler(storageSvc, profileRepo)
 	totpHandler := handler.NewTOTPHandler(userRepo, authSvc)
-	twitchHandler := handler.NewTwitchHandler(twitchSvc, userRepo, authSvc, jwtSvc, rdb, cfg.TwitchEventSubSecret, cfg.BaseURL, cfg.FrontendURL, cfg.MessagingURL, cfg.GuildsURL)
+	twitchHandler := handler.NewTwitchHandler(twitchSvc, userRepo, authSvc, jwtSvc, rdb, cfg.TwitchEventSubSecret, cfg.BaseURL, cfg.FrontendURL, cfg.MessagingURL, cfg.GuildsURL, cfg.PresenceURL)
 	botHandler := handler.NewBotHandler(botRepo, jwtSvc)
 	proxyHandler := handler.NewProxyHandler(cfg.GuildsURL, cfg.MessagingURL, cfg.PresenceURL, cfg.VoiceURL, cfg.NotificationsURL)
+
+	// Reconcile any active streams on startup
+	go twitchHandler.ReconcileStreamStatuses(context.Background())
 
 	// Middleware
 	authMiddleware := middleware.Auth(jwtSvc)

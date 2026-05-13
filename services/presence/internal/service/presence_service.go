@@ -175,6 +175,9 @@ func (s *PresenceService) SetStreamStatus(ctx context.Context, userID string, st
 		s.rdb.HDel(ctx, key, "streamingLive", "streamTitle", "streamGame", "streamViewers", "streamStartedAt")
 	}
 
+	// Broadcast to all guilds the user is in
+	s.events.PublishStreamStatusUpdate(ctx, userID, stream.Live, stream.Title, stream.Game, stream.Viewers, stream.StartedAt)
+
 	return nil
 }
 

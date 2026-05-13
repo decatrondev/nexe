@@ -49,3 +49,42 @@ func (p *EventPublisher) PublishPresenceUpdate(ctx context.Context, userID, stat
 		}
 	}
 }
+
+// PublishStreamStatusUpdate publishes a stream status change to all guilds the user belongs to.
+func (p *EventPublisher) PublishStreamStatusUpdate(ctx context.Context, userID string, live bool, title, game string, viewers int, startedAt string) {
+	guildKeys, err := p.rdb.Keys(ctx, "nexe:guild:online:*").Result()
+	if err != nil {
+		return
+	}
+
+	data := map[string]interface{}{
+		"userId": userID,
+		"live":   live,
+	}
+	if live {
+		data["title"] = title
+		data["game"] = game
+		data["viewers"] = viewers
+		data["startedAt"] = startedAt
+	}
+	payload, _ := json.Marshal(data)
+
+	for _, key := range guildKeys {
+		isMember, _ := p.rdb.SIsMember(ctx, key, userID).Result()
+		if !isMember {
+			continue
+		}
+		guildID := key[len("nexe:guild:online:"):]
+
+		event := map[string]interface{}{
+			"type":    "STREAM_STATUS_UPDATE",
+			"guildId": guildID,
+			"data":    json.RawMessage(payload),
+		}
+		eventJSON, _ := json.Marshal(event)
+		channel := fmt.Sprintf("nexe:events:guild:%s", guildID)
+		if err := p.rdb.Publish(ctx, channel, eventJSON).Err(); err != nil {
+			slog.Error("failed to publish stream status event", "error", err, "guild", guildID)
+		}
+	}
+}

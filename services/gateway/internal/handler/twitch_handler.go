@@ -32,6 +32,7 @@ type TwitchHandler struct {
 	frontendURL    string
 	messagingURL   string
 	guildsURL      string
+	presenceURL    string
 }
 
 func NewTwitchHandler(
@@ -40,7 +41,7 @@ func NewTwitchHandler(
 	auth *service.AuthService,
 	jwt *service.JWTService,
 	rdb *redis.Client,
-	eventSubSecret, baseURL, frontendURL, messagingURL, guildsURL string,
+	eventSubSecret, baseURL, frontendURL, messagingURL, guildsURL, presenceURL string,
 ) *TwitchHandler {
 	return &TwitchHandler{
 		twitch:         twitch,
@@ -53,6 +54,7 @@ func NewTwitchHandler(
 		frontendURL:    frontendURL,
 		messagingURL:   messagingURL,
 		guildsURL:      guildsURL,
+		presenceURL:    presenceURL,
 	}
 }
 
@@ -404,6 +406,9 @@ func (h *TwitchHandler) handleStreamOnline(ctx context.Context, event json.RawMe
 		"login", e.BroadcasterUserLogin,
 		"name", e.BroadcasterUserName,
 	)
+
+	// Forward to presence service
+	h.notifyPresenceStreamStatus(ctx, e.BroadcasterUserID, true)
 }
 
 func (h *TwitchHandler) handleStreamOffline(ctx context.Context, event json.RawMessage) {
@@ -415,6 +420,56 @@ func (h *TwitchHandler) handleStreamOffline(ctx context.Context, event json.RawM
 	slog.Info("stream offline", "twitchId", e.BroadcasterUserID)
 
 	h.rdb.Del(ctx, "nexe:stream:"+e.BroadcasterUserID)
+
+	// Forward to presence service
+	h.notifyPresenceStreamStatus(ctx, e.BroadcasterUserID, false)
+}
+
+// notifyPresenceStreamStatus resolves a Twitch ID to a Nexe user and notifies the presence service.
+func (h *TwitchHandler) notifyPresenceStreamStatus(ctx context.Context, twitchID string, live bool) {
+	user, err := h.users.GetByTwitchID(ctx, twitchID)
+	if err != nil || user == nil {
+		return // Not a Nexe user
+	}
+
+	payload := map[string]interface{}{"live": live}
+
+	if live {
+		// Fetch stream details from Twitch
+		stream, err := h.twitch.GetStreamByUserID(ctx, twitchID)
+		if err == nil && stream != nil {
+			payload["title"] = stream.Title
+			payload["game"] = stream.GameName
+			payload["viewers"] = stream.ViewerCount
+			payload["startedAt"] = stream.StartedAt
+		}
+	}
+
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequestWithContext(ctx, "POST",
+		h.presenceURL+"/users/"+user.ID+"/stream-status", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		slog.Error("failed to notify presence of stream status", "error", err, "userId", user.ID)
+		return
+	}
+	defer resp.Body.Close()
+}
+
+// ReconcileStreamStatuses syncs any active streams from Redis to the presence service on startup.
+func (h *TwitchHandler) ReconcileStreamStatuses(ctx context.Context) {
+	keys, err := h.rdb.Keys(ctx, "nexe:stream:*").Result()
+	if err != nil || len(keys) == 0 {
+		return
+	}
+
+	slog.Info("reconciling stream statuses", "count", len(keys))
+	for _, key := range keys {
+		twitchID := key[len("nexe:stream:"):]
+		h.notifyPresenceStreamStatus(ctx, twitchID, true)
+	}
 }
 
 func (h *TwitchHandler) handleFollow(ctx context.Context, event json.RawMessage) {

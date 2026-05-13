@@ -484,7 +484,15 @@ export const api = {
   },
 
   getBulkPresence(userIds: string[]) {
-    return request<{ userId: string; status: string }[]>("POST", "/users/bulk-presence", { userIds });
+    return request<{
+      userId: string;
+      status: string;
+      streamingLive?: boolean;
+      streamTitle?: string;
+      streamGame?: string;
+      streamViewers?: number;
+      streamStartedAt?: string;
+    }[]>("POST", "/users/bulk-presence", { userIds });
   },
 
   getBadges(userId: string) {

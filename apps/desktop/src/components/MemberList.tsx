@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useGuildStore } from "../stores/guild";
-import { api, type GuildMember, type Role, type StreamStatus } from "../lib/api";
+import { type GuildMember, type Role } from "../lib/api";
 import { formatJoinDate } from "../lib/utils";
 import MiniProfilePopover from "./MiniProfilePopover";
 import ProfileModal from "./ProfileModal";
@@ -53,36 +53,10 @@ export default function MemberList() {
   const usernames = useGuildStore((s) => s.usernames);
   const presenceMap = useGuildStore((s) => s.presenceMap);
 
+  const streamStatusMap = useGuildStore((s) => s.streamStatusMap);
+
   const [profilePopover, setProfilePopover] = useState<{ userId: string; x: number; y: number } | null>(null);
   const [fullProfileUserId, setFullProfileUserId] = useState<string | null>(null);
-
-  // Live status tracking — poll every 60s for members
-  const [liveUsers, setLiveUsers] = useState<Map<string, StreamStatus>>(new Map());
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    async function checkLiveStatus() {
-      const memberIds = members.map((m) => m.userId);
-      if (memberIds.length === 0) return;
-
-      const live = new Map<string, StreamStatus>();
-      const presence = useGuildStore.getState().presenceMap;
-      for (const id of memberIds.slice(0, 20)) {
-        // Only show stream if user is visibly online (online/idle/dnd)
-        const userPresence = presence[id];
-        if (!userPresence || userPresence === "invisible" || userPresence === "offline") continue;
-        try {
-          const status = await api.getStreamStatus(id);
-          if (status.live) live.set(id, status);
-        } catch { /* skip */ }
-      }
-      setLiveUsers(live);
-    }
-
-    checkLiveStatus();
-    pollRef.current = setInterval(checkLiveStatus, 60000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [members]);
 
   // Group members by their highest hoisted role
   const groups = useMemo((): MemberGroup[] => {
@@ -197,14 +171,14 @@ export default function MemberList() {
                             {name}
                           </span>
                         </p>
-                        {liveUsers.has(member.userId) && (
+                        {streamStatusMap[member.userId]?.live && (
                           <span className="shrink-0 rounded bg-red-600 px-1 py-px text-[9px] font-bold uppercase text-white animate-pulse-subtle">
                             Live
                           </span>
                         )}
                       </div>
                       <p className="truncate text-xs text-slate-500">
-                        {liveUsers.has(member.userId)
+                        {streamStatusMap[member.userId]?.live
                           ? "Streaming on Twitch"
                           : `Joined ${formatJoinDate(member.joinedAt)}`
                         }
@@ -228,7 +202,7 @@ export default function MemberList() {
           userId={profilePopover.userId}
           x={profilePopover.x}
           y={profilePopover.y}
-          streamStatus={liveUsers.get(profilePopover.userId)}
+          streamStatus={streamStatusMap[profilePopover.userId] ? { ...streamStatusMap[profilePopover.userId], linked: true } : undefined}
           onClose={() => setProfilePopover(null)}
           onViewFull={() => {
             setFullProfileUserId(profilePopover.userId);
@@ -240,7 +214,7 @@ export default function MemberList() {
       {fullProfileUserId && (
         <ProfileModal
           userId={fullProfileUserId}
-          streamStatus={liveUsers.get(fullProfileUserId)}
+          streamStatus={streamStatusMap[fullProfileUserId] ? { ...streamStatusMap[fullProfileUserId], linked: true } : undefined}
           onClose={() => setFullProfileUserId(null)}
         />
       )}

@@ -20,6 +20,7 @@ interface GuildState {
   messages: Record<string, Message[]>;
   usernames: Record<string, string>;
   presenceMap: Record<string, string>; // userId → status (online/idle/dnd/offline)
+  streamStatusMap: Record<string, { live: boolean; title?: string; game?: string; viewers?: number; startedAt?: string }>;
   unreadChannels: Record<string, number>; // channelId → unread count
   lastReadMessageIds: Record<string, string>; // channelId → last read message id (for divider)
   emotesReady: number; // increment to trigger re-render when emotes load
@@ -67,6 +68,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
   messages: {},
   usernames: {},
   presenceMap: {},
+  streamStatusMap: {},
   unreadChannels: {},
   lastReadMessageIds: {},
   emotesReady: 0,
@@ -87,6 +89,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
       messages: {},
       usernames: {},
       presenceMap: {},
+      streamStatusMap: {},
       unreadChannels: {},
       lastReadMessageIds: {},
       loading: false,
@@ -204,10 +207,14 @@ export const useGuildStore = create<GuildState>((set, get) => ({
         api.getBulkPresence(memberIds).then((presences) => {
           if (presences && get().activeGuildId === guildId) {
             const map: Record<string, string> = { ...get().presenceMap };
+            const streams: Record<string, { live: boolean; title?: string; game?: string; viewers?: number; startedAt?: string }> = { ...get().streamStatusMap };
             for (const p of presences) {
               map[p.userId] = p.status;
+              if (p.streamingLive) {
+                streams[p.userId] = { live: true, title: p.streamTitle, game: p.streamGame, viewers: p.streamViewers, startedAt: p.streamStartedAt };
+              }
             }
-            set({ presenceMap: map });
+            set({ presenceMap: map, streamStatusMap: streams });
           }
         }).catch(() => {});
       }
