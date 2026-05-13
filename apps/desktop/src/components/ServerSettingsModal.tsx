@@ -55,7 +55,7 @@ export default function ServerSettingsModal({ guildId, onClose }: ServerSettings
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-modal flex bg-dark-900/95 animate-fade-in">
+    <div className="fixed inset-0 z-modal flex animate-fade-in" style={{ backgroundColor: "rgba(15, 23, 42, 0.97)" }}>
       <Tabs defaultTab={availableTabs[0]?.id ?? "danger"} className="flex w-full">
         {/* Sidebar */}
         <div className="flex w-56 shrink-0 flex-col border-r border-dark-800 bg-dark-900 pt-14">
