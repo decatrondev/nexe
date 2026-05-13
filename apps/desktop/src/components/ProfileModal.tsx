@@ -74,7 +74,17 @@ export default function ProfileModal({ userId, streamStatus, onClose }: Props) {
   const color = userColor(userId);
   const myGuilds = useGuildStore((s) => s.guilds);
   const allMembers = useGuildStore((s) => s.members);
+  const activeGuildId = useGuildStore((s) => s.activeGuildId);
+  const allRoles = useGuildStore((s) => s.roles);
+  const memberRolesMap = useGuildStore((s) => s.memberRoles);
   const currentUser = useAuthStore((s) => s.user);
+
+  // Roles in current server
+  const guildRoles = (activeGuildId ? allRoles[activeGuildId] : undefined) ?? [];
+  const userRoleIds = memberRolesMap[userId] || [];
+  const userRoles = guildRoles
+    .filter((r) => userRoleIds.includes(r.id) && !r.isDefault)
+    .sort((a, b) => b.position - a.position);
 
   // Shared servers = guilds where both users are members
   const sharedServers = myGuilds.filter((g) => {
@@ -168,6 +178,25 @@ export default function ProfileModal({ userId, streamStatus, onClose }: Props) {
                   Level {level}
                 </div>
               </div>
+
+              {/* Server Roles */}
+              {userRoles.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {userRoles.map((role) => (
+                    <span
+                      key={role.id}
+                      className="rounded-full px-2 py-0.5 text-[11px] font-medium"
+                      style={{
+                        backgroundColor: (role.color || "#99AAB5") + "20",
+                        color: role.color || "#99AAB5",
+                        border: `1px solid ${(role.color || "#99AAB5")}30`,
+                      }}
+                    >
+                      {role.name}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Content */}
