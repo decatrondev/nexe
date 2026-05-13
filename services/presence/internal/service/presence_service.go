@@ -246,6 +246,28 @@ func (s *PresenceService) GetBulkPresence(ctx context.Context, userIDs []string)
 	return presences, nil
 }
 
+// GetLiveGuilds checks which guilds have at least one member with streamingLive=true.
+func (s *PresenceService) GetLiveGuilds(ctx context.Context, guildIDs []string) ([]string, error) {
+	var liveGuilds []string
+
+	for _, guildID := range guildIDs {
+		memberIDs, err := s.rdb.SMembers(ctx, guildOnlinePrefix+guildID).Result()
+		if err != nil || len(memberIDs) == 0 {
+			continue
+		}
+
+		for _, uid := range memberIDs {
+			val, err := s.rdb.HGet(ctx, presenceKeyPrefix+uid, "streamingLive").Result()
+			if err == nil && val == "true" {
+				liveGuilds = append(liveGuilds, guildID)
+				break
+			}
+		}
+	}
+
+	return liveGuilds, nil
+}
+
 // GetGuildOnlinePresences returns presences for all online members of a guild
 func (s *PresenceService) GetGuildOnlinePresences(ctx context.Context, guildID string) ([]model.UserPresence, error) {
 	userIDs, err := s.GetGuildOnline(ctx, guildID)

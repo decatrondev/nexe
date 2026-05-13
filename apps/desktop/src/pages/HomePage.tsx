@@ -294,15 +294,23 @@ export default function HomePage() {
       });
 
       nexeWS.on("STREAM_STATUS_UPDATE", (data) => {
-        const d = data as { userId: string; live: boolean; title?: string; game?: string; viewers?: number; startedAt?: string; thumbnail?: string };
+        const d = data as { userId: string; guildId?: string; live: boolean; title?: string; game?: string; viewers?: number; startedAt?: string; thumbnail?: string };
         useGuildStore.setState((s) => {
           const newMap = { ...s.streamStatusMap };
+          const newLiveGuilds = new Set(s.liveGuilds);
           if (d.live) {
             newMap[d.userId] = { live: true, title: d.title, game: d.game, viewers: d.viewers, startedAt: d.startedAt, thumbnail: d.thumbnail };
+            if (d.guildId) newLiveGuilds.add(d.guildId);
           } else {
             delete newMap[d.userId];
+            // Check if any other user in this guild is still live
+            if (d.guildId) {
+              const guildMembers = s.members[d.guildId] || [];
+              const stillLive = guildMembers.some((m) => m.userId !== d.userId && newMap[m.userId]?.live);
+              if (!stillLive) newLiveGuilds.delete(d.guildId);
+            }
           }
-          return { streamStatusMap: newMap };
+          return { streamStatusMap: newMap, liveGuilds: newLiveGuilds };
         });
       });
 

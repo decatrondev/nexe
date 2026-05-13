@@ -336,18 +336,29 @@ func (h *WSHandler) handleRedisEvent(msg *redis.Message) {
 		return
 	}
 
+	// Inject guildId into event data so the frontend knows which guild it's for
+	var enrichedData json.RawMessage
+	if evt.Type == "STREAM_STATUS_UPDATE" || evt.Type == "PRESENCE_UPDATE" {
+		var dataMap map[string]interface{}
+		if err := json.Unmarshal(evt.Data, &dataMap); err == nil {
+			dataMap["guildId"] = guildID
+			enrichedData, _ = json.Marshal(dataMap)
+		}
+	}
+	if enrichedData == nil {
+		enrichedData = evt.Data
+	}
+
 	wsMsg := WSMessage{
 		Op: 0,
 		T:  evt.Type,
-		D:  evt.Data,
+		D:  enrichedData,
 	}
 	data, err := json.Marshal(wsMsg)
 	if err != nil {
 		return
 	}
 
-	// Don't exclude sender — the frontend deduplicates via message ID.
-	// Excluding by userID would block other tabs/devices of the same user.
 	h.BroadcastToGuild(guildID, data, "")
 }
 

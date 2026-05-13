@@ -71,8 +71,7 @@ export default function ServerSidebar() {
   const setActiveGuild = useGuildStore((s) => s.setActiveGuild);
   const unreadChannels = useGuildStore((s) => s.unreadChannels);
   const allChannels = useGuildStore((s) => s.channels);
-  const allMembers = useGuildStore((s) => s.members);
-  const streamStatusMap = useGuildStore((s) => s.streamStatusMap);
+  const liveGuilds = useGuildStore((s) => s.liveGuilds);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
 
@@ -81,11 +80,6 @@ export default function ServerSidebar() {
     return guildChannelList.reduce((sum, ch) => sum + (unreadChannels[ch.id] || 0), 0);
   }, [allChannels, unreadChannels]);
 
-  const isGuildLive = useCallback((guildId: string) => {
-    const members = allMembers[guildId];
-    if (!members) return false;
-    return members.some((m) => streamStatusMap[m.userId]?.live);
-  }, [allMembers, streamStatusMap]);
 
   return (
     <>
@@ -112,7 +106,7 @@ export default function ServerSidebar() {
             onClick={() => setActiveGuild(guild.id)}
             title={guild.name}
             badge={getGuildUnread(guild.id)}
-            live={isGuildLive(guild.id)}
+            live={liveGuilds.has(guild.id)}
           >
             {guild.iconUrl ? (
               <img

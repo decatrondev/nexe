@@ -27,6 +27,7 @@ func (h *PresenceHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /guilds/{id}/track", h.TrackGuildOnline)
 	mux.HandleFunc("POST /guilds/{id}/untrack", h.UntrackGuildOnline)
 	mux.HandleFunc("POST /users/bulk-presence", h.GetBulkPresence)
+	mux.HandleFunc("POST /guilds/live", h.GetLiveGuilds)
 }
 
 func (h *PresenceHandler) GetPresence(w http.ResponseWriter, r *http.Request) {
@@ -214,5 +215,23 @@ func (h *PresenceHandler) GetBulkPresence(w http.ResponseWriter, r *http.Request
 	}
 
 	writeJSON(w, http.StatusOK, presences)
+}
+
+func (h *PresenceHandler) GetLiveGuilds(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		GuildIDs []string `json:"guildIds"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.GuildIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "invalid_body", "guildIds array is required")
+		return
+	}
+
+	liveGuilds, err := h.svc.GetLiveGuilds(r.Context(), body.GuildIDs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "live_guilds_error", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"guildIds": liveGuilds})
 }
 

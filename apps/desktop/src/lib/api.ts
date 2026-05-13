@@ -496,6 +496,10 @@ export const api = {
     }[]>("POST", "/users/bulk-presence", { userIds });
   },
 
+  getLiveGuilds(guildIds: string[]) {
+    return request<{ guildIds: string[] }>("POST", "/guilds/live", { guildIds });
+  },
+
   getBadges(userId: string) {
     return request<UserBadge[]>("GET", `/users/${userId}/badges`);
   },

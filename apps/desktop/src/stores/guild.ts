@@ -21,6 +21,7 @@ interface GuildState {
   usernames: Record<string, string>;
   presenceMap: Record<string, string>; // userId → status (online/idle/dnd/offline)
   streamStatusMap: Record<string, { live: boolean; title?: string; game?: string; viewers?: number; startedAt?: string; thumbnail?: string }>;
+  liveGuilds: Set<string>; // guildIds that have at least one member streaming
   unreadChannels: Record<string, number>; // channelId → unread count
   lastReadMessageIds: Record<string, string>; // channelId → last read message id (for divider)
   emotesReady: number; // increment to trigger re-render when emotes load
@@ -69,6 +70,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
   usernames: {},
   presenceMap: {},
   streamStatusMap: {},
+  liveGuilds: new Set<string>(),
   unreadChannels: {},
   lastReadMessageIds: {},
   emotesReady: 0,
@@ -90,6 +92,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
       usernames: {},
       presenceMap: {},
       streamStatusMap: {},
+      liveGuilds: new Set<string>(),
       unreadChannels: {},
       lastReadMessageIds: {},
       loading: false,
@@ -118,6 +121,15 @@ export const useGuildStore = create<GuildState>((set, get) => ({
           set({ unreadChannels: countMap, lastReadMessageIds: readMap });
         }
       }).catch(() => {});
+
+      // Check which guilds have live streamers
+      if (list.length > 0) {
+        api.getLiveGuilds(list.map((g) => g.id)).then((res) => {
+          if (res?.guildIds) {
+            set({ liveGuilds: new Set(res.guildIds) });
+          }
+        }).catch(() => {});
+      }
 
       // Load emotes for ALL guilds so :emote: resolves everywhere
       Promise.all(

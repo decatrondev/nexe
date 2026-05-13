@@ -220,6 +220,7 @@ func main() {
 	mux.Handle("POST /guilds/{id}/track", guildsProxy(pp))
 	mux.Handle("POST /guilds/{id}/untrack", guildsProxy(pp))
 	mux.Handle("POST /users/bulk-presence", guildsProxy(pp))
+	mux.Handle("POST /guilds/live", guildsProxy(pp))
 
 	// Proxy to notifications service (authenticated)
 	np := http.HandlerFunc(proxyHandler.ProxyNotifications)
