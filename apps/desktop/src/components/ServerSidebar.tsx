@@ -13,6 +13,7 @@ function SidebarIcon({
   inactiveClass = "rounded-2xl bg-dark-800 text-slate-300 hover:rounded-xl hover:bg-nexe-500 hover:text-white",
   disabled = false,
   badge,
+  live,
   children,
 }: {
   isActive?: boolean;
@@ -22,6 +23,7 @@ function SidebarIcon({
   inactiveClass?: string;
   disabled?: boolean;
   badge?: number;
+  live?: boolean;
   children: React.ReactNode;
 }) {
   const [hovered, setHovered] = useState(false);
@@ -52,6 +54,12 @@ function SidebarIcon({
           {badge > 99 ? "99+" : badge}
         </span>
       )}
+      {live && !(badge && badge > 0) && (
+        <span className="absolute -top-0.5 -right-0.5 flex h-3 w-3 items-center justify-center">
+          <span className="absolute h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+          <span className="relative h-2 w-2 rounded-full bg-red-500" />
+        </span>
+      )}
     </div>
   );
 }
@@ -63,6 +71,8 @@ export default function ServerSidebar() {
   const setActiveGuild = useGuildStore((s) => s.setActiveGuild);
   const unreadChannels = useGuildStore((s) => s.unreadChannels);
   const allChannels = useGuildStore((s) => s.channels);
+  const allMembers = useGuildStore((s) => s.members);
+  const streamStatusMap = useGuildStore((s) => s.streamStatusMap);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
 
@@ -70,6 +80,12 @@ export default function ServerSidebar() {
     const guildChannelList = allChannels[guildId] || [];
     return guildChannelList.reduce((sum, ch) => sum + (unreadChannels[ch.id] || 0), 0);
   }, [allChannels, unreadChannels]);
+
+  const isGuildLive = useCallback((guildId: string) => {
+    const members = allMembers[guildId];
+    if (!members) return false;
+    return members.some((m) => streamStatusMap[m.userId]?.live);
+  }, [allMembers, streamStatusMap]);
 
   return (
     <>
@@ -96,6 +112,7 @@ export default function ServerSidebar() {
             onClick={() => setActiveGuild(guild.id)}
             title={guild.name}
             badge={getGuildUnread(guild.id)}
+            live={isGuildLive(guild.id)}
           >
             {guild.iconUrl ? (
               <img
