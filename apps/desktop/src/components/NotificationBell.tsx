@@ -164,7 +164,7 @@ export default function NotificationBell() {
       {open && (
         <div className="fixed inset-0 z-modal flex items-start justify-center" onClick={() => setOpen(false)}>
           {/* Backdrop */}
-          <div className="absolute inset-0 bg-black/40" />
+          <div className="fixed inset-0 bg-black/40" />
 
           {/* Panel */}
           <div

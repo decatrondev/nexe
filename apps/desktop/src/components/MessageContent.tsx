@@ -270,7 +270,7 @@ function parseEmotes(text: string, keyBase: number): React.ReactNode {
 function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
   return (
     <div
-      className="fixed inset-0 z-toast flex items-center justify-center bg-black/80"
+      className="fixed inset-0 z-modal flex items-center justify-center bg-black/80"
       onClick={onClose}
     >
       <button

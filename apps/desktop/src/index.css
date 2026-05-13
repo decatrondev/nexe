@@ -37,16 +37,30 @@
   --shadow-tooltip: 0 2px 8px rgba(0, 0, 0, 0.4);
   --shadow-popover: 0 4px 20px rgba(0, 0, 0, 0.45), 0 1px 6px rgba(0, 0, 0, 0.3);
 
-  /* Z-index scale */
-  --z-base: 0;
-  --z-sticky: 10;
-  --z-dropdown: 40;
-  --z-overlay: 50;
-  --z-modal: 60;
-  --z-popover: 70;
-  --z-tooltip: 100;
-  --z-select: 150;
-  --z-toast: 200;
+}
+
+/* ── Z-index Scale (utility classes) ── */
+
+@layer utilities {
+  .z-base { z-index: 0; }
+  .z-sticky { z-index: 10; }
+  .z-dropdown { z-index: 40; }
+  .z-overlay { z-index: 50; }
+  .z-modal { z-index: 60; }
+  .z-popover { z-index: 70; }
+  .z-tooltip { z-index: 100; }
+  .z-select { z-index: 150; }
+  .z-toast { z-index: 200; }
+}
+
+/* ── Shadow Elevation (utility classes) ── */
+
+@layer utilities {
+  .shadow-card { box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2); }
+  .shadow-dropdown { box-shadow: 0 4px 12px rgba(0,0,0,0.4), 0 1px 4px rgba(0,0,0,0.3); }
+  .shadow-modal { box-shadow: 0 8px 30px rgba(0,0,0,0.5), 0 2px 8px rgba(0,0,0,0.3); }
+  .shadow-tooltip { box-shadow: 0 2px 8px rgba(0,0,0,0.4); }
+  .shadow-popover { box-shadow: 0 4px 20px rgba(0,0,0,0.45), 0 1px 6px rgba(0,0,0,0.3); }
 }
 
 /* ── Keyframe Animations ── */
