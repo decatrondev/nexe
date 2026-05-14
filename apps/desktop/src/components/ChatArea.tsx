@@ -815,16 +815,53 @@ export default function ChatArea() {
               messages.map((msg, idx) => {
                 const prevMsg = idx > 0 ? messages[idx - 1] : null;
                 const showUnreadDivider = lastReadId && prevMsg?.id === lastReadId && msg.id !== lastReadId;
+                const isSystem = msg.type === "system";
                 const isBridge = msg.type === "bridge" && msg.bridgeSource;
                 const isGrouped = showUnreadDivider ? false : (isBridge
                   ? prevMsg?.type === "bridge" && prevMsg?.bridgeAuthorId === msg.bridgeAuthorId
-                  : prevMsg?.authorId === msg.authorId && prevMsg?.type !== "bridge");
-                const authorName = isBridge ? (msg.bridgeAuthor || "Unknown") : (usernames[msg.authorId] || "Unknown");
+                  : !isSystem && prevMsg?.authorId === msg.authorId && prevMsg?.type !== "bridge" && prevMsg?.type !== "system");
+                const authorName = isSystem ? (msg.bridgeAuthor || "System") : isBridge ? (msg.bridgeAuthor || "Unknown") : (usernames[msg.authorId] || "Unknown");
                 const bridgeColor = msg.bridgeSource === "twitch" ? "#9146FF" : msg.bridgeSource === "kick" ? "#53FC18" : msg.bridgeSource === "youtube" ? "#FF0000" : undefined;
                 const color = isBridge ? (bridgeColor || "#9146FF") : (getRoleColor(msg.authorId, memberRolesMap, guildRoles) || userColor(msg.authorId));
                 const isEditing = editingId === msg.id;
                 const replyRef = msg.replyToId ? messages.find((m) => m.id === msg.replyToId) : null;
                 const reactions = messageReactions[msg.id] || [];
+
+                // System messages get a special compact rendering
+                if (isSystem) {
+                  const systemIcon = msg.content.includes("pinned") ? (
+                    <svg className="h-4 w-4 shrink-0 text-amber-400/70" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a2 2 0 014 0v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
+                    </svg>
+                  ) : (
+                    <svg className="h-4 w-4 shrink-0 text-emerald-400/70" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                    </svg>
+                  );
+
+                  return (
+                    <>{showUnreadDivider && (
+                      <div className="my-2 flex items-center gap-3 px-2 animate-fade-in" key={`divider-${msg.id}`}>
+                        <div className="h-px flex-1 bg-red-500/40" />
+                        <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-red-400">New Messages</span>
+                        <div className="h-px flex-1 bg-red-500/40" />
+                      </div>
+                    )}
+                    <div
+                      key={msg.id}
+                      id={`msg-${msg.id}`}
+                      className="flex items-center gap-2 px-4 py-1"
+                    >
+                      {systemIcon}
+                      <span className="text-[13px] text-slate-400">
+                        <span className="font-medium text-slate-300">{authorName}</span>
+                        {" "}{msg.content}
+                      </span>
+                      <span className="text-[11px] text-slate-600">{formatTimestamp(msg.createdAt)}</span>
+                    </div>
+                    </>
+                  );
+                }
 
                 return (
                   <>{showUnreadDivider && (

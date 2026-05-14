@@ -64,11 +64,11 @@ func (r *GuildRepository) GetByID(ctx context.Context, id string) (*model.Guild,
 	var g model.Guild
 	err := r.db.QueryRowContext(ctx,
 		`SELECT id, name, description, icon_url, banner_url, owner_id,
-		        is_streamer_server, streamer_twitch_id, bridge_channel_id, member_count, features, created_at, updated_at
+		        is_streamer_server, streamer_twitch_id, bridge_channel_id, system_channel_id, member_count, features, created_at, updated_at
 		 FROM guilds WHERE id = $1`, id,
 	).Scan(
 		&g.ID, &g.Name, &g.Description, &g.IconUrl, &g.BannerUrl, &g.OwnerID,
-		&g.IsStreamerServer, &g.StreamerTwitchID, &g.BridgeChannelID, &g.MemberCount, pqJSONArray(&g.Features), &g.CreatedAt, &g.UpdatedAt,
+		&g.IsStreamerServer, &g.StreamerTwitchID, &g.BridgeChannelID, &g.SystemChannelID, &g.MemberCount, pqJSONArray(&g.Features), &g.CreatedAt, &g.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -83,10 +83,10 @@ func (r *GuildRepository) Update(ctx context.Context, guild *model.Guild) error 
 	_, err := r.db.ExecContext(ctx,
 		`UPDATE guilds
 		 SET name = $1, description = $2, icon_url = $3, banner_url = $4,
-		     is_streamer_server = $5, updated_at = NOW()
-		 WHERE id = $6`,
+		     is_streamer_server = $5, system_channel_id = $6, updated_at = NOW()
+		 WHERE id = $7`,
 		guild.Name, guild.Description, guild.IconUrl, guild.BannerUrl,
-		guild.IsStreamerServer, guild.ID,
+		guild.IsStreamerServer, guild.SystemChannelID, guild.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("guild update: %w", err)
@@ -139,7 +139,7 @@ func (r *GuildRepository) ListByUser(ctx context.Context, userID string) ([]mode
 		var g model.Guild
 		if err := rows.Scan(
 			&g.ID, &g.Name, &g.Description, &g.IconUrl, &g.BannerUrl, &g.OwnerID,
-			&g.IsStreamerServer, &g.StreamerTwitchID, &g.BridgeChannelID, &g.MemberCount, pqJSONArray(&g.Features), &g.CreatedAt, &g.UpdatedAt,
+			&g.IsStreamerServer, &g.StreamerTwitchID, &g.BridgeChannelID, &g.SystemChannelID, &g.MemberCount, pqJSONArray(&g.Features), &g.CreatedAt, &g.UpdatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("guild list by user scan: %w", err)
 		}
@@ -151,7 +151,7 @@ func (r *GuildRepository) ListByUser(ctx context.Context, userID string) ([]mode
 func (r *GuildRepository) ListByStreamerTwitchID(ctx context.Context, twitchID string) ([]model.Guild, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, name, description, icon_url, banner_url, owner_id,
-		        is_streamer_server, streamer_twitch_id, bridge_channel_id, member_count, features, created_at, updated_at
+		        is_streamer_server, streamer_twitch_id, bridge_channel_id, system_channel_id, member_count, features, created_at, updated_at
 		 FROM guilds WHERE streamer_twitch_id = $1`, twitchID)
 	if err != nil {
 		return nil, err
@@ -163,7 +163,7 @@ func (r *GuildRepository) ListByStreamerTwitchID(ctx context.Context, twitchID s
 		var g model.Guild
 		if err := rows.Scan(
 			&g.ID, &g.Name, &g.Description, &g.IconUrl, &g.BannerUrl, &g.OwnerID,
-			&g.IsStreamerServer, &g.StreamerTwitchID, &g.BridgeChannelID, &g.MemberCount, pqJSONArray(&g.Features), &g.CreatedAt, &g.UpdatedAt,
+			&g.IsStreamerServer, &g.StreamerTwitchID, &g.BridgeChannelID, &g.SystemChannelID, &g.MemberCount, pqJSONArray(&g.Features), &g.CreatedAt, &g.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -175,7 +175,7 @@ func (r *GuildRepository) ListByStreamerTwitchID(ctx context.Context, twitchID s
 func (r *GuildRepository) ListWithTwitch(ctx context.Context) ([]model.Guild, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT id, name, description, icon_url, banner_url, owner_id,
-		        is_streamer_server, streamer_twitch_id, bridge_channel_id, member_count, features, created_at, updated_at
+		        is_streamer_server, streamer_twitch_id, bridge_channel_id, system_channel_id, member_count, features, created_at, updated_at
 		 FROM guilds WHERE streamer_twitch_id IS NOT NULL AND streamer_twitch_id != ''`)
 	if err != nil {
 		return nil, err
@@ -187,7 +187,7 @@ func (r *GuildRepository) ListWithTwitch(ctx context.Context) ([]model.Guild, er
 		var g model.Guild
 		if err := rows.Scan(
 			&g.ID, &g.Name, &g.Description, &g.IconUrl, &g.BannerUrl, &g.OwnerID,
-			&g.IsStreamerServer, &g.StreamerTwitchID, &g.BridgeChannelID, &g.MemberCount, pqJSONArray(&g.Features), &g.CreatedAt, &g.UpdatedAt,
+			&g.IsStreamerServer, &g.StreamerTwitchID, &g.BridgeChannelID, &g.SystemChannelID, &g.MemberCount, pqJSONArray(&g.Features), &g.CreatedAt, &g.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

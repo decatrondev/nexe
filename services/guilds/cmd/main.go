@@ -55,6 +55,7 @@ func main() {
 	guildService := service.NewGuildService(
 		guildRepo, channelRepo, categoryRepo, roleRepo,
 		memberRepo, inviteRepo, moderationRepo, automodRepo, eventPublisher, rdb,
+		cfg.MessagingURL,
 	)
 
 	// Handler

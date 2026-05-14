@@ -189,10 +189,11 @@ func (h *GuildHandler) UpdateGuild(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Name        *string `json:"name"`
-		Description *string `json:"description"`
-		IconUrl     *string `json:"iconUrl"`
-		BannerUrl   *string `json:"bannerUrl"`
+		Name            *string `json:"name"`
+		Description     *string `json:"description"`
+		IconUrl         *string `json:"iconUrl"`
+		BannerUrl       *string `json:"bannerUrl"`
+		SystemChannelID *string `json:"systemChannelId"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
@@ -209,6 +210,9 @@ func (h *GuildHandler) UpdateGuild(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.BannerUrl != nil {
 		guild.BannerUrl = *body.BannerUrl
+	}
+	if body.SystemChannelID != nil {
+		guild.SystemChannelID = body.SystemChannelID
 	}
 
 	if err := h.svc.UpdateGuild(r.Context(), guild, userID); err != nil {
@@ -664,7 +668,8 @@ func (h *GuildHandler) JoinGuild(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	guildID := r.PathValue("id")
-	member, err := h.svc.JoinGuild(r.Context(), guildID, userID)
+	username := r.Header.Get("X-Username")
+	member, err := h.svc.JoinGuild(r.Context(), guildID, userID, username)
 	if err != nil {
 		classifyError(w, err)
 		return
@@ -767,7 +772,8 @@ func (h *GuildHandler) UseInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	code := r.PathValue("code")
-	guild, err := h.svc.UseInvite(r.Context(), code, userID)
+	username := r.Header.Get("X-Username")
+	guild, err := h.svc.UseInvite(r.Context(), code, userID, username)
 	if err != nil {
 		msg := err.Error()
 		if strings.Contains(msg, "expired") || strings.Contains(msg, "maximum") {

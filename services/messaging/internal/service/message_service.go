@@ -341,7 +341,7 @@ func (s *MessageService) DeleteMessage(ctx context.Context, messageID, requester
 }
 
 // PinMessage pins a message in its channel.
-func (s *MessageService) PinMessage(ctx context.Context, messageID, requesterID string) error {
+func (s *MessageService) PinMessage(ctx context.Context, messageID, requesterID, requesterName string) error {
 	msg, err := s.messages.GetByID(ctx, messageID)
 	if err != nil {
 		return fmt.Errorf("pin message: %w", err)
@@ -355,6 +355,19 @@ func (s *MessageService) PinMessage(ctx context.Context, messageID, requesterID 
 	}
 
 	slog.Debug("message pinned", "id", messageID, "by", requesterID)
+
+	// Create system message for the pin event
+	go func() {
+		name := requesterName
+		if name == "" {
+			name = requesterID
+		}
+		_, err := s.SendSystemMessage(context.Background(), msg.ChannelID, "pinned a message", name)
+		if err != nil {
+			slog.Error("failed to create pin system message", "error", err)
+		}
+	}()
+
 	return nil
 }
 
@@ -495,6 +508,35 @@ func (s *MessageService) checkAutomod(ctx context.Context, guildID, content, use
 	}
 	json.NewDecoder(resp.Body).Decode(&result)
 	return result.Blocked, result.Reason
+}
+
+// SendSystemMessage creates a system message (join, pin, etc.) without author validation.
+func (s *MessageService) SendSystemMessage(ctx context.Context, channelID, content, authorName string) (*model.Message, error) {
+	bridgeAuthor := authorName
+	msg := &model.Message{
+		ChannelID:    channelID,
+		Content:      content,
+		Type:         "system",
+		BridgeAuthor: &bridgeAuthor,
+	}
+
+	if err := s.messages.Create(ctx, msg); err != nil {
+		return nil, fmt.Errorf("send system message: %w", err)
+	}
+
+	slog.Debug("system message created", "id", msg.ID, "channel", channelID, "event", content)
+
+	if s.events != nil {
+		go func() {
+			guildID, err := s.messages.GetChannelGuildID(context.Background(), channelID)
+			if err != nil {
+				return
+			}
+			s.events.Publish(context.Background(), guildID, channelID, EventMessageCreate, "", msg)
+		}()
+	}
+
+	return msg, nil
 }
 
 // ---- Read States ----

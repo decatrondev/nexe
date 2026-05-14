@@ -144,6 +144,21 @@ func (h *MessageHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// System messages (join, pin, etc.) — no author validation
+	if body.Type == "system" {
+		authorName := ""
+		if body.BridgeAuthor != nil {
+			authorName = *body.BridgeAuthor
+		}
+		msg, err := h.svc.SendSystemMessage(r.Context(), channelID, body.Content, authorName)
+		if err != nil {
+			classifyError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, msg)
+		return
+	}
+
 	msg, err := h.svc.SendMessage(r.Context(), channelID, userID, body.Content, body.ReplyToID)
 	if err != nil {
 		classifyError(w, err)
@@ -314,8 +329,9 @@ func (h *MessageHandler) PinMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	messageID := r.PathValue("id")
+	username := r.Header.Get("X-Username")
 
-	if err := h.svc.PinMessage(r.Context(), messageID, userID); err != nil {
+	if err := h.svc.PinMessage(r.Context(), messageID, userID, username); err != nil {
 		classifyError(w, err)
 		return
 	}

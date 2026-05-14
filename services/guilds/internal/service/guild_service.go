@@ -1,12 +1,14 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"time"
 
 	"github.com/decatrondev/nexe/services/guilds/internal/model"
@@ -15,16 +17,17 @@ import (
 )
 
 type GuildService struct {
-	guilds     *repository.GuildRepository
-	channels   *repository.ChannelRepository
-	categories *repository.CategoryRepository
-	roles      *repository.RoleRepository
-	members    *repository.MemberRepository
-	invites    *repository.InviteRepository
-	moderation *repository.ModerationRepository
-	automod    *repository.AutomodRepository
-	events     *EventPublisher
-	rdb        *redis.Client
+	guilds       *repository.GuildRepository
+	channels     *repository.ChannelRepository
+	categories   *repository.CategoryRepository
+	roles        *repository.RoleRepository
+	members      *repository.MemberRepository
+	invites      *repository.InviteRepository
+	moderation   *repository.ModerationRepository
+	automod      *repository.AutomodRepository
+	events       *EventPublisher
+	rdb          *redis.Client
+	messagingURL string
 }
 
 func NewGuildService(
@@ -38,18 +41,20 @@ func NewGuildService(
 	automod *repository.AutomodRepository,
 	events *EventPublisher,
 	rdb *redis.Client,
+	messagingURL string,
 ) *GuildService {
 	return &GuildService{
-		guilds:     guilds,
-		channels:   channels,
-		categories: categories,
-		roles:      roles,
-		members:    members,
-		invites:    invites,
-		moderation: moderation,
-		automod:    automod,
-		events:     events,
-		rdb:        rdb,
+		guilds:       guilds,
+		channels:     channels,
+		categories:   categories,
+		roles:        roles,
+		members:      members,
+		invites:      invites,
+		moderation:   moderation,
+		automod:      automod,
+		events:       events,
+		rdb:          rdb,
+		messagingURL: messagingURL,
 	}
 }
 
@@ -796,7 +801,7 @@ func (s *GuildService) RemoveAutoRole(ctx context.Context, guildID, userID, role
 // Members
 // ---------------------------------------------------------------------------
 
-func (s *GuildService) JoinGuild(ctx context.Context, guildID, userID string) (*model.GuildMember, error) {
+func (s *GuildService) JoinGuild(ctx context.Context, guildID, userID, username string) (*model.GuildMember, error) {
 	// Check if already a member
 	existing, err := s.members.GetByGuildAndUser(ctx, guildID, userID)
 	if err != nil {
@@ -839,6 +844,19 @@ func (s *GuildService) JoinGuild(ctx context.Context, guildID, userID string) (*
 		"userId":  userID,
 		"guildId": guildID,
 	})
+
+	// Send system message to the first text channel
+	go func() {
+		channelID := s.getSystemChannel(context.Background(), guildID)
+		if channelID == "" {
+			return
+		}
+		name := username
+		if name == "" {
+			name = userID
+		}
+		s.sendSystemMessage(guildID, channelID, "joined the server", name)
+	}()
 
 	return member, nil
 }
@@ -904,7 +922,7 @@ func (s *GuildService) CreateInvite(ctx context.Context, guildID, channelID, inv
 	return inv, nil
 }
 
-func (s *GuildService) UseInvite(ctx context.Context, code, userID string) (*model.Guild, error) {
+func (s *GuildService) UseInvite(ctx context.Context, code, userID, username string) (*model.Guild, error) {
 	inv, err := s.invites.GetByCode(ctx, code)
 	if err != nil {
 		return nil, fmt.Errorf("use invite: %w", err)
@@ -924,7 +942,7 @@ func (s *GuildService) UseInvite(ctx context.Context, code, userID string) (*mod
 	}
 
 	// Join the guild
-	_, err = s.JoinGuild(ctx, inv.GuildID, userID)
+	_, err = s.JoinGuild(ctx, inv.GuildID, userID, username)
 	if err != nil {
 		return nil, err
 	}
@@ -1265,4 +1283,56 @@ func (s *GuildService) CheckChannelAccess(ctx context.Context, channelID, userID
 	}
 
 	return access, nil
+}
+
+// sendSystemMessage posts a system message to the messaging service via HTTP.
+func (s *GuildService) sendSystemMessage(guildID, channelID, content, username string) {
+	if s.messagingURL == "" {
+		return
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"content":      content,
+		"type":         "system",
+		"bridgeAuthor": username,
+	})
+
+	url := fmt.Sprintf("%s/channels/%s/messages", s.messagingURL, channelID)
+	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
+	if err != nil {
+		slog.Error("failed to create system message request", "error", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-User-ID", "system")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		slog.Error("failed to send system message", "error", err, "guild", guildID, "channel", channelID)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		slog.Warn("system message returned non-2xx", "status", resp.StatusCode, "guild", guildID)
+	}
+}
+
+// getSystemChannel returns the system channel for a guild.
+// Uses SystemChannelID if set, otherwise falls back to the first text channel.
+func (s *GuildService) getSystemChannel(ctx context.Context, guildID string) string {
+	guild, err := s.guilds.GetByID(ctx, guildID)
+	if err == nil && guild != nil && guild.SystemChannelID != nil && *guild.SystemChannelID != "" {
+		return *guild.SystemChannelID
+	}
+	channels, err := s.channels.ListByGuild(ctx, guildID)
+	if err != nil || len(channels) == 0 {
+		return ""
+	}
+	for _, ch := range channels {
+		if ch.Type == "text" {
+			return ch.ID
+		}
+	}
+	return ""
 }
