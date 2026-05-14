@@ -308,10 +308,14 @@ export interface Category {
 }
 
 export interface Invite {
-  id: string;
+  code: string;
   guildId: string;
   channelId: string;
-  code: string;
+  inviterId: string;
+  maxUses?: number;
+  uses?: number;
+  expiresAt?: string;
+  createdAt: string;
 }
 
 export interface Ban {
@@ -609,8 +613,11 @@ export const api = {
     return request<void>("DELETE", `/messages/${messageId}`);
   },
 
-  createInvite(guildId: string, channelId: string) {
-    return request<Invite>("POST", `/guilds/${guildId}/invites`, { channelId });
+  createInvite(guildId: string, channelId: string, maxAge?: number, maxUses?: number) {
+    const body: Record<string, unknown> = { channelId };
+    if (maxAge) body.maxAge = maxAge;
+    if (maxUses) body.maxUses = maxUses;
+    return request<Invite>("POST", `/guilds/${guildId}/invites`, body);
   },
 
   joinGuild(guildId: string) {

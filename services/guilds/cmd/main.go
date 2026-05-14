@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/decatrondev/nexe/services/guilds/config"
 	"github.com/decatrondev/nexe/services/guilds/internal/database"
@@ -71,6 +73,21 @@ func main() {
 	guildHandler.RegisterRoutes(mux)
 	mux.HandleFunc("GET /guilds/{id}/emotes", emoteHandler.GetEmotes)
 	mux.HandleFunc("POST /guilds/{id}/emotes/validate", emoteHandler.ValidateEmotes)
+
+	// Periodic cleanup of expired invites
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for {
+			<-ticker.C
+			n, err := inviteRepo.DeleteExpired(context.Background())
+			if err != nil {
+				slog.Error("invite cleanup failed", "error", err)
+			} else if n > 0 {
+				slog.Info("cleaned up expired invites", "count", n)
+			}
+		}
+	}()
 
 	addr := ":" + cfg.Port
 	slog.Info("guilds starting", "addr", addr, "env", cfg.Env)

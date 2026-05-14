@@ -49,7 +49,9 @@ func (r *InviteRepository) GetByCode(ctx context.Context, code string) (*model.I
 func (r *InviteRepository) ListByGuild(ctx context.Context, guildID string) ([]model.Invite, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT code, guild_id, channel_id, inviter_id, max_uses, uses, expires_at, created_at
-		 FROM invites WHERE guild_id = $1 ORDER BY created_at DESC`, guildID,
+		 FROM invites WHERE guild_id = $1
+		 AND (expires_at IS NULL OR expires_at > NOW())
+		 ORDER BY created_at DESC`, guildID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("invite list by guild: %w", err)
@@ -74,6 +76,16 @@ func (r *InviteRepository) Delete(ctx context.Context, code string) error {
 		return fmt.Errorf("invite delete: %w", err)
 	}
 	return nil
+}
+
+func (r *InviteRepository) DeleteExpired(ctx context.Context) (int64, error) {
+	res, err := r.db.ExecContext(ctx,
+		`DELETE FROM invites WHERE expires_at IS NOT NULL AND expires_at <= NOW()`)
+	if err != nil {
+		return 0, fmt.Errorf("invite delete expired: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
 }
 
 func (r *InviteRepository) IncrementUses(ctx context.Context, code string) error {
