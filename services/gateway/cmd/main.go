@@ -51,8 +51,21 @@ func main() {
 	authSvc := service.NewAuthService(userRepo, sessionRepo, verificationRepo, jwtSvc, emailSvc)
 	twitchSvc := service.NewTwitchService(cfg.TwitchClientID, cfg.TwitchClientSecret, cfg.TwitchRedirectURI)
 
-	// Storage
-	storageSvc := service.NewLocalStorage(cfg.UploadPath, cfg.UploadURL)
+	// Storage — use R2 if configured, fallback to local
+	var storageSvc service.Storage
+	if cfg.R2Endpoint != "" && cfg.R2AccessKeyID != "" {
+		r2, err := service.NewR2Storage(cfg.R2Endpoint, cfg.R2AccessKeyID, cfg.R2SecretAccessKey, cfg.R2Bucket, cfg.R2PublicURL)
+		if err != nil {
+			slog.Error("failed to init R2 storage, falling back to local", "error", err)
+			storageSvc = service.NewLocalStorage(cfg.UploadPath, cfg.UploadURL)
+		} else {
+			storageSvc = r2
+			slog.Info("using R2 storage", "bucket", cfg.R2Bucket)
+		}
+	} else {
+		storageSvc = service.NewLocalStorage(cfg.UploadPath, cfg.UploadURL)
+		slog.Info("using local storage", "path", cfg.UploadPath)
+	}
 
 	// Handlers
 	authHandler := handler.NewAuthHandler(authSvc, rdb)

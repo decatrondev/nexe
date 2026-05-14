@@ -27,6 +27,11 @@ type Config struct {
 	FrontendURL          string
 	UploadPath           string
 	UploadURL            string
+	R2Endpoint           string
+	R2AccessKeyID        string
+	R2SecretAccessKey    string
+	R2Bucket             string
+	R2PublicURL          string
 }
 
 func Load() *Config {
@@ -51,6 +56,11 @@ func Load() *Config {
 		FrontendURL:          getEnv("NEXE_FRONTEND_URL", "https://nexeapp.decatron.net"),
 		UploadPath:           getEnv("NEXE_UPLOAD_PATH", "/var/www/html/nexe/uploads"),
 		UploadURL:            getEnv("NEXE_UPLOAD_URL", "https://nexeuploads.decatron.net"),
+		R2Endpoint:           getEnv("NEXE_R2_ENDPOINT", ""),
+		R2AccessKeyID:        getEnv("NEXE_R2_ACCESS_KEY_ID", ""),
+		R2SecretAccessKey:    getEnv("NEXE_R2_SECRET_ACCESS_KEY", ""),
+		R2Bucket:             getEnv("NEXE_R2_BUCKET", "nexe-uploads"),
+		R2PublicURL:          getEnv("NEXE_R2_PUBLIC_URL", ""),
 	}
 	return cfg
 }
