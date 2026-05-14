@@ -13,6 +13,7 @@ type Guild struct {
 	StreamerTwitchID *string  `json:"streamerTwitchId,omitempty"`
 	BridgeChannelID  *string  `json:"bridgeChannelId,omitempty"`
 	SystemChannelID  *string  `json:"systemChannelId,omitempty"`
+	AccentColor      *string  `json:"accentColor,omitempty"`
 	MemberCount      int      `json:"memberCount"`
 	Features         []string `json:"features"`
 	CreatedAt        time.Time `json:"createdAt"`

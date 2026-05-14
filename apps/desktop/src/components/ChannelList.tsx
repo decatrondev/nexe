@@ -74,10 +74,11 @@ function SortableChannel({ ch, isActive, unread, onClick, canDrag, children }: {
     disabled: !canDrag,
   });
 
-  const style = {
+  const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
+    ...(isActive ? { backgroundColor: "rgba(var(--server-accent-rgb, 51,65,85), 0.25)" } : {}),
   };
 
   return (
@@ -88,7 +89,7 @@ function SortableChannel({ ch, isActive, unread, onClick, canDrag, children }: {
       {...(canDrag ? listeners : {})}
       className={`group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-all duration-150 ${
         isActive
-          ? "bg-dark-700/60 text-white"
+          ? "text-white"
           : unread > 0
           ? "text-white font-semibold hover:bg-dark-800/80"
           : "text-slate-400 hover:bg-dark-800/60 hover:text-slate-200"
@@ -101,7 +102,10 @@ function SortableChannel({ ch, isActive, unread, onClick, canDrag, children }: {
         <span className="ml-auto flex h-2 w-2 rounded-full bg-red-500 animate-pulse" title="Live channel" />
       )}
       {unread > 0 && !isActive && (
-        <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+        <span
+          className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold text-white"
+          style={{ backgroundColor: "var(--server-accent, #ef4444)" }}
+        >
           {unread > 99 ? "99+" : unread}
         </span>
       )}
@@ -525,6 +529,44 @@ export default function ChannelList() {
     };
   }, [channels, categories]);
 
+  // Keyboard navigation — arrow keys to switch channels
+  const navigableChannels = useMemo(() => {
+    const ids: string[] = [];
+    for (const ch of uncategorizedChannels) {
+      if (ch.type !== "voice") ids.push(ch.id);
+    }
+    for (const cat of sortedCategories) {
+      for (const ch of channelsByCategory[cat.id] || []) {
+        if (ch.type !== "voice") ids.push(ch.id);
+      }
+    }
+    return ids;
+  }, [uncategorizedChannels, sortedCategories, channelsByCategory]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle when no modal/input is focused
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+      if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+        e.preventDefault();
+        const currentIdx = activeChannelId ? navigableChannels.indexOf(activeChannelId) : -1;
+        let nextIdx: number;
+        if (e.key === "ArrowUp") {
+          nextIdx = currentIdx <= 0 ? navigableChannels.length - 1 : currentIdx - 1;
+        } else {
+          nextIdx = currentIdx >= navigableChannels.length - 1 ? 0 : currentIdx + 1;
+        }
+        if (navigableChannels[nextIdx]) {
+          setActiveChannel(navigableChannels[nextIdx]);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [navigableChannels, activeChannelId, setActiveChannel]);
+
   // Drag and drop — all channels are draggable, grouped by category
   const allChannelIds = useMemo(() => {
     const ids: string[] = [];
@@ -664,10 +706,16 @@ export default function ChannelList() {
 
   return (
     <>
-      <div className="flex h-full w-60 shrink-0 flex-col bg-dark-900">
+      <div className="flex h-full min-w-0 flex-1 flex-col bg-dark-900">
         {/* Server header */}
-        <div className="flex h-12 shrink-0 items-center justify-between border-b border-dark-950 px-4 transition-colors">
-          <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-100">
+        <div
+          className="flex h-12 shrink-0 items-center justify-between border-b px-4 transition-colors"
+          style={{ borderColor: "var(--server-accent, var(--color-dark-950))" }}
+        >
+          <h2
+            className="min-w-0 flex-1 truncate text-sm font-semibold"
+            style={{ color: "var(--server-accent, #f1f5f9)" }}
+          >
             {serverName}
           </h2>
           <div className="flex items-center gap-0.5">
@@ -714,7 +762,7 @@ export default function ChannelList() {
         </div>
 
         {/* Channel list */}
-        <div className="flex-1 overflow-y-auto px-2 py-3">
+        <div className="flex-1 overflow-y-auto px-2 py-3 accent-scrollbar">
           {!activeGuildId ? (
             <p className="px-2 py-4 text-center text-sm text-slate-500">
               Select a server to see channels

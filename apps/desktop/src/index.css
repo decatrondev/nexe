@@ -63,6 +63,18 @@
   .shadow-popover { box-shadow: 0 4px 20px rgba(0,0,0,0.45), 0 1px 6px rgba(0,0,0,0.3); }
 }
 
+/* ── Server Accent Theme ── */
+
+/* When --server-accent is set, these classes use it */
+.accent-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--server-accent, #475569) !important;
+}
+*:hover > .accent-scrollbar::-webkit-scrollbar-thumb,
+*:hover.accent-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--server-accent, #334155);
+  opacity: 0.6;
+}
+
 /* ── Keyframe Animations ── */
 
 @keyframes fade-in {

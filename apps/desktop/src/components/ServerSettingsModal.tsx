@@ -110,10 +110,11 @@ function OverviewTab({ guildId }: { guildId: string }) {
   const [name, setName] = useState(guild?.name ?? "");
   const [description, setDescription] = useState(guild?.description ?? "");
   const [systemChannelId, setSystemChannelId] = useState(guild?.systemChannelId ?? "");
+  const [accentColor, setAccentColor] = useState(guild?.accentColor ?? "");
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
-  const hasChanges = name !== (guild?.name ?? "") || description !== (guild?.description ?? "") || systemChannelId !== (guild?.systemChannelId ?? "");
+  const hasChanges = name !== (guild?.name ?? "") || description !== (guild?.description ?? "") || systemChannelId !== (guild?.systemChannelId ?? "") || accentColor !== (guild?.accentColor ?? "");
 
   async function handleSave(e: FormEvent) {
     e.preventDefault();
@@ -125,6 +126,7 @@ function OverviewTab({ guildId }: { guildId: string }) {
         name: name.trim(),
         description: description.trim(),
         systemChannelId: systemChannelId || null,
+        accentColor: accentColor || null,
       });
       setFeedback({ type: "success", message: "Server settings saved!" });
     } catch (err) {
@@ -190,6 +192,26 @@ function OverviewTab({ guildId }: { guildId: string }) {
               <option key={ch.id} value={ch.id}># {ch.name}</option>
             ))}
           </select>
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-300">
+            Server Accent Color
+          </label>
+          <p className="mb-2 text-xs text-slate-500">
+            Choose a color theme for your server. Applied to UI accents when members view this server.
+          </p>
+          <div className="flex items-center gap-3">
+            <ColorPicker value={accentColor} onChange={setAccentColor} presets={DEFAULT_PRESETS} />
+            {accentColor && (
+              <button
+                type="button"
+                onClick={() => setAccentColor("")}
+                className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+              >
+                Reset to default
+              </button>
+            )}
+          </div>
         </div>
         <button
           type="submit"

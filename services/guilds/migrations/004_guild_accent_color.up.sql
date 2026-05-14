@@ -1,0 +1,1 @@
+ALTER TABLE guilds ADD COLUMN IF NOT EXISTS accent_color VARCHAR(7);

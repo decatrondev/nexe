@@ -194,6 +194,7 @@ func (h *GuildHandler) UpdateGuild(w http.ResponseWriter, r *http.Request) {
 		IconUrl         *string `json:"iconUrl"`
 		BannerUrl       *string `json:"bannerUrl"`
 		SystemChannelID *string `json:"systemChannelId"`
+		AccentColor     *string `json:"accentColor"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
@@ -213,6 +214,9 @@ func (h *GuildHandler) UpdateGuild(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.SystemChannelID != nil {
 		guild.SystemChannelID = body.SystemChannelID
+	}
+	if body.AccentColor != nil {
+		guild.AccentColor = body.AccentColor
 	}
 
 	if err := h.svc.UpdateGuild(r.Context(), guild, userID); err != nil {

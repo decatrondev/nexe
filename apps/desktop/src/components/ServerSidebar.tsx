@@ -14,6 +14,7 @@ function SidebarIcon({
   disabled = false,
   badge,
   live,
+  accentColor,
   children,
 }: {
   isActive?: boolean;
@@ -24,23 +25,30 @@ function SidebarIcon({
   disabled?: boolean;
   badge?: number;
   live?: boolean;
+  accentColor?: string;
   children: React.ReactNode;
 }) {
   const [hovered, setHovered] = useState(false);
+  const pillColor = accentColor || "white";
+  const activeBg = accentColor || undefined;
 
   return (
     <div className="relative">
       {/* Active / hover indicator pill */}
       <div
-        className={`absolute -left-1 top-1/2 w-1 -translate-y-1/2 rounded-r-full bg-white transition-all duration-200 ${
+        className={`absolute -left-1 top-1/2 w-1 -translate-y-1/2 rounded-r-full transition-all duration-200 ${
           isActive ? "h-10" : hovered ? "h-5" : "h-0"
         }`}
+        style={{ backgroundColor: pillColor }}
       />
       <Tooltip content={title} side="right" delay={150}>
         <button
           className={`flex h-12 w-12 items-center justify-center transition-all duration-200 ${
-            isActive ? activeClass : disabled ? "rounded-2xl bg-dark-800 text-slate-600 cursor-not-allowed" : inactiveClass
+            isActive
+              ? (activeBg ? "rounded-xl text-white" : activeClass)
+              : disabled ? "rounded-2xl bg-dark-800 text-slate-600 cursor-not-allowed" : inactiveClass
           }`}
+          style={isActive && activeBg ? { backgroundColor: activeBg } : undefined}
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
           onClick={() => !disabled && onClick()}
@@ -107,6 +115,7 @@ export default function ServerSidebar() {
             title={guild.name}
             badge={getGuildUnread(guild.id)}
             live={liveGuilds.has(guild.id)}
+            accentColor={guild.accentColor}
           >
             {guild.iconUrl ? (
               <img

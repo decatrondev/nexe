@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ServerSidebar from "../components/ServerSidebar";
 import ChannelList from "../components/ChannelList";
 import ChatArea from "../components/ChatArea";
@@ -10,6 +10,55 @@ import { useAuthStore } from "../stores/auth";
 import { useVoiceStore } from "../stores/voice";
 import { nexeWS } from "../lib/websocket";
 import { api, type Message, type VoiceState, type AppNotification } from "../lib/api";
+
+function hexToRgb(hex: string): string {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  return `${r}, ${g}, ${b}`;
+}
+
+// ── Resize Handle ──
+function ResizeHandle({ side, onResize }: { side: "left" | "right"; onResize: (delta: number) => void }) {
+  const dragging = useRef(false);
+  const lastX = useRef(0);
+
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    dragging.current = true;
+    lastX.current = e.clientX;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!dragging.current) return;
+      const delta = ev.clientX - lastX.current;
+      lastX.current = ev.clientX;
+      onResize(side === "left" ? delta : -delta);
+    };
+
+    const onMouseUp = () => {
+      dragging.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  }, [onResize, side]);
+
+  return (
+    <div
+      onMouseDown={onMouseDown}
+      className="group relative z-sticky w-0 shrink-0 cursor-col-resize"
+    >
+      <div className="absolute inset-y-0 -left-px w-[3px] bg-transparent transition-colors group-hover:bg-nexe-500/50 group-active:bg-nexe-500" />
+    </div>
+  );
+}
 
 function WelcomeScreen({ onCreateServer }: { onCreateServer: () => void }) {
   return (
@@ -42,6 +91,44 @@ export default function HomePage() {
   const token = useAuthStore((s) => s.token);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [showMembers, setShowMembers] = useState(() => {
+    const saved = localStorage.getItem("nexe:showMembers");
+    return saved !== null ? saved === "true" : true;
+  });
+
+  const toggleMembers = useCallback(() => {
+    setShowMembers((prev) => {
+      const next = !prev;
+      localStorage.setItem("nexe:showMembers", String(next));
+      return next;
+    });
+  }, []);
+
+  // Sidebar resize state
+  const [channelWidth, setChannelWidth] = useState(() => {
+    const saved = localStorage.getItem("nexe:channelWidth");
+    return saved ? Number(saved) : 240;
+  });
+  const [memberWidth, setMemberWidth] = useState(() => {
+    const saved = localStorage.getItem("nexe:memberWidth");
+    return saved ? Number(saved) : 240;
+  });
+
+  const handleChannelResize = useCallback((delta: number) => {
+    setChannelWidth((w) => {
+      const next = Math.max(180, Math.min(400, w + delta));
+      localStorage.setItem("nexe:channelWidth", String(next));
+      return next;
+    });
+  }, []);
+
+  const handleMemberResize = useCallback((delta: number) => {
+    setMemberWidth((w) => {
+      const next = Math.max(180, Math.min(400, w + delta));
+      localStorage.setItem("nexe:memberWidth", String(next));
+      return next;
+    });
+  }, []);
 
   // Detect ?invite=CODE in URL or localStorage (saved before login redirect)
   useEffect(() => {
@@ -469,18 +556,31 @@ export default function HomePage() {
   }, []);
 
   const showWelcome = guilds.length === 0 && !activeGuildId && !loading;
+  const activeGuild = guilds.find((g) => g.id === activeGuildId);
+  const serverAccent = activeGuild?.accentColor;
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden">
+    <div
+      className="flex h-screen w-screen overflow-hidden"
+      style={serverAccent ? { "--server-accent": serverAccent, "--server-accent-rgb": hexToRgb(serverAccent) } as React.CSSProperties : undefined}
+    >
       <ServerSidebar />
 
       {showWelcome ? (
         <WelcomeScreen onCreateServer={() => setShowCreateModal(true)} />
       ) : (
         <>
-          <ChannelList />
-          <ChatArea />
-          <MemberList />
+          <div className="flex h-full shrink-0" style={{ width: channelWidth }}>
+            <ChannelList />
+            <ResizeHandle side="left" onResize={handleChannelResize} />
+          </div>
+          <ChatArea showMembers={showMembers} onToggleMembers={toggleMembers} />
+          {showMembers && (
+            <div className="flex h-full shrink-0" style={{ width: memberWidth }}>
+              <ResizeHandle side="right" onResize={handleMemberResize} />
+              <MemberList />
+            </div>
+          )}
         </>
       )}
 

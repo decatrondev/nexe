@@ -46,7 +46,12 @@ function highlightMatch(text: string, query: string): React.ReactNode {
   );
 }
 
-export default function ChatArea() {
+interface ChatAreaProps {
+  showMembers?: boolean;
+  onToggleMembers?: () => void;
+}
+
+export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAreaProps) {
   const activeChannelId = useGuildStore((s) => s.activeChannelId);
   const allMessages = useGuildStore((s) => s.messages);
   const messages = (activeChannelId ? allMessages[activeChannelId] : undefined) ?? EMPTY_MSGS;
@@ -670,8 +675,11 @@ export default function ChatArea() {
     <div className="flex min-w-0 flex-1">
     <div className="flex min-w-0 flex-1 flex-col bg-dark-850">
       {/* Channel header */}
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-dark-900 px-4">
-        <span className="text-lg text-slate-500">#</span>
+      <div
+        className="flex h-12 shrink-0 items-center gap-2 border-b px-4"
+        style={{ borderColor: "var(--server-accent, var(--color-dark-900))" }}
+      >
+        <span className="text-lg" style={{ color: "var(--server-accent, #64748b)" }}>#</span>
         <span className="text-sm font-semibold text-white">{channelName}</span>
         {activeChannel?.topic && (
           <>
@@ -713,6 +721,19 @@ export default function ChatArea() {
             <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a2 2 0 014 0v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" />
           </svg>
         </button>
+
+        {/* Members toggle */}
+        {onToggleMembers && (
+          <button
+            onClick={onToggleMembers}
+            className={`rounded p-1.5 transition-colors ${showMembers ? "bg-dark-700 text-white" : "text-slate-400 hover:text-slate-200"}`}
+            title="Member List"
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Search bar */}
@@ -795,7 +816,7 @@ export default function ChatArea() {
           <div
             ref={scrollContainerRef}
             onScroll={handleScroll}
-            className="flex flex-1 flex-col gap-1 overflow-y-auto px-4 py-4"
+            className="flex flex-1 flex-col gap-1 overflow-y-auto px-4 py-4 accent-scrollbar"
           >
             {loadingMore && (
               <div className="space-y-1 py-2">
