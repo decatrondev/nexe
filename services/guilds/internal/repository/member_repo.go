@@ -111,11 +111,15 @@ func (r *MemberRepository) GetByGuildAndUser(ctx context.Context, guildID, userI
 func (r *MemberRepository) ListByGuild(ctx context.Context, guildID string, limit, offset int) ([]model.GuildMember, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT gm.id, gm.guild_id, gm.user_id, gm.nickname, gm.joined_at, gm.muted, gm.muted_until,
-		        COALESCE(array_agg(mr.role_id) FILTER (WHERE mr.role_id IS NOT NULL), '{}')
+		        COALESCE(array_agg(mr.role_id) FILTER (WHERE mr.role_id IS NOT NULL), '{}'),
+		        p.avatar_url, p.display_name, u.username
 		 FROM guild_members gm
 		 LEFT JOIN member_roles mr ON mr.member_id = gm.id
+		 LEFT JOIN profiles p ON p.user_id = gm.user_id
+		 LEFT JOIN users u ON u.id = gm.user_id
 		 WHERE gm.guild_id = $1
-		 GROUP BY gm.id, gm.guild_id, gm.user_id, gm.nickname, gm.joined_at, gm.muted, gm.muted_until
+		 GROUP BY gm.id, gm.guild_id, gm.user_id, gm.nickname, gm.joined_at, gm.muted, gm.muted_until,
+		          p.avatar_url, p.display_name, u.username
 		 ORDER BY gm.joined_at
 		 LIMIT $2 OFFSET $3`,
 		guildID, limit, offset,
@@ -130,7 +134,8 @@ func (r *MemberRepository) ListByGuild(ctx context.Context, guildID string, limi
 		var m model.GuildMember
 		var roleIds pq.StringArray
 		if err := rows.Scan(&m.ID, &m.GuildID, &m.UserID, &m.Nickname,
-			&m.JoinedAt, &m.Muted, &m.MutedUntil, &roleIds); err != nil {
+			&m.JoinedAt, &m.Muted, &m.MutedUntil, &roleIds,
+			&m.AvatarUrl, &m.DisplayName, &m.Username); err != nil {
 			return nil, fmt.Errorf("member list by guild scan: %w", err)
 		}
 		m.RoleIds = roleIds

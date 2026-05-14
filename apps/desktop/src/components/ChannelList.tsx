@@ -125,6 +125,7 @@ function VoiceChannel({ ch, isInThisChannel, voiceConnecting: connecting }: {
   const voiceSpeaking = useVoiceStore((s) => s.speakingUsers);
   const joinVoice = useVoiceStore((s) => s.joinChannel);
   const usernames = useGuildStore((s) => s.usernames);
+  const avatarMap = useGuildStore((s) => s.avatarMap);
   const activeGuildId = useGuildStore((s) => s.activeGuildId);
   const channelParticipants = voiceParticipants.filter((p) => p.channelId === ch.id);
 
@@ -157,13 +158,23 @@ function VoiceChannel({ ch, isInThisChannel, voiceConnecting: connecting }: {
                 key={p.userId}
                 className="flex items-center gap-1.5 rounded px-2 py-0.5 text-xs text-slate-400"
               >
-                <div
-                  className={`flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-semibold text-white transition-all ${
-                    isSpeaking ? "ring-2 ring-green-500 bg-green-600" : "bg-dark-600"
-                  }`}
-                >
-                  {(usernames[p.userId] || "U").charAt(0).toUpperCase()}
-                </div>
+                {avatarMap[p.userId] ? (
+                  <img
+                    src={avatarMap[p.userId]}
+                    alt={usernames[p.userId] || "User"}
+                    className={`h-5 w-5 rounded-full object-cover transition-all ${
+                      isSpeaking ? "ring-2 ring-green-500" : ""
+                    }`}
+                  />
+                ) : (
+                  <div
+                    className={`flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-semibold text-white transition-all ${
+                      isSpeaking ? "ring-2 ring-green-500 bg-green-600" : "bg-dark-600"
+                    }`}
+                  >
+                    {(usernames[p.userId] || "U").charAt(0).toUpperCase()}
+                  </div>
+                )}
                 <span className={`truncate ${isSpeaking ? "text-slate-200" : ""}`}>
                   {usernames[p.userId] || "User"}
                 </span>
@@ -828,9 +839,13 @@ export default function ChannelList() {
         {/* User info bar */}
         <div className="flex shrink-0 items-center gap-2 border-t border-dark-950 bg-dark-950/50 px-2 py-2 transition-colors">
           <div className="relative" ref={statusMenuRef}>
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-nexe-600 text-xs font-semibold text-white">
-              {(user?.username || "U").charAt(0).toUpperCase()}
-            </div>
+            {user?.avatarUrl ? (
+              <img src={user.avatarUrl} alt="Avatar" className="h-8 w-8 rounded-full object-cover" />
+            ) : (
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-nexe-600 text-xs font-semibold text-white">
+                {(user?.username || "U").charAt(0).toUpperCase()}
+              </div>
+            )}
             <button
               onClick={() => setShowStatusMenu((v) => !v)}
               className={`absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-dark-950 cursor-pointer transition-transform hover:scale-125 ${statusColors[userStatus] || statusColors.online}`}

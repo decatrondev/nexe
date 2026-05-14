@@ -14,6 +14,7 @@ export default function ThreadPanel({ parentMessageId, onClose }: Props) {
   const threadMessages = useGuildStore((s) => s.threadMessages[parentMessageId]) ?? [];
   const allMessages = useGuildStore((s) => s.messages);
   const usernames = useGuildStore((s) => s.usernames);
+  const avatarMap = useGuildStore((s) => s.avatarMap);
   const memberRoles = useGuildStore((s) => s.memberRoles);
   const activeGuildId = useGuildStore((s) => s.activeGuildId);
   const roles = useGuildStore((s) => activeGuildId ? s.roles[activeGuildId] : undefined) ?? [];
@@ -82,12 +83,16 @@ export default function ThreadPanel({ parentMessageId, onClose }: Props) {
 
     return (
       <div key={msg.id} className="group flex gap-3 px-4 pt-2 pb-0.5 hover:bg-dark-800/30">
-        <div
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white"
-          style={{ backgroundColor: color }}
-        >
-          {authorName.charAt(0).toUpperCase()}
-        </div>
+        {avatarMap[msg.authorId] ? (
+          <img src={avatarMap[msg.authorId]} alt={authorName} className="h-9 w-9 shrink-0 rounded-full object-cover" />
+        ) : (
+          <div
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white"
+            style={{ backgroundColor: color }}
+          >
+            {authorName.charAt(0).toUpperCase()}
+          </div>
+        )}
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
             <span className="text-sm font-semibold" style={{ color }}>{authorName}</span>

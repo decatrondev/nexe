@@ -21,6 +21,7 @@ interface GuildState {
   memberRoles: Record<string, string[]>;
   messages: Record<string, Message[]>;
   usernames: Record<string, string>;
+  avatarMap: Record<string, string>; // userId → avatarUrl
   presenceMap: Record<string, string>; // userId → status (online/idle/dnd/offline)
   streamStatusMap: Record<string, { live: boolean; title?: string; game?: string; viewers?: number; startedAt?: string; thumbnail?: string }>;
   liveGuilds: Set<string>; // guildIds that have at least one member streaming
@@ -77,6 +78,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
   memberRoles: {},
   messages: {},
   usernames: {},
+  avatarMap: {},
   presenceMap: {},
   streamStatusMap: {},
   liveGuilds: new Set<string>(),
@@ -102,6 +104,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
       memberRoles: {},
       messages: {},
       usernames: {},
+      avatarMap: {},
       presenceMap: {},
       streamStatusMap: {},
       liveGuilds: new Set<string>(),
@@ -175,33 +178,16 @@ export const useGuildStore = create<GuildState>((set, get) => ({
       const channelList = Array.isArray(channels) ? channels : [];
       const memberList = Array.isArray(members) ? members : [];
 
-      // Resolve usernames for members
-      const { usernames } = get();
+      // Populate usernames and avatars from member data (no extra API calls needed)
+      const { usernames, avatarMap } = get();
       const newUsernames = { ...usernames };
-      const unknownIds = memberList
-        .map((m) => m.userId)
-        .filter((id) => !newUsernames[id]);
-
-      const batches: string[][] = [];
-      for (let i = 0; i < unknownIds.length; i += 10) {
-        batches.push(unknownIds.slice(i, i + 10));
+      const newAvatarMap = { ...avatarMap };
+      for (const m of memberList) {
+        newUsernames[m.userId] = m.displayName || m.username || m.nickname || "User";
+        if (m.avatarUrl) {
+          newAvatarMap[m.userId] = m.avatarUrl;
+        }
       }
-      for (const batch of batches) {
-        const profiles = await Promise.allSettled(
-          batch.map((id) => api.getProfile(id)),
-        );
-        profiles.forEach((result, idx) => {
-          if (result.status === "fulfilled") {
-            const p = result.value;
-            newUsernames[batch[idx]] = p?.displayName || p?.username || p?.userId?.slice(0, 8) || "User";
-          } else {
-            newUsernames[batch[idx]] = "Unknown";
-          }
-        });
-      }
-
-      // Guard again after username resolution
-      if (get().activeGuildId !== guildId) return;
 
       const roleArr = Array.isArray(roleList) ? roleList : [];
       const catArr = Array.isArray(categoryList) ? categoryList : [];
@@ -221,6 +207,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
         roles: { ...s.roles, [guildId]: roleArr },
         memberRoles: newMemberRoles,
         usernames: newUsernames,
+        avatarMap: newAvatarMap,
         loading: false,
       }));
 

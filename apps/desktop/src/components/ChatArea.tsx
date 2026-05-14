@@ -61,6 +61,7 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
   const memberRolesMap = useGuildStore((s) => s.memberRoles);
   const guildRoles = (activeGuildId ? allRoles[activeGuildId] : undefined) ?? EMPTY_ROLES;
   const usernames = useGuildStore((s) => s.usernames);
+  const avatarMap = useGuildStore((s) => s.avatarMap);
   useGuildStore((s) => s.emotesReady); // subscribe to trigger re-render when emotes load
   const sendMessage = useGuildStore((s) => s.sendMessage);
   const editMessage = useGuildStore((s) => s.editMessage);
@@ -900,14 +901,19 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
                   >
                     {/* Avatar column */}
                     <div className="w-10 shrink-0">
-                      {!isGrouped && (
-                        <div
-                          className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold text-white"
-                          style={{ backgroundColor: color + "33" }}
-                        >
-                          <span style={{ color }}>{(authorName || "?").charAt(0).toUpperCase()}</span>
-                        </div>
-                      )}
+                      {!isGrouped && (() => {
+                        const avatarUrl = isBridge ? undefined : avatarMap[msg.authorId];
+                        return avatarUrl ? (
+                          <img src={avatarUrl} alt={authorName} className="h-10 w-10 rounded-full object-cover" />
+                        ) : (
+                          <div
+                            className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold text-white"
+                            style={{ backgroundColor: color + "33" }}
+                          >
+                            <span style={{ color }}>{(authorName || "?").charAt(0).toUpperCase()}</span>
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {/* Content */}
@@ -1112,9 +1118,13 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
                       onClick={() => insertMention(m.userId, name)}
                       className={`flex w-full items-center gap-2 px-3 py-1.5 text-sm transition-colors ${i === mentionIndex ? "bg-nexe-500/20 text-white" : "text-slate-300 hover:bg-dark-700"}`}
                     >
-                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-dark-600 text-xs font-semibold" style={{ color: roleColor || undefined }}>
-                        {name.charAt(0).toUpperCase()}
-                      </div>
+                      {avatarMap[m.userId] ? (
+                        <img src={avatarMap[m.userId]} alt={name} className="h-6 w-6 rounded-full object-cover" />
+                      ) : (
+                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-dark-600 text-xs font-semibold" style={{ color: roleColor || undefined }}>
+                          {name.charAt(0).toUpperCase()}
+                        </div>
+                      )}
                       <span style={{ color: roleColor || undefined }}>{name}</span>
                     </button>
                   );

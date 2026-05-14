@@ -45,6 +45,15 @@ export const useAuthStore = create<AuthState>((set) => ({
       refreshToken: res.refreshToken,
       isAuthenticated: true,
     });
+
+    // Fetch full profile (avatarUrl, bannerUrl, displayName) and update cache
+    api.getMe().then((me) => {
+      if (me) {
+        me.status = "online";
+        localStorage.setItem("user", JSON.stringify(me));
+        set({ user: me });
+      }
+    }).catch(() => {});
   },
 
   async register(username: string, email: string, password: string) {
@@ -79,25 +88,29 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     if (token && userJson) {
       try {
-        const user = JSON.parse(userJson) as User;
+        const cached = JSON.parse(userJson) as User;
         api.setToken(token);
         if (rt) api.setRefreshToken(rt);
 
-        const me = await api.getMe();
-        const restored = me ?? user;
-
-        // Status will be set by the WS connection (gateway calls presence heartbeat)
-        // Default to "online" until WS connects and presence updates
-        if (restored) {
-          restored.status = "online";
-        }
-
+        // Render immediately with cached data (no flash)
+        cached.status = "online";
         set({
-          user: restored,
-          token: localStorage.getItem("token") ?? token,
-          refreshToken: localStorage.getItem("refreshToken") ?? rt,
+          user: cached,
+          token,
+          refreshToken: rt,
           isAuthenticated: true,
           authLoading: false,
+        });
+
+        // Then fetch fresh data from API and update
+        api.getMe().then((me) => {
+          if (me) {
+            me.status = "online";
+            localStorage.setItem("user", JSON.stringify(me));
+            set({ user: me });
+          }
+        }).catch(() => {
+          // API unreachable — keep using cached data
         });
       } catch {
         api.setToken(null);

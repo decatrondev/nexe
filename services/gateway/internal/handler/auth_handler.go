@@ -10,17 +10,19 @@ import (
 	"time"
 
 	"github.com/decatrondev/nexe/services/gateway/internal/middleware"
+	"github.com/decatrondev/nexe/services/gateway/internal/repository"
 	"github.com/decatrondev/nexe/services/gateway/internal/service"
 	"github.com/redis/go-redis/v9"
 )
 
 type AuthHandler struct {
-	auth *service.AuthService
-	rdb  *redis.Client
+	auth     *service.AuthService
+	rdb      *redis.Client
+	profiles *repository.ProfileRepository
 }
 
-func NewAuthHandler(auth *service.AuthService, rdb *redis.Client) *AuthHandler {
-	return &AuthHandler{auth: auth, rdb: rdb}
+func NewAuthHandler(auth *service.AuthService, rdb *redis.Client, profiles *repository.ProfileRepository) *AuthHandler {
+	return &AuthHandler{auth: auth, rdb: rdb, profiles: profiles}
 }
 
 const (
@@ -320,6 +322,22 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 	if user.TwitchDisplayName != nil && *user.TwitchDisplayName != "" {
 		resp["twitchDisplayName"] = *user.TwitchDisplayName
+	}
+
+	// Enrich with profile data (avatar, banner, displayName)
+	if h.profiles != nil {
+		profile, _ := h.profiles.GetByUserID(r.Context(), user.ID)
+		if profile != nil {
+			if profile.AvatarUrl != nil && *profile.AvatarUrl != "" {
+				resp["avatarUrl"] = *profile.AvatarUrl
+			}
+			if profile.BannerUrl != nil && *profile.BannerUrl != "" {
+				resp["bannerUrl"] = *profile.BannerUrl
+			}
+			if profile.DisplayName != nil && *profile.DisplayName != "" {
+				resp["displayName"] = *profile.DisplayName
+			}
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"data": resp})

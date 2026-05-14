@@ -60,14 +60,17 @@ type Role struct {
 }
 
 type GuildMember struct {
-	ID         string     `json:"id"`
-	GuildID    string     `json:"guildId"`
-	UserID     string     `json:"userId"`
-	Nickname   *string    `json:"nickname,omitempty"`
-	RoleIds    []string   `json:"roleIds"`
-	JoinedAt   time.Time  `json:"joinedAt"`
-	Muted      bool       `json:"muted"`
-	MutedUntil *time.Time `json:"mutedUntil,omitempty"`
+	ID          string     `json:"id"`
+	GuildID     string     `json:"guildId"`
+	UserID      string     `json:"userId"`
+	Nickname    *string    `json:"nickname,omitempty"`
+	RoleIds     []string   `json:"roleIds"`
+	JoinedAt    time.Time  `json:"joinedAt"`
+	Muted       bool       `json:"muted"`
+	MutedUntil  *time.Time `json:"mutedUntil,omitempty"`
+	AvatarUrl   *string    `json:"avatarUrl,omitempty"`
+	DisplayName *string    `json:"displayName,omitempty"`
+	Username    *string    `json:"username,omitempty"`
 }
 
 type Invite struct {

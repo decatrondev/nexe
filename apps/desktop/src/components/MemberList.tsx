@@ -54,6 +54,7 @@ export default function MemberList() {
   const roles = (activeGuildId ? allRoles[activeGuildId] : undefined) ?? EMPTY_ROLES;
   const memberRoles = useGuildStore((s) => s.memberRoles);
   const usernames = useGuildStore((s) => s.usernames);
+  const avatarMap = useGuildStore((s) => s.avatarMap);
   const presenceMap = useGuildStore((s) => s.presenceMap);
   const streamStatusMap = useGuildStore((s) => s.streamStatusMap);
 
@@ -174,6 +175,7 @@ export default function MemberList() {
               const roleColor = isOffline ? undefined : getHighestRoleColor(member.userId, memberRoles, roles);
               const status = presenceMap[member.userId];
               const isLive = !isOffline && streamStatusMap[member.userId]?.live;
+              const avatar = avatarMap[member.userId];
 
               return (
                 <div
@@ -188,18 +190,22 @@ export default function MemberList() {
                     }`}
                   >
                     <div className="relative">
-                      <div
-                        className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white"
-                        style={{ backgroundColor: roleColor ? roleColor + "33" : undefined }}
-                      >
-                        {roleColor ? (
-                          <span style={{ color: roleColor }}>{name.charAt(0).toUpperCase()}</span>
-                        ) : (
-                          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-nexe-700">
-                            {name.charAt(0).toUpperCase()}
-                          </span>
-                        )}
-                      </div>
+                      {avatar ? (
+                        <img src={avatar} alt={name} className="h-8 w-8 rounded-full object-cover" />
+                      ) : (
+                        <div
+                          className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white"
+                          style={{ backgroundColor: roleColor ? roleColor + "33" : undefined }}
+                        >
+                          {roleColor ? (
+                            <span style={{ color: roleColor }}>{name.charAt(0).toUpperCase()}</span>
+                          ) : (
+                            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-nexe-700">
+                              {name.charAt(0).toUpperCase()}
+                            </span>
+                          )}
+                        </div>
+                      )}
                       {!isOffline && (
                         <div className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-dark-850 transition-colors duration-300 ${
                           status === "idle" ? "bg-yellow-500" :

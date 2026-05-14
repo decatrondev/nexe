@@ -147,6 +147,7 @@ export default function HomePage() {
     if (user) {
       useGuildStore.setState((s) => ({
         usernames: { ...s.usernames, [user.id]: user.displayName || user.username },
+        avatarMap: user.avatarUrl ? { ...s.avatarMap, [user.id]: user.avatarUrl } : s.avatarMap,
       }));
     }
 
@@ -210,7 +211,7 @@ export default function HomePage() {
             },
           };
         });
-        // Resolve username if unknown
+        // Resolve username + avatar if unknown
         const { usernames } = useGuildStore.getState();
         if (!usernames[msg.authorId]) {
           api.getProfile(msg.authorId).then((p) => {
@@ -219,6 +220,7 @@ export default function HomePage() {
                 ...s.usernames,
                 [msg.authorId]: p?.displayName || p?.username || "User",
               },
+              avatarMap: p?.avatarUrl ? { ...s.avatarMap, [msg.authorId]: p.avatarUrl } : s.avatarMap,
             }));
           }).catch(() => {});
         }

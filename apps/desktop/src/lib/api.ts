@@ -162,6 +162,7 @@ export interface User {
   email: string;
   displayName?: string;
   avatarUrl?: string;
+  bannerUrl?: string;
   status?: "online" | "idle" | "dnd" | "offline" | "invisible";
   tier?: string;
   twitchId?: string;
@@ -285,6 +286,9 @@ export interface GuildMember {
   roleIds: string[];
   joinedAt: string;
   muted: boolean;
+  avatarUrl?: string;
+  displayName?: string;
+  username?: string;
 }
 
 export interface Role {

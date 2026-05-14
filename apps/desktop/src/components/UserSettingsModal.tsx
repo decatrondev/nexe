@@ -100,11 +100,19 @@ function AccountTab() {
 
       {/* Profile card */}
       <div className="overflow-hidden rounded-lg border border-dark-700 bg-dark-800">
-        <div className="h-24 bg-gradient-to-r from-nexe-600 to-nexe-500" />
+        {user?.bannerUrl ? (
+          <img src={user.bannerUrl} alt="Banner" className="h-24 w-full object-cover" />
+        ) : (
+          <div className="h-24 bg-gradient-to-r from-nexe-600 to-nexe-500" />
+        )}
         <div className="px-5 pb-5">
-          <div className="-mt-9 flex h-[72px] w-[72px] items-center justify-center rounded-full bg-nexe-600 text-2xl font-bold text-white" style={{ border: "5px solid var(--color-dark-800)" }}>
-            {(user?.displayName || user?.username || "U").charAt(0).toUpperCase()}
-          </div>
+          {user?.avatarUrl ? (
+            <img src={user.avatarUrl} alt="Avatar" className="-mt-9 h-[72px] w-[72px] rounded-full object-cover" style={{ border: "5px solid var(--color-dark-800)" }} />
+          ) : (
+            <div className="-mt-9 flex h-[72px] w-[72px] items-center justify-center rounded-full bg-nexe-600 text-2xl font-bold text-white" style={{ border: "5px solid var(--color-dark-800)" }}>
+              {(user?.displayName || user?.username || "U").charAt(0).toUpperCase()}
+            </div>
+          )}
           <p className="mt-2 text-lg font-semibold text-white">{user?.displayName || user?.username}</p>
           <p className="text-sm text-slate-400">@{user?.username}</p>
         </div>

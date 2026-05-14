@@ -68,7 +68,7 @@ func main() {
 	}
 
 	// Handlers
-	authHandler := handler.NewAuthHandler(authSvc, rdb)
+	authHandler := handler.NewAuthHandler(authSvc, rdb, profileRepo)
 	wsHandler := handler.NewWSHandler(jwtSvc, rdb, cfg.GuildsURL, cfg.PresenceURL, cfg.VoiceURL)
 	profileHandler := handler.NewProfileHandler(profileRepo)
 	uploadHandler := handler.NewUploadHandler(storageSvc, profileRepo)
