@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { emoteLookup } from "./EmotePicker";
+import { api } from "../lib/api";
 
 // ---- URL Detection ----
 
@@ -67,7 +68,7 @@ function getTwitchEmoteURL(id: string, size: "1.0" | "2.0" | "3.0" = "2.0") {
 // ---- Types ----
 
 interface MediaEmbed {
-  type: "image" | "video" | "youtube" | "twitch-clip" | "gif";
+  type: "image" | "video" | "youtube" | "twitch-clip" | "gif" | "link";
   url: string;
   embedId?: string;
 }
@@ -114,7 +115,8 @@ function parseContent(text: string, usernames?: Record<string, string>): { segme
         );
       }
 
-      // Regular link
+      // Regular link — show as clickable + queue for preview
+      embeds.push({ type: "link", url });
       return (
         <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="text-nexe-400 hover:underline break-all">
           {url}
@@ -291,6 +293,79 @@ function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
   );
 }
 
+// ---- Link Preview ----
+
+interface UnfurlData {
+  url: string;
+  title?: string;
+  description?: string;
+  image?: string;
+  siteName?: string;
+  favicon?: string;
+}
+
+const unfurlCache = new Map<string, UnfurlData | null>();
+
+function LinkPreview({ url }: { url: string }) {
+  const [data, setData] = useState<UnfurlData | null>(unfurlCache.get(url) ?? null);
+  const [loaded, setLoaded] = useState(unfurlCache.has(url));
+
+  useEffect(() => {
+    if (unfurlCache.has(url)) return;
+    let cancelled = false;
+    api.unfurl(url).then((d) => {
+      if (cancelled) return;
+      const result = d && d.title ? d : null;
+      unfurlCache.set(url, result);
+      setData(result);
+      setLoaded(true);
+    }).catch(() => {
+      unfurlCache.set(url, null);
+      setLoaded(true);
+    });
+    return () => { cancelled = true; };
+  }, [url]);
+
+  if (!loaded || !data || !data.title) return null;
+
+  const domain = (() => {
+    try { return new URL(url).hostname.replace("www.", ""); } catch { return ""; }
+  })();
+
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="mt-1 flex max-w-[420px] overflow-hidden rounded-lg border border-dark-700 bg-dark-800 transition-colors hover:border-dark-600"
+    >
+      {data.image && (
+        <div className="w-20 shrink-0 bg-dark-900">
+          <img
+            src={data.image}
+            alt=""
+            className="h-full w-full object-cover"
+            loading="lazy"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+          />
+        </div>
+      )}
+      <div className="min-w-0 flex-1 px-3 py-2">
+        <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
+          {data.favicon && (
+            <img src={data.favicon} alt="" className="h-3 w-3" loading="lazy" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+          )}
+          <span>{data.siteName || domain}</span>
+        </div>
+        <p className="mt-0.5 truncate text-sm font-medium text-nexe-400">{data.title}</p>
+        {data.description && (
+          <p className="mt-0.5 line-clamp-2 text-xs text-slate-400">{data.description}</p>
+        )}
+      </div>
+    </a>
+  );
+}
+
 // ---- Main Component ----
 
 interface MessageContentProps {
@@ -380,6 +455,9 @@ export default function MessageContent({ content, bridgeEmotes, usernames }: Mes
                     />
                   </div>
                 );
+
+              case "link":
+                return <LinkPreview key={i} url={embed.url} />;
 
               default:
                 return null;

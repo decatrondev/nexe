@@ -139,6 +139,9 @@ func main() {
 	mux.Handle("POST /twitch/eventsub/setup", authMiddleware(http.HandlerFunc(twitchHandler.SetupEventSub)))
 	mux.HandleFunc("POST /twitch/webhook", twitchHandler.EventSubWebhook)
 
+	// Link unfurl
+	mux.Handle("GET /unfurl", authMiddleware(apiRateLimiter.Middleware(http.HandlerFunc(handler.HandleUnfurl))))
+
 	// Bot API / Developer routes
 	mux.Handle("POST /api/v1/applications", authMiddleware(http.HandlerFunc(botHandler.CreateApp)))
 	mux.Handle("GET /api/v1/applications", authMiddleware(http.HandlerFunc(botHandler.ListApps)))

@@ -722,6 +722,12 @@ export const api = {
     return request<{ message: string }>("POST", `/guilds/${guildId}/twitch/sync-all`);
   },
 
+  // ---- Link unfurl ----
+
+  unfurl(url: string) {
+    return request<{ url: string; title?: string; description?: string; image?: string; siteName?: string; favicon?: string }>("GET", `/unfurl?url=${encodeURIComponent(url)}`);
+  },
+
   // ---- Twitch auth methods ----
 
   registerWithTwitch(
