@@ -123,7 +123,7 @@ func (r *GuildRepository) CountMemberships(ctx context.Context, userID string) (
 func (r *GuildRepository) ListByUser(ctx context.Context, userID string) ([]model.Guild, error) {
 	rows, err := r.db.QueryContext(ctx,
 		`SELECT g.id, g.name, g.description, g.icon_url, g.banner_url, g.owner_id,
-		        g.is_streamer_server, g.streamer_twitch_id, g.bridge_channel_id, g.member_count, g.features, g.created_at, g.updated_at
+		        g.is_streamer_server, g.streamer_twitch_id, g.bridge_channel_id, g.system_channel_id, g.member_count, g.features, g.created_at, g.updated_at
 		 FROM guilds g
 		 JOIN guild_members gm ON gm.guild_id = g.id
 		 WHERE gm.user_id = $1
