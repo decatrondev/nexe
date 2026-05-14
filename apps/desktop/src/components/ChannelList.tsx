@@ -6,8 +6,8 @@ import { hasPermission, computePermissions, Permissions } from "../lib/permissio
 import { type Channel, type Category, api } from "../lib/api";
 import { FREE_TIER_LIMITS } from "../lib/limits";
 import { statusColors } from "../lib/utils";
-import { DndContext, closestCenter, type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
+import { DndContext, closestCenter, type DragEndEvent, PointerSensor, useSensor, useSensors, useDroppable } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import CreateChannelModal from "./CreateChannelModal";
 import ServerSettingsModal from "./ServerSettingsModal";
@@ -182,6 +182,27 @@ function VoiceChannel({ ch, isInThisChannel, voiceConnecting: connecting }: {
   );
 }
 
+// ── Sortable wrapper for voice channels ──
+
+function SortableVoiceWrapper({ ch, canDrag, children }: { ch: Channel; canDrag: boolean; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: ch.id,
+    disabled: !canDrag,
+  });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...(canDrag ? listeners : {})}>
+      {children}
+    </div>
+  );
+}
+
 // ── Context menu ──
 
 function ContextMenu({ x, y, items, onClose }: {
@@ -221,6 +242,27 @@ function ContextMenu({ x, y, items, onClose }: {
   );
 }
 
+// ── Droppable category header ──
+
+function DroppableCategoryHeader({ categoryId, onContextMenu, children }: {
+  categoryId: string;
+  onContextMenu: (e: React.MouseEvent) => void;
+  children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: `category-drop:${categoryId}` });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`group flex w-full items-center gap-0.5 px-1 py-1 rounded transition-colors ${
+        isOver ? "bg-nexe-500/15" : ""
+      }`}
+      onContextMenu={onContextMenu}
+    >
+      {children}
+    </div>
+  );
+}
+
 // ── Category section component ──
 
 function CategorySection({
@@ -251,8 +293,8 @@ function CategorySection({
   return (
     <div className="mb-0.5">
       {label && (
-        <div
-          className="group flex w-full items-center gap-0.5 px-1 py-1"
+        <DroppableCategoryHeader
+          categoryId={category!.id}
           onContextMenu={(e) => { if (category && canManageChannels) { e.preventDefault(); onContextMenu(e, category); } }}
         >
           <button
@@ -281,7 +323,7 @@ function CategorySection({
               </svg>
             </button>
           )}
-        </div>
+        </DroppableCategoryHeader>
       )}
 
       {(!isCollapsed || !label) && channels.map((ch) => renderChannel(ch))}
@@ -483,10 +525,15 @@ export default function ChannelList() {
     };
   }, [channels, categories]);
 
-  // Drag and drop for text channels
-  const textChannelIds = useMemo(() =>
-    channels.filter((c) => c.type === "text").map((c) => c.id),
-  [channels]);
+  // Drag and drop — all channels are draggable, grouped by category
+  const allChannelIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const ch of uncategorizedChannels) ids.push(ch.id);
+    for (const cat of sortedCategories) {
+      for (const ch of channelsByCategory[cat.id] || []) ids.push(ch.id);
+    }
+    return ids;
+  }, [uncategorizedChannels, sortedCategories, channelsByCategory]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -496,14 +543,63 @@ export default function ChannelList() {
     const { active, over } = event;
     if (!over || active.id === over.id || !activeGuildId) return;
 
-    const textChs = channels.filter((c) => c.type === "text");
-    const oldIndex = textChs.findIndex((c) => c.id === active.id);
-    const newIndex = textChs.findIndex((c) => c.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
+    const draggedCh = channels.find((c) => c.id === active.id);
+    if (!draggedCh) return;
 
-    const reordered = arrayMove(textChs, oldIndex, newIndex);
-    reorderChannels(activeGuildId, reordered.map((c) => c.id));
-  }, [channels, activeGuildId, reorderChannels]);
+    const overId = String(over.id);
+
+    // Dropped on an empty category drop zone
+    if (overId.startsWith("category-drop:")) {
+      const targetCategoryId = overId.replace("category-drop:", "");
+      if (draggedCh.categoryId !== targetCategoryId) {
+        api.updateChannel(draggedCh.id, { categoryId: targetCategoryId }).catch(() => {});
+        useGuildStore.setState((s) => ({
+          channels: {
+            ...s.channels,
+            [activeGuildId]: (s.channels[activeGuildId] || []).map((c) =>
+              c.id === draggedCh.id ? { ...c, categoryId: targetCategoryId } : c
+            ),
+          },
+        }));
+      }
+      return;
+    }
+
+    // Dropped on another channel
+    const overCh = channels.find((c) => c.id === overId);
+    if (!overCh) return;
+
+    const targetCategoryId = overCh.categoryId;
+
+    // Get channels in the target group
+    const targetGroup = targetCategoryId
+      ? [...(channelsByCategory[targetCategoryId] || [])]
+      : [...uncategorizedChannels];
+
+    // Remove dragged from its current group if it was there
+    const filteredTarget = targetGroup.filter((c) => c.id !== draggedCh.id);
+
+    // Insert at the position of the over channel
+    const overIndex = filteredTarget.findIndex((c) => c.id === overId);
+    if (overIndex === -1) return;
+    filteredTarget.splice(overIndex, 0, { ...draggedCh, categoryId: targetCategoryId });
+
+    // If category changed, update the channel's categoryId via API
+    if (draggedCh.categoryId !== targetCategoryId) {
+      api.updateChannel(draggedCh.id, { categoryId: targetCategoryId || null }).catch(() => {});
+      useGuildStore.setState((s) => ({
+        channels: {
+          ...s.channels,
+          [activeGuildId]: (s.channels[activeGuildId] || []).map((c) =>
+            c.id === draggedCh.id ? { ...c, categoryId: targetCategoryId } : c
+          ),
+        },
+      }));
+    }
+
+    // Reorder within the target group
+    reorderChannels(activeGuildId, filteredTarget.map((c) => c.id));
+  }, [channels, activeGuildId, reorderChannels, channelsByCategory, uncategorizedChannels]);
 
   // Context menu for categories
   const handleCategoryContextMenu = useCallback((e: React.MouseEvent, category: Category) => {
@@ -542,12 +638,13 @@ export default function ChannelList() {
     if (ch.type === "voice") {
       const isInThisChannel = voiceChannelId === ch.id && (voiceConnected || voiceConnecting);
       return (
-        <VoiceChannel
-          key={ch.id}
-          ch={ch}
-          isInThisChannel={isInThisChannel}
-          voiceConnecting={voiceConnecting}
-        />
+        <SortableVoiceWrapper key={ch.id} ch={ch} canDrag={canManageChannels}>
+          <VoiceChannel
+            ch={ch}
+            isInThisChannel={isInThisChannel}
+            voiceConnecting={voiceConnecting}
+          />
+        </SortableVoiceWrapper>
       );
     }
 
@@ -560,7 +657,7 @@ export default function ChannelList() {
         isActive={activeChannelId === ch.id}
         unread={unread}
         onClick={() => setActiveChannel(ch.id)}
-        canDrag={canManageChannels && ch.type === "text"}
+        canDrag={canManageChannels}
       />
     );
   }, [activeChannelId, unreadChannels, canManageChannels, setActiveChannel, voiceChannelId, voiceConnected, voiceConnecting]);
@@ -628,7 +725,7 @@ export default function ChannelList() {
             </p>
           ) : (
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-              <SortableContext items={textChannelIds} strategy={verticalListSortingStrategy}>
+              <SortableContext items={allChannelIds} strategy={verticalListSortingStrategy}>
                 {/* Uncategorized channels at the top */}
                 {uncategorizedChannels.length > 0 && (
                   <CategorySection

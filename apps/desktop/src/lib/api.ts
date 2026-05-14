@@ -629,7 +629,7 @@ export const api = {
     return request<void>("DELETE", `/guilds/${id}`);
   },
 
-  updateChannel(id: string, data: { name?: string; topic?: string; slowmodeSeconds?: number }) {
+  updateChannel(id: string, data: { name?: string; topic?: string; slowmodeSeconds?: number; categoryId?: string | null }) {
     return request<Channel>("PATCH", `/channels/${id}`, data);
   },
 
