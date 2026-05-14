@@ -235,6 +235,7 @@ export interface Guild {
   isStreamerServer: boolean;
   streamerTwitchId?: string;
   bridgeChannelId?: string;
+  systemChannelId?: string;
   memberCount: number;
   createdAt: string;
 }
@@ -628,7 +629,7 @@ export const api = {
     return request<void>("POST", `/invites/${code}/use`);
   },
 
-  updateGuild(id: string, data: { name?: string; description?: string }) {
+  updateGuild(id: string, data: { name?: string; description?: string; systemChannelId?: string | null }) {
     return request<Guild>("PATCH", `/guilds/${id}`, data);
   },
 

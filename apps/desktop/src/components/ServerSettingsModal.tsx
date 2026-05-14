@@ -103,13 +103,17 @@ export default function ServerSettingsModal({ guildId, onClose }: ServerSettings
 function OverviewTab({ guildId }: { guildId: string }) {
   const guild = useGuildStore((s) => s.guilds.find((g) => g.id === guildId));
   const updateGuild = useGuildStore((s) => s.updateGuild);
+  const allChannels = useGuildStore((s) => s.channels);
+  const channels = allChannels[guildId] || [];
+  const textChannels = channels.filter((c) => c.type === "text" || c.type === "announcements");
 
   const [name, setName] = useState(guild?.name ?? "");
   const [description, setDescription] = useState(guild?.description ?? "");
+  const [systemChannelId, setSystemChannelId] = useState(guild?.systemChannelId ?? "");
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
-  const hasChanges = name !== (guild?.name ?? "") || description !== (guild?.description ?? "");
+  const hasChanges = name !== (guild?.name ?? "") || description !== (guild?.description ?? "") || systemChannelId !== (guild?.systemChannelId ?? "");
 
   async function handleSave(e: FormEvent) {
     e.preventDefault();
@@ -117,7 +121,11 @@ function OverviewTab({ guildId }: { guildId: string }) {
     setLoading(true);
     setFeedback(null);
     try {
-      await updateGuild(guildId, { name: name.trim(), description: description.trim() });
+      await updateGuild(guildId, {
+        name: name.trim(),
+        description: description.trim(),
+        systemChannelId: systemChannelId || null,
+      });
       setFeedback({ type: "success", message: "Server settings saved!" });
     } catch (err) {
       setFeedback({ type: "error", message: err instanceof Error ? err.message : "Failed to save changes" });
@@ -164,6 +172,24 @@ function OverviewTab({ guildId }: { guildId: string }) {
             className="w-full resize-none rounded-lg border border-dark-700 bg-dark-900 px-4 py-2.5 text-sm text-slate-200 outline-none transition-colors placeholder:text-slate-500 focus:border-nexe-500"
             placeholder="What is this server about?"
           />
+        </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-300">
+            System Messages Channel
+          </label>
+          <p className="mb-2 text-xs text-slate-500">
+            Where join notifications and pin messages appear.
+          </p>
+          <select
+            value={systemChannelId}
+            onChange={(e) => setSystemChannelId(e.target.value)}
+            className="w-full rounded-lg border border-dark-700 bg-dark-900 px-4 py-2.5 text-sm text-slate-200 outline-none transition-colors focus:border-nexe-500"
+          >
+            <option value="">First text channel (default)</option>
+            {textChannels.map((ch) => (
+              <option key={ch.id} value={ch.id}># {ch.name}</option>
+            ))}
+          </select>
         </div>
         <button
           type="submit"
