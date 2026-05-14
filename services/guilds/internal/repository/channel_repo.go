@@ -123,6 +123,17 @@ func (r *ChannelRepository) ReorderChannels(ctx context.Context, guildID string,
 	return tx.Commit()
 }
 
+func (r *ChannelRepository) ClearCategoryID(ctx context.Context, categoryID string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE channels SET category_id = NULL, updated_at = NOW() WHERE category_id = $1`,
+		categoryID,
+	)
+	if err != nil {
+		return fmt.Errorf("channel clear category id: %w", err)
+	}
+	return nil
+}
+
 func (r *ChannelRepository) Delete(ctx context.Context, id string) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM channels WHERE id = $1`, id)
 	if err != nil {

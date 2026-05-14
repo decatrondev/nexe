@@ -46,6 +46,9 @@ func (h *GuildHandler) RegisterRoutes(mux *http.ServeMux) {
 	// Categories
 	mux.HandleFunc("POST /guilds/{id}/categories", h.CreateCategory)
 	mux.HandleFunc("GET /guilds/{id}/categories", h.ListCategories)
+	mux.HandleFunc("PATCH /categories/{id}", h.UpdateCategory)
+	mux.HandleFunc("DELETE /categories/{id}", h.DeleteCategory)
+	mux.HandleFunc("PUT /guilds/{id}/categories/reorder", h.ReorderCategories)
 
 	// Roles
 	mux.HandleFunc("POST /guilds/{id}/roles", h.CreateRole)
@@ -438,6 +441,68 @@ func (h *GuildHandler) ListCategories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, cats)
+}
+
+func (h *GuildHandler) UpdateCategory(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	categoryID := r.PathValue("id")
+
+	var body struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+	if strings.TrimSpace(body.Name) == "" {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "name is required")
+		return
+	}
+
+	cat, err := h.svc.UpdateCategory(r.Context(), categoryID, body.Name, userID)
+	if err != nil {
+		classifyError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, cat)
+}
+
+func (h *GuildHandler) DeleteCategory(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	categoryID := r.PathValue("id")
+	if err := h.svc.DeleteCategory(r.Context(), categoryID, userID); err != nil {
+		classifyError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *GuildHandler) ReorderCategories(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	guildID := r.PathValue("id")
+
+	var body struct {
+		CategoryIDs []string `json:"categoryIds"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.CategoryIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "invalid_body", "categoryIds array is required")
+		return
+	}
+
+	if err := h.svc.ReorderCategories(r.Context(), guildID, userID, body.CategoryIDs); err != nil {
+		classifyError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ---------------------------------------------------------------------------

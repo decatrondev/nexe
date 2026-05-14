@@ -1,9 +1,9 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useGuildStore } from "../stores/guild";
 import { useAuthStore } from "../stores/auth";
 import { useVoiceStore } from "../stores/voice";
 import { hasPermission, computePermissions, Permissions } from "../lib/permissions";
-import { type Channel, api } from "../lib/api";
+import { type Channel, type Category, api } from "../lib/api";
 import { FREE_TIER_LIMITS } from "../lib/limits";
 import { statusColors } from "../lib/utils";
 import { DndContext, closestCenter, type DragEndEvent, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
@@ -17,13 +17,57 @@ import VoicePanel from "./VoicePanel";
 import NotificationBell from "./NotificationBell";
 
 const EMPTY_CHANNELS: Channel[] = [];
+const EMPTY_CATEGORIES: Category[] = [];
 
-function SortableChannel({ ch, isActive, unread, onClick, canDrag }: {
+// ── Channel type icon helpers ──
+
+function ChannelIcon({ type, isActive, hasUnread }: { type: string; isActive: boolean; hasUnread: boolean }) {
+  const highlight = isActive || hasUnread;
+  const cls = `shrink-0 transition-colors duration-150 ${highlight ? "text-white" : "text-slate-500 group-hover:text-slate-400"}`;
+
+  switch (type) {
+    case "voice":
+      return (
+        <svg viewBox="0 0 24 24" className={`h-4 w-4 fill-current ${cls}`}>
+          <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-3.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+        </svg>
+      );
+    case "announcements":
+      return <span className={`text-base leading-none ${cls}`}>&#128226;</span>;
+    case "rules":
+      return <span className={`text-base leading-none ${cls}`}>&#128203;</span>;
+    default: // text
+      return <span className={`text-lg leading-none ${cls}`}>#</span>;
+  }
+}
+
+// ── Collapsed state persistence ──
+
+function getCollapsedKey(guildId: string) {
+  return `nexe_collapsed_${guildId}`;
+}
+
+function loadCollapsed(guildId: string): Set<string> {
+  try {
+    const raw = localStorage.getItem(getCollapsedKey(guildId));
+    if (raw) return new Set(JSON.parse(raw));
+  } catch { /* ignore */ }
+  return new Set();
+}
+
+function saveCollapsed(guildId: string, collapsed: Set<string>) {
+  localStorage.setItem(getCollapsedKey(guildId), JSON.stringify([...collapsed]));
+}
+
+// ── Sortable channel wrapper ──
+
+function SortableChannel({ ch, isActive, unread, onClick, canDrag, children }: {
   ch: Channel;
   isActive: boolean;
   unread: number;
   onClick: () => void;
   canDrag: boolean;
+  children?: React.ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: ch.id,
@@ -51,30 +95,318 @@ function SortableChannel({ ch, isActive, unread, onClick, canDrag }: {
       } ${canDrag ? "cursor-grab active:cursor-grabbing" : ""}`}
       onClick={onClick}
     >
-      <span className={`text-lg leading-none transition-colors duration-150 ${isActive ? "text-white" : unread > 0 ? "text-white" : "text-slate-500 group-hover:text-slate-400"}`}>#</span>
+      <ChannelIcon type={ch.type} isActive={isActive} hasUnread={unread > 0} />
       <span className="truncate">{ch.name}</span>
+      {ch.isLiveChannel && (
+        <span className="ml-auto flex h-2 w-2 rounded-full bg-red-500 animate-pulse" title="Live channel" />
+      )}
       {unread > 0 && !isActive && (
         <span className="ml-auto flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
           {unread > 99 ? "99+" : unread}
         </span>
       )}
+      {children}
     </button>
   );
 }
+
+// ── Voice channel renderer ──
+
+function VoiceChannel({ ch, isInThisChannel, voiceConnecting: connecting }: {
+  ch: Channel;
+  isInThisChannel: boolean;
+  voiceConnecting: boolean;
+}) {
+  const voiceParticipants = useVoiceStore((s) => s.participants);
+  const voiceSpeaking = useVoiceStore((s) => s.speakingUsers);
+  const joinVoice = useVoiceStore((s) => s.joinChannel);
+  const usernames = useGuildStore((s) => s.usernames);
+  const activeGuildId = useGuildStore((s) => s.activeGuildId);
+  const channelParticipants = voiceParticipants.filter((p) => p.channelId === ch.id);
+
+  return (
+    <div>
+      <button
+        className={`group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors ${
+          isInThisChannel
+            ? "bg-dark-700/50 text-white"
+            : "text-slate-400 hover:bg-dark-800 hover:text-slate-200"
+        }`}
+        onClick={() => {
+          if (!isInThisChannel && activeGuildId) {
+            joinVoice(activeGuildId, ch.id);
+          }
+        }}
+      >
+        <ChannelIcon type="voice" isActive={isInThisChannel} hasUnread={false} />
+        <span className="truncate">{ch.name}</span>
+        {isInThisChannel && connecting && (
+          <div className="ml-auto h-3 w-3 animate-spin rounded-full border border-slate-600 border-t-nexe-400" />
+        )}
+      </button>
+      {channelParticipants.length > 0 && (
+        <div className="ml-6 space-y-0.5 py-0.5">
+          {channelParticipants.map((p) => {
+            const isSpeaking = voiceSpeaking.has(p.userId);
+            return (
+              <div
+                key={p.userId}
+                className="flex items-center gap-1.5 rounded px-2 py-0.5 text-xs text-slate-400"
+              >
+                <div
+                  className={`flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-semibold text-white transition-all ${
+                    isSpeaking ? "ring-2 ring-green-500 bg-green-600" : "bg-dark-600"
+                  }`}
+                >
+                  {(usernames[p.userId] || "U").charAt(0).toUpperCase()}
+                </div>
+                <span className={`truncate ${isSpeaking ? "text-slate-200" : ""}`}>
+                  {usernames[p.userId] || "User"}
+                </span>
+                {p.selfMute && (
+                  <svg viewBox="0 0 24 24" className="h-3 w-3 shrink-0 fill-current text-red-400">
+                    <path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z" />
+                  </svg>
+                )}
+                {p.selfDeaf && (
+                  <svg viewBox="0 0 24 24" className="h-3 w-3 shrink-0 fill-current text-red-400">
+                    <path d="M4.34 2.93L2.93 4.34 7.29 8.7 7 9H3v6h4l5 5v-6.59l4.18 4.18c-.65.49-1.38.88-2.18 1.11v2.06a8.94 8.94 0 0 0 3.61-1.75l2.05 2.05 1.41-1.41L4.34 2.93zM19 12c0 .82-.15 1.61-.41 2.34l1.53 1.53c.56-1.17.88-2.48.88-3.87 0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zm-7-8l-1.88 1.88L12 7.76zm4.5 8A4.5 4.5 0 0 0 14 7.97v1.79l2.48 2.48c.01-.08.02-.16.02-.24z" />
+                  </svg>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Context menu ──
+
+function ContextMenu({ x, y, items, onClose }: {
+  x: number;
+  y: number;
+  items: { label: string; danger?: boolean; onClick: () => void }[];
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    const t = setTimeout(() => document.addEventListener("mousedown", handler), 10);
+    return () => { clearTimeout(t); document.removeEventListener("mousedown", handler); };
+  }, [onClose]);
+
+  return (
+    <div
+      ref={ref}
+      className="fixed z-50 min-w-[160px] overflow-hidden rounded-lg border border-dark-700 bg-dark-800 py-1 shadow-xl animate-slide-up"
+      style={{ top: y, left: x }}
+    >
+      {items.map((item) => (
+        <button
+          key={item.label}
+          onClick={() => { item.onClick(); onClose(); }}
+          className={`flex w-full items-center px-3 py-1.5 text-sm transition-colors hover:bg-dark-700 ${
+            item.danger ? "text-red-400 hover:text-red-300" : "text-slate-300 hover:text-white"
+          }`}
+        >
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── Category section component ──
+
+function CategorySection({
+  category,
+  channels,
+  isCollapsed,
+  onToggle,
+  canManageChannels,
+  channelLimitReached,
+  onCreateChannel,
+  renderChannel,
+  onContextMenu,
+}: {
+  category: Category | null; // null = uncategorized
+  channels: Channel[];
+  isCollapsed: boolean;
+  onToggle: () => void;
+  canManageChannels: boolean;
+  channelLimitReached: boolean;
+  onCreateChannel: (categoryId?: string) => void;
+  renderChannel: (ch: Channel) => React.ReactNode;
+  onContextMenu: (e: React.MouseEvent, category: Category) => void;
+}) {
+  if (channels.length === 0 && !category) return null;
+
+  const label = category ? category.name.toUpperCase() : null;
+
+  return (
+    <div className="mb-0.5">
+      {label && (
+        <div
+          className="group flex w-full items-center gap-0.5 px-1 py-1"
+          onContextMenu={(e) => { if (category && canManageChannels) { e.preventDefault(); onContextMenu(e, category); } }}
+        >
+          <button
+            className="flex flex-1 items-center gap-0.5 text-xs font-semibold uppercase tracking-wide text-slate-400 transition-colors hover:text-slate-200"
+            onClick={onToggle}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              className={`h-3 w-3 fill-current transition-transform duration-200 ${isCollapsed ? "-rotate-90" : ""}`}
+            >
+              <path d="M7 10l5 5 5-5z" />
+            </svg>
+            <span className="truncate">{label}</span>
+          </button>
+          {canManageChannels && (
+            <button
+              onClick={() => !channelLimitReached && onCreateChannel(category?.id)}
+              disabled={channelLimitReached}
+              className={`invisible h-4 w-4 items-center justify-center rounded transition-colors group-hover:visible flex ${
+                channelLimitReached ? "text-slate-600 cursor-not-allowed" : "text-slate-400 hover:text-slate-200"
+              }`}
+              title="Create channel"
+            >
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
+                <path d="M13 5a1 1 0 1 0-2 0v6H5a1 1 0 1 0 0 2h6v6a1 1 0 1 0 2 0v-6h6a1 1 0 1 0 0-2h-6z" />
+              </svg>
+            </button>
+          )}
+        </div>
+      )}
+
+      {(!isCollapsed || !label) && channels.map((ch) => renderChannel(ch))}
+    </div>
+  );
+}
+
+// ── Inline edit for category name ──
+
+function CategoryEditModal({ category, onClose }: { category: Category; onClose: () => void }) {
+  const [name, setName] = useState(category.name);
+  const [loading, setLoading] = useState(false);
+
+  async function handleSave() {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === category.name) { onClose(); return; }
+    setLoading(true);
+    try {
+      const updated = await api.updateCategory(category.id, trimmed);
+      const guildId = category.guildId;
+      useGuildStore.setState((s) => ({
+        categories: {
+          ...s.categories,
+          [guildId]: (s.categories[guildId] || []).map((c) =>
+            c.id === category.id ? { ...c, ...updated } : c
+          ),
+        },
+      }));
+      onClose();
+    } catch (err) {
+      console.error("Failed to update category:", err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-xl bg-dark-800 p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <h3 className="mb-3 text-sm font-semibold text-slate-100">Edit Category</h3>
+        <input
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") onClose(); }}
+          className="w-full rounded-lg border border-dark-600 bg-dark-900 px-3 py-2 text-sm text-slate-200 outline-none focus:border-nexe-500"
+          placeholder="Category name"
+        />
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-lg px-4 py-1.5 text-sm text-slate-400 hover:text-slate-200">Cancel</button>
+          <button onClick={handleSave} disabled={loading || !name.trim()} className="rounded-lg bg-nexe-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-nexe-500 disabled:opacity-50">
+            {loading ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Create Category Modal ──
+
+function CreateCategoryModal({ guildId, onClose }: { guildId: string; onClose: () => void }) {
+  const [name, setName] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function handleCreate() {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setLoading(true);
+    try {
+      await api.createCategory(guildId, trimmed);
+      onClose();
+    } catch (err) {
+      console.error("Failed to create category:", err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
+      <div className="w-full max-w-sm rounded-xl bg-dark-800 p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <h3 className="mb-3 text-sm font-semibold text-slate-100">Create Category</h3>
+        <input
+          autoFocus
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); if (e.key === "Escape") onClose(); }}
+          className="w-full rounded-lg border border-dark-600 bg-dark-900 px-3 py-2 text-sm text-slate-200 outline-none focus:border-nexe-500"
+          placeholder="Category name"
+        />
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} className="rounded-lg px-4 py-1.5 text-sm text-slate-400 hover:text-slate-200">Cancel</button>
+          <button onClick={handleCreate} disabled={loading || !name.trim()} className="rounded-lg bg-nexe-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-nexe-500 disabled:opacity-50">
+            {loading ? "Creating..." : "Create"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Main component
+// ══════════════════════════════════════════════════════════════════════════════
 
 export default function ChannelList() {
   const activeGuildId = useGuildStore((s) => s.activeGuildId);
   const activeChannelId = useGuildStore((s) => s.activeChannelId);
   const setActiveChannel = useGuildStore((s) => s.setActiveChannel);
   const allChannels = useGuildStore((s) => s.channels);
+  const allCategories = useGuildStore((s) => s.categories);
   const channels = (activeGuildId ? allChannels[activeGuildId] : undefined) ?? EMPTY_CHANNELS;
+  const categories = (activeGuildId ? allCategories[activeGuildId] : undefined) ?? EMPTY_CATEGORIES;
   const guilds = useGuildStore((s) => s.guilds);
   const user = useAuthStore((s) => s.user);
   const [showCreateChannel, setShowCreateChannel] = useState(false);
+  const [createChannelCategoryId, setCreateChannelCategoryId] = useState<string | undefined>(undefined);
   const [showSettings, setShowSettings] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [showUserSettings, setShowUserSettings] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
+  const [showCreateCategory, setShowCreateCategory] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; category: Category } | null>(null);
   const statusMenuRef = useRef<HTMLDivElement>(null);
 
   const allRoles = useGuildStore((s) => s.roles);
@@ -93,9 +425,68 @@ export default function ChannelList() {
   const channelLimitReached = channels.length >= FREE_TIER_LIMITS.MAX_CHANNELS_PER_GUILD;
   const unreadChannels = useGuildStore((s) => s.unreadChannels);
 
-  const textChannels = channels.filter((c) => c.type === "text");
-  const voiceChannels = channels.filter((c) => c.type === "voice");
   const reorderChannels = useGuildStore((s) => s.reorderChannels);
+
+  const voiceChannelId = useVoiceStore((s) => s.channelId);
+  const voiceConnected = useVoiceStore((s) => s.connected);
+  const voiceConnecting = useVoiceStore((s) => s.connecting);
+  // Collapsed state per guild, persisted in localStorage
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
+    () => activeGuildId ? loadCollapsed(activeGuildId) : new Set()
+  );
+
+  // Reload collapsed state when guild changes
+  useEffect(() => {
+    if (activeGuildId) {
+      setCollapsedSections(loadCollapsed(activeGuildId));
+    }
+  }, [activeGuildId]);
+
+  const toggleSection = useCallback((sectionId: string) => {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(sectionId)) next.delete(sectionId);
+      else next.add(sectionId);
+      if (activeGuildId) saveCollapsed(activeGuildId, next);
+      return next;
+    });
+  }, [activeGuildId]);
+
+  // Group channels by category
+  const { sortedCategories, uncategorizedChannels, channelsByCategory } = useMemo(() => {
+    const sorted = [...categories].sort((a, b) => a.position - b.position);
+    const uncategorized: Channel[] = [];
+    const byCategory: Record<string, Channel[]> = {};
+
+    for (const cat of sorted) {
+      byCategory[cat.id] = [];
+    }
+
+    for (const ch of channels) {
+      if (ch.categoryId && byCategory[ch.categoryId]) {
+        byCategory[ch.categoryId].push(ch);
+      } else {
+        uncategorized.push(ch);
+      }
+    }
+
+    // Sort channels within each group by position
+    uncategorized.sort((a, b) => a.position - b.position);
+    for (const catId of Object.keys(byCategory)) {
+      byCategory[catId].sort((a, b) => a.position - b.position);
+    }
+
+    return {
+      sortedCategories: sorted,
+      uncategorizedChannels: uncategorized,
+      channelsByCategory: byCategory,
+    };
+  }, [channels, categories]);
+
+  // Drag and drop for text channels
+  const textChannelIds = useMemo(() =>
+    channels.filter((c) => c.type === "text").map((c) => c.id),
+  [channels]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -105,143 +496,74 @@ export default function ChannelList() {
     const { active, over } = event;
     if (!over || active.id === over.id || !activeGuildId) return;
 
-    const oldIndex = textChannels.findIndex((c) => c.id === active.id);
-    const newIndex = textChannels.findIndex((c) => c.id === over.id);
+    const textChs = channels.filter((c) => c.type === "text");
+    const oldIndex = textChs.findIndex((c) => c.id === active.id);
+    const newIndex = textChs.findIndex((c) => c.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
 
-    const reordered = arrayMove(textChannels, oldIndex, newIndex);
+    const reordered = arrayMove(textChs, oldIndex, newIndex);
     reorderChannels(activeGuildId, reordered.map((c) => c.id));
-  }, [textChannels, activeGuildId, reorderChannels]);
+  }, [channels, activeGuildId, reorderChannels]);
 
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
-    new Set(),
-  );
+  // Context menu for categories
+  const handleCategoryContextMenu = useCallback((e: React.MouseEvent, category: Category) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY, category });
+  }, []);
 
-  function toggleSection(section: string) {
-    setCollapsedSections((prev) => {
-      const next = new Set(prev);
-      if (next.has(section)) next.delete(section);
-      else next.add(section);
-      return next;
-    });
-  }
+  const handleDeleteCategory = useCallback(async (category: Category) => {
+    try {
+      await api.deleteCategory(category.id);
+      useGuildStore.setState((s) => ({
+        categories: {
+          ...s.categories,
+          [category.guildId]: (s.categories[category.guildId] || []).filter((c) => c.id !== category.id),
+        },
+        // Clear categoryId from channels that belonged to this category
+        channels: {
+          ...s.channels,
+          [category.guildId]: (s.channels[category.guildId] || []).map((ch) =>
+            ch.categoryId === category.id ? { ...ch, categoryId: undefined } : ch
+          ),
+        },
+      }));
+    } catch (err) {
+      console.error("Failed to delete category:", err);
+    }
+  }, []);
 
-  const voiceChannelId = useVoiceStore((s) => s.channelId);
-  const voiceConnected = useVoiceStore((s) => s.connected);
-  const voiceConnecting = useVoiceStore((s) => s.connecting);
-  const voiceParticipants = useVoiceStore((s) => s.participants);
-  const voiceSpeaking = useVoiceStore((s) => s.speakingUsers);
-  const joinVoice = useVoiceStore((s) => s.joinChannel);
-  const usernames = useGuildStore((s) => s.usernames);
+  const handleCreateChannelInCategory = useCallback((categoryId?: string) => {
+    setCreateChannelCategoryId(categoryId);
+    setShowCreateChannel(true);
+  }, []);
 
-  function renderSection(
-    title: string,
-    sectionChannels: typeof channels,
-    icon: "text" | "voice",
-  ) {
-    if (sectionChannels.length === 0) return null;
-    const isCollapsed = collapsedSections.has(title);
+  // Render a single channel (text or voice)
+  const renderChannel = useCallback((ch: Channel) => {
+    if (ch.type === "voice") {
+      const isInThisChannel = voiceChannelId === ch.id && (voiceConnected || voiceConnecting);
+      return (
+        <VoiceChannel
+          key={ch.id}
+          ch={ch}
+          isInThisChannel={isInThisChannel}
+          voiceConnecting={voiceConnecting}
+        />
+      );
+    }
+
+    // Text / announcements / rules channel
+    const unread = unreadChannels[ch.id] || 0;
     return (
-      <div className="mb-1">
-        <button
-          className="flex w-full items-center gap-0.5 px-1 py-1 text-xs font-semibold uppercase tracking-wide text-slate-400 transition-colors hover:text-slate-200"
-          onClick={() => toggleSection(title)}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            className={`h-3 w-3 fill-current transition-transform duration-200 ${isCollapsed ? "-rotate-90" : ""}`}
-          >
-            <path d="M7 10l5 5 5-5z" />
-          </svg>
-          {title}
-        </button>
-
-        {!isCollapsed &&
-          sectionChannels.map((ch) => {
-            if (icon === "voice") {
-              const isInThisChannel = voiceChannelId === ch.id && (voiceConnected || voiceConnecting);
-              const channelParticipants = voiceParticipants.filter((p) => p.channelId === ch.id);
-
-              return (
-                <div key={ch.id}>
-                  <button
-                    className={`group flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition-colors ${
-                      isInThisChannel
-                        ? "bg-dark-700/50 text-white"
-                        : "text-slate-400 hover:bg-dark-800 hover:text-slate-200"
-                    }`}
-                    onClick={() => {
-                      if (!isInThisChannel && activeGuildId) {
-                        joinVoice(activeGuildId, ch.id);
-                      }
-                    }}
-                  >
-                    {/* Volume/speaker icon */}
-                    <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 fill-current text-slate-500">
-                      <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 7.97v8.05c1.48-.73 2.5-2.25 2.5-3.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
-                    </svg>
-                    <span className="truncate">{ch.name}</span>
-                    {isInThisChannel && voiceConnecting && (
-                      <div className="ml-auto h-3 w-3 animate-spin rounded-full border border-slate-600 border-t-nexe-400" />
-                    )}
-                  </button>
-                  {/* Show participants in this voice channel */}
-                  {channelParticipants.length > 0 && (
-                    <div className="ml-6 space-y-0.5 py-0.5">
-                      {channelParticipants.map((p) => {
-                        const isSpeaking = voiceSpeaking.has(p.userId);
-                        return (
-                          <div
-                            key={p.userId}
-                            className="flex items-center gap-1.5 rounded px-2 py-0.5 text-xs text-slate-400"
-                          >
-                            <div
-                              className={`flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-semibold text-white transition-all ${
-                                isSpeaking
-                                  ? "ring-2 ring-green-500 bg-green-600"
-                                  : "bg-dark-600"
-                              }`}
-                            >
-                              {(usernames[p.userId] || "U").charAt(0).toUpperCase()}
-                            </div>
-                            <span className={`truncate ${isSpeaking ? "text-slate-200" : ""}`}>
-                              {usernames[p.userId] || "User"}
-                            </span>
-                            {p.selfMute && (
-                              <svg viewBox="0 0 24 24" className="h-3 w-3 shrink-0 fill-current text-red-400">
-                                <path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z" />
-                              </svg>
-                            )}
-                            {p.selfDeaf && (
-                              <svg viewBox="0 0 24 24" className="h-3 w-3 shrink-0 fill-current text-red-400">
-                                <path d="M4.34 2.93L2.93 4.34 7.29 8.7 7 9H3v6h4l5 5v-6.59l4.18 4.18c-.65.49-1.38.88-2.18 1.11v2.06a8.94 8.94 0 0 0 3.61-1.75l2.05 2.05 1.41-1.41L4.34 2.93zM19 12c0 .82-.15 1.61-.41 2.34l1.53 1.53c.56-1.17.88-2.48.88-3.87 0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zm-7-8l-1.88 1.88L12 7.76zm4.5 8A4.5 4.5 0 0 0 14 7.97v1.79l2.48 2.48c.01-.08.02-.16.02-.24z" />
-                              </svg>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              );
-            }
-
-            // Text channel
-            const unread = unreadChannels[ch.id] || 0;
-            return (
-              <SortableChannel
-                key={ch.id}
-                ch={ch}
-                isActive={activeChannelId === ch.id}
-                unread={unread}
-                onClick={() => setActiveChannel(ch.id)}
-                canDrag={canManageChannels && icon === "text"}
-              />
-            );
-          })}
-      </div>
+      <SortableChannel
+        key={ch.id}
+        ch={ch}
+        isActive={activeChannelId === ch.id}
+        unread={unread}
+        onClick={() => setActiveChannel(ch.id)}
+        canDrag={canManageChannels && ch.type === "text"}
+      />
     );
-  }
+  }, [activeChannelId, unreadChannels, canManageChannels, setActiveChannel, voiceChannelId, voiceConnected, voiceConnecting]);
 
   return (
     <>
@@ -275,7 +597,7 @@ export default function ChannelList() {
               </button>
               {canManageChannels && (
                 <button
-                  onClick={() => !channelLimitReached && setShowCreateChannel(true)}
+                  onClick={() => !channelLimitReached && handleCreateChannelInCategory(undefined)}
                   disabled={channelLimitReached}
                   className={`flex h-6 w-6 items-center justify-center rounded transition-colors ${
                     channelLimitReached
@@ -300,19 +622,58 @@ export default function ChannelList() {
             <p className="px-2 py-4 text-center text-sm text-slate-500">
               Select a server to see channels
             </p>
-          ) : channels.length === 0 ? (
+          ) : channels.length === 0 && categories.length === 0 ? (
             <p className="px-2 py-4 text-center text-sm text-slate-500">
               No channels yet
             </p>
           ) : (
-            <>
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                <SortableContext items={textChannels.map((c) => c.id)} strategy={verticalListSortingStrategy}>
-                  {renderSection("Text Channels", textChannels, "text")}
-                </SortableContext>
-              </DndContext>
-              {renderSection("Voice Channels", voiceChannels, "voice")}
-            </>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={textChannelIds} strategy={verticalListSortingStrategy}>
+                {/* Uncategorized channels at the top */}
+                {uncategorizedChannels.length > 0 && (
+                  <CategorySection
+                    category={null}
+                    channels={uncategorizedChannels}
+                    isCollapsed={false}
+                    onToggle={() => {}}
+                    canManageChannels={canManageChannels}
+                    channelLimitReached={channelLimitReached}
+                    onCreateChannel={handleCreateChannelInCategory}
+                    renderChannel={renderChannel}
+                    onContextMenu={() => {}}
+                  />
+                )}
+
+                {/* Categories with their channels */}
+                {sortedCategories.map((cat) => (
+                  <CategorySection
+                    key={cat.id}
+                    category={cat}
+                    channels={channelsByCategory[cat.id] || []}
+                    isCollapsed={collapsedSections.has(cat.id)}
+                    onToggle={() => toggleSection(cat.id)}
+                    canManageChannels={canManageChannels}
+                    channelLimitReached={channelLimitReached}
+                    onCreateChannel={handleCreateChannelInCategory}
+                    renderChannel={renderChannel}
+                    onContextMenu={handleCategoryContextMenu}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
+          )}
+
+          {/* Create Category button */}
+          {activeGuildId && canManageChannels && (
+            <button
+              onClick={() => setShowCreateCategory(true)}
+              className="mt-2 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-slate-500 transition-colors hover:bg-dark-800/60 hover:text-slate-300"
+            >
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
+                <path d="M13 5a1 1 0 1 0-2 0v6H5a1 1 0 1 0 0 2h6v6a1 1 0 1 0 2 0v-6h6a1 1 0 1 0 0-2h-6z" />
+              </svg>
+              Create Category
+            </button>
           )}
         </div>
 
@@ -377,7 +738,10 @@ export default function ChannelList() {
       </div>
 
       {showCreateChannel && (
-        <CreateChannelModal onClose={() => setShowCreateChannel(false)} />
+        <CreateChannelModal
+          defaultCategoryId={createChannelCategoryId}
+          onClose={() => { setShowCreateChannel(false); setCreateChannelCategoryId(undefined); }}
+        />
       )}
 
       {showSettings && activeGuildId && (
@@ -406,6 +770,27 @@ export default function ChannelList() {
 
       {showUserSettings && (
         <UserSettingsModal onClose={() => setShowUserSettings(false)} />
+      )}
+
+      {showCreateCategory && activeGuildId && (
+        <CreateCategoryModal guildId={activeGuildId} onClose={() => setShowCreateCategory(false)} />
+      )}
+
+      {editingCategory && (
+        <CategoryEditModal category={editingCategory} onClose={() => setEditingCategory(null)} />
+      )}
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          items={[
+            { label: "Edit Category", onClick: () => setEditingCategory(contextMenu.category) },
+            { label: "Create Channel", onClick: () => handleCreateChannelInCategory(contextMenu.category.id) },
+            { label: "Delete Category", danger: true, onClick: () => handleDeleteCategory(contextMenu.category) },
+          ]}
+        />
       )}
     </>
   );

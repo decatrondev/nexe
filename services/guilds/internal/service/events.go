@@ -25,9 +25,12 @@ const (
 	EventGuildMemberRemove = "GUILD_MEMBER_REMOVE"
 	EventGuildMemberUpdate = "GUILD_MEMBER_UPDATE"
 	EventGuildBanRemove    = "GUILD_BAN_REMOVE"
-	EventGuildRoleCreate   = "GUILD_ROLE_CREATE"
-	EventGuildRoleUpdate   = "GUILD_ROLE_UPDATE"
-	EventGuildRoleDelete   = "GUILD_ROLE_DELETE"
+	EventGuildRoleCreate     = "GUILD_ROLE_CREATE"
+	EventGuildRoleUpdate     = "GUILD_ROLE_UPDATE"
+	EventGuildRoleDelete     = "GUILD_ROLE_DELETE"
+	EventCategoryCreate      = "CATEGORY_CREATE"
+	EventCategoryUpdate      = "CATEGORY_UPDATE"
+	EventCategoryDelete      = "CATEGORY_DELETE"
 )
 
 // GuildEvent is the envelope published to Redis.

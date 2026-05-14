@@ -61,6 +61,40 @@ func (r *CategoryRepository) Update(ctx context.Context, cat *model.Category) er
 	return nil
 }
 
+func (r *CategoryRepository) GetByID(ctx context.Context, id string) (*model.Category, error) {
+	var cat model.Category
+	err := r.db.QueryRowContext(ctx,
+		`SELECT id, guild_id, name, position, created_at
+		 FROM categories WHERE id = $1`, id,
+	).Scan(&cat.ID, &cat.GuildID, &cat.Name, &cat.Position, &cat.CreatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("category get by id: %w", err)
+	}
+	return &cat, nil
+}
+
+func (r *CategoryRepository) Reorder(ctx context.Context, guildID string, categoryIDs []string) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("category reorder begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	for i, id := range categoryIDs {
+		_, err := tx.ExecContext(ctx,
+			`UPDATE categories SET position = $1 WHERE id = $2 AND guild_id = $3`,
+			i, id, guildID)
+		if err != nil {
+			return fmt.Errorf("category reorder update: %w", err)
+		}
+	}
+
+	return tx.Commit()
+}
+
 func (r *CategoryRepository) Delete(ctx context.Context, id string) error {
 	_, err := r.db.ExecContext(ctx, `DELETE FROM categories WHERE id = $1`, id)
 	if err != nil {

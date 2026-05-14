@@ -299,6 +299,14 @@ export interface Role {
   autoSource?: string;
 }
 
+export interface Category {
+  id: string;
+  guildId: string;
+  name: string;
+  position: number;
+  createdAt: string;
+}
+
 export interface Invite {
   id: string;
   guildId: string;
@@ -550,11 +558,10 @@ export const api = {
     return request<Channel[]>("GET", `/guilds/${guildId}/channels`);
   },
 
-  createChannel(guildId: string, name: string, type: string) {
-    return request<Channel>("POST", `/guilds/${guildId}/channels`, {
-      name,
-      type,
-    });
+  createChannel(guildId: string, name: string, type: string, categoryId?: string) {
+    const body: Record<string, unknown> = { name, type };
+    if (categoryId) body.categoryId = categoryId;
+    return request<Channel>("POST", `/guilds/${guildId}/channels`, body);
   },
 
   getRoles(guildId: string) {
@@ -892,5 +899,27 @@ export const api = {
 
   getGuildVoiceStates(guildId: string) {
     return request<VoiceState[]>("GET", `/voice/guild/${guildId}/states`);
+  },
+
+  // ---- Category methods ----
+
+  getCategories(guildId: string) {
+    return request<Category[]>("GET", `/guilds/${guildId}/categories`);
+  },
+
+  createCategory(guildId: string, name: string) {
+    return request<Category>("POST", `/guilds/${guildId}/categories`, { name });
+  },
+
+  updateCategory(categoryId: string, name: string) {
+    return request<Category>("PATCH", `/categories/${categoryId}`, { name });
+  },
+
+  deleteCategory(categoryId: string) {
+    return request<void>("DELETE", `/categories/${categoryId}`);
+  },
+
+  reorderCategories(guildId: string, categoryIds: string[]) {
+    return request<void>("PUT", `/guilds/${guildId}/categories/reorder`, { categoryIds });
   },
 };

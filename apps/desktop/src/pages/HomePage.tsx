@@ -79,6 +79,7 @@ export default function HomePage() {
         "GUILD_ROLE_CREATE", "GUILD_ROLE_UPDATE", "GUILD_ROLE_DELETE",
         "VOICE_STATE_UPDATE", "PRESENCE_UPDATE", "STREAM_STATUS_UPDATE",
         "NOTIFICATION_CREATE",
+        "CATEGORY_CREATE", "CATEGORY_UPDATE", "CATEGORY_DELETE",
       ];
       events.forEach((e) => nexeWS.off(e));
 
@@ -341,6 +342,52 @@ export default function HomePage() {
             }
           }
           return { streamStatusMap: newMap, liveGuilds: newLiveGuilds };
+        });
+      });
+
+      nexeWS.on("CATEGORY_CREATE", (data) => {
+        const cat = data as { id: string; guildId: string; name: string; position: number; createdAt: string };
+        useGuildStore.setState((s) => {
+          const existing = s.categories[cat.guildId] || [];
+          if (existing.some((c) => c.id === cat.id)) return s;
+          return {
+            categories: { ...s.categories, [cat.guildId]: [...existing, cat] },
+          };
+        });
+      });
+
+      nexeWS.on("CATEGORY_UPDATE", (data) => {
+        const cat = data as { id: string; guildId: string; name: string; position: number };
+        useGuildStore.setState((s) => {
+          const existing = s.categories[cat.guildId];
+          if (!existing) return s;
+          return {
+            categories: {
+              ...s.categories,
+              [cat.guildId]: existing.map((c) => (c.id === cat.id ? { ...c, ...cat } : c)),
+            },
+          };
+        });
+      });
+
+      nexeWS.on("CATEGORY_DELETE", (data) => {
+        const d = data as { id: string; guildId: string };
+        useGuildStore.setState((s) => {
+          const existing = s.categories[d.guildId];
+          if (!existing) return s;
+          return {
+            categories: {
+              ...s.categories,
+              [d.guildId]: existing.filter((c) => c.id !== d.id),
+            },
+            // Channels in the deleted category become uncategorized
+            channels: {
+              ...s.channels,
+              [d.guildId]: (s.channels[d.guildId] || []).map((ch) =>
+                ch.categoryId === d.id ? { ...ch, categoryId: undefined } : ch
+              ),
+            },
+          };
         });
       });
 

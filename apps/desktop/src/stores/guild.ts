@@ -4,6 +4,7 @@ import {
   api,
   type Guild,
   type Channel,
+  type Category,
   type GuildMember,
   type Message,
   type Role,
@@ -14,6 +15,7 @@ interface GuildState {
   activeGuildId: string | null;
   activeChannelId: string | null;
   channels: Record<string, Channel[]>;
+  categories: Record<string, Category[]>;
   members: Record<string, GuildMember[]>;
   roles: Record<string, Role[]>;
   memberRoles: Record<string, string[]>;
@@ -43,7 +45,7 @@ interface GuildState {
   updateGuild: (guildId: string, data: { name?: string; description?: string }) => Promise<void>;
   deleteGuild: (guildId: string) => Promise<void>;
   leaveGuild: (guildId: string) => Promise<void>;
-  createChannel: (name: string, type: string) => Promise<void>;
+  createChannel: (name: string, type: string, categoryId?: string) => Promise<void>;
   updateChannel: (channelId: string, data: { name?: string; topic?: string; slowmodeSeconds?: number }) => Promise<void>;
   deleteChannel: (channelId: string) => Promise<void>;
   reorderChannels: (guildId: string, channelIds: string[]) => Promise<void>;
@@ -69,6 +71,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
   activeGuildId: null,
   activeChannelId: null,
   channels: {},
+  categories: {},
   members: {},
   roles: {},
   memberRoles: {},
@@ -93,6 +96,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
       activeGuildId: null,
       activeChannelId: null,
       channels: {},
+      categories: {},
       members: {},
       roles: {},
       memberRoles: {},
@@ -156,10 +160,11 @@ export const useGuildStore = create<GuildState>((set, get) => ({
   async setActiveGuild(guildId: string) {
     set({ activeGuildId: guildId, activeChannelId: null, loading: true, error: null });
     try {
-      const [channels, members, roleList] = await Promise.all([
+      const [channels, members, roleList, categoryList] = await Promise.all([
         api.getChannels(guildId),
         api.getMembers(guildId, 100),
         api.getRoles(guildId),
+        api.getCategories(guildId).catch(() => []),
       ]);
 
       // Emotes are loaded for all guilds at startup — no need to reload here
@@ -199,6 +204,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
       if (get().activeGuildId !== guildId) return;
 
       const roleArr = Array.isArray(roleList) ? roleList : [];
+      const catArr = Array.isArray(categoryList) ? categoryList : [];
 
       // Build memberRoles mapping: userId → roleId[]
       const newMemberRoles: Record<string, string[]> = { ...get().memberRoles };
@@ -210,6 +216,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
 
       set((s) => ({
         channels: { ...s.channels, [guildId]: channelList },
+        categories: { ...s.categories, [guildId]: catArr },
         members: { ...s.members, [guildId]: memberList },
         roles: { ...s.roles, [guildId]: roleArr },
         memberRoles: newMemberRoles,
@@ -423,10 +430,10 @@ export const useGuildStore = create<GuildState>((set, get) => ({
     });
   },
 
-  async createChannel(name: string, type: string) {
+  async createChannel(name: string, type: string, categoryId?: string) {
     const { activeGuildId } = get();
     if (!activeGuildId) return;
-    const channel = await api.createChannel(activeGuildId, name, type);
+    const channel = await api.createChannel(activeGuildId, name, type, categoryId);
     set((s) => ({
       channels: {
         ...s.channels,

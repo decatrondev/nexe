@@ -294,6 +294,9 @@ func (s *GuildService) CreateCategory(ctx context.Context, guildID, name, reques
 	if err := s.categories.Create(ctx, cat); err != nil {
 		return nil, fmt.Errorf("create category: %w", err)
 	}
+
+	go s.events.Publish(context.Background(), guildID, EventCategoryCreate, cat)
+
 	return cat, nil
 }
 
@@ -303,6 +306,61 @@ func (s *GuildService) ListCategories(ctx context.Context, guildID string) ([]mo
 		return nil, fmt.Errorf("list categories: %w", err)
 	}
 	return cats, nil
+}
+
+func (s *GuildService) UpdateCategory(ctx context.Context, categoryID, name, requesterID string) (*model.Category, error) {
+	cat, err := s.categories.GetByID(ctx, categoryID)
+	if err != nil {
+		return nil, fmt.Errorf("update category: %w", err)
+	}
+	if cat == nil {
+		return nil, fmt.Errorf("category not found")
+	}
+	if err := s.checkPermission(ctx, cat.GuildID, requesterID, model.PermManageChannels); err != nil {
+		return nil, err
+	}
+	cat.Name = name
+	if err := s.categories.Update(ctx, cat); err != nil {
+		return nil, fmt.Errorf("update category: %w", err)
+	}
+
+	go s.events.Publish(context.Background(), cat.GuildID, EventCategoryUpdate, cat)
+
+	return cat, nil
+}
+
+func (s *GuildService) DeleteCategory(ctx context.Context, categoryID, requesterID string) error {
+	cat, err := s.categories.GetByID(ctx, categoryID)
+	if err != nil {
+		return fmt.Errorf("delete category: %w", err)
+	}
+	if cat == nil {
+		return fmt.Errorf("category not found")
+	}
+	if err := s.checkPermission(ctx, cat.GuildID, requesterID, model.PermManageChannels); err != nil {
+		return err
+	}
+	// Clear category_id on all channels in this category
+	if err := s.channels.ClearCategoryID(ctx, categoryID); err != nil {
+		return fmt.Errorf("delete category clear channels: %w", err)
+	}
+	if err := s.categories.Delete(ctx, categoryID); err != nil {
+		return fmt.Errorf("delete category: %w", err)
+	}
+
+	go s.events.Publish(context.Background(), cat.GuildID, EventCategoryDelete, map[string]string{
+		"id":      categoryID,
+		"guildId": cat.GuildID,
+	})
+
+	return nil
+}
+
+func (s *GuildService) ReorderCategories(ctx context.Context, guildID, requesterID string, categoryIDs []string) error {
+	if err := s.checkPermission(ctx, guildID, requesterID, model.PermManageChannels); err != nil {
+		return err
+	}
+	return s.categories.Reorder(ctx, guildID, categoryIDs)
 }
 
 // ---------------------------------------------------------------------------
