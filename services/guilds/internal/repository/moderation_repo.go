@@ -91,6 +91,18 @@ func (r *ModerationRepository) Timeout(ctx context.Context, guildID, userID stri
 	return nil
 }
 
+func (r *ModerationRepository) RemoveTimeout(ctx context.Context, guildID, userID string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE guild_members SET muted = false, muted_until = NULL
+		 WHERE guild_id = $1 AND user_id = $2`,
+		guildID, userID,
+	)
+	if err != nil {
+		return fmt.Errorf("moderation remove timeout: %w", err)
+	}
+	return nil
+}
+
 func (r *ModerationRepository) LogAction(ctx context.Context, log *model.ModerationLog) error {
 	err := r.db.QueryRowContext(ctx,
 		`INSERT INTO moderation_logs (guild_id, moderator_id, target_id, action, reason, duration_seconds)

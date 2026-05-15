@@ -28,6 +28,7 @@ func (h *MessageHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /messages/{id}", h.GetMessage)
 	mux.HandleFunc("PATCH /messages/{id}", h.EditMessage)
 	mux.HandleFunc("DELETE /messages/{id}", h.DeleteMessage)
+	mux.HandleFunc("POST /channels/{channelId}/bulk-delete", h.BulkDeleteMessages)
 	mux.HandleFunc("GET /messages/{id}/edits", h.GetEditHistory)
 	mux.HandleFunc("GET /messages/{id}/thread", h.ListThreadMessages)
 	mux.HandleFunc("POST /messages/{id}/thread", h.SendThreadMessage)
@@ -258,6 +259,29 @@ func (h *MessageHandler) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *MessageHandler) BulkDeleteMessages(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	channelID := r.PathValue("channelId")
+
+	var body struct {
+		Messages []string `json:"messages"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
+		return
+	}
+
+	n, err := h.svc.BulkDeleteMessages(r.Context(), channelID, userID, body.Messages)
+	if err != nil {
+		classifyError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int64{"deleted": n})
 }
 
 func (h *MessageHandler) GetEditHistory(w http.ResponseWriter, r *http.Request) {

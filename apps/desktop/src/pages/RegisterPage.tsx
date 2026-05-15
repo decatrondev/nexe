@@ -5,6 +5,38 @@ import { api } from "../lib/api";
 
 type Step = "register" | "verify";
 
+function getPasswordStrength(pw: string): { score: number; label: string; color: string } {
+  let score = 0;
+  if (pw.length >= 8) score++;
+  if (pw.length >= 12) score++;
+  if (/[A-Z]/.test(pw) && /[a-z]/.test(pw)) score++;
+  if (/\d/.test(pw)) score++;
+  if (/[^A-Za-z0-9]/.test(pw)) score++;
+
+  if (score <= 1) return { score: 1, label: "Weak", color: "bg-red-500" };
+  if (score === 2) return { score: 2, label: "Fair", color: "bg-orange-500" };
+  if (score === 3) return { score: 3, label: "Good", color: "bg-yellow-500" };
+  if (score === 4) return { score: 4, label: "Strong", color: "bg-green-500" };
+  return { score: 5, label: "Very strong", color: "bg-emerald-400" };
+}
+
+function PasswordStrength({ password }: { password: string }) {
+  const { score, label, color } = getPasswordStrength(password);
+  return (
+    <div className="mt-2">
+      <div className="flex gap-1">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div
+            key={i}
+            className={`h-1 flex-1 rounded-full transition-colors ${i <= score ? color : "bg-dark-700"}`}
+          />
+        ))}
+      </div>
+      <p className={`mt-1 text-[11px] ${score <= 2 ? "text-red-400" : "text-slate-500"}`}>{label}</p>
+    </div>
+  );
+}
+
 export default function RegisterPage() {
   const [step, setStep] = useState<Step>("register");
   const [username, setUsername] = useState("");
@@ -109,9 +141,11 @@ export default function RegisterPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                minLength={8}
                 className="w-full rounded-lg border border-dark-700 bg-dark-900 px-4 py-2.5 text-sm text-slate-200 outline-none transition-colors placeholder:text-slate-500 focus:border-nexe-500"
                 placeholder="Create a password"
               />
+              {password.length > 0 && <PasswordStrength password={password} />}
             </div>
 
             <button

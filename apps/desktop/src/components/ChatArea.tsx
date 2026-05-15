@@ -1004,7 +1004,7 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
                                 </svg>
                               </span>
                             )}
-                            <MessageContent content={msg.content} usernames={usernames} />
+                            <MessageContent content={msg.content} usernames={usernames} currentUserId={currentUser?.id} />
                           </div>
                         </>
                       )}

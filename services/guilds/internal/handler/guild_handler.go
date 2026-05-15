@@ -101,6 +101,7 @@ func (h *GuildHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /guilds/{id}/bans/{uid}", h.UnbanMember)
 	mux.HandleFunc("GET /guilds/{id}/bans", h.ListBans)
 	mux.HandleFunc("POST /guilds/{id}/members/{uid}/timeout", h.TimeoutMember)
+	mux.HandleFunc("DELETE /guilds/{id}/members/{uid}/timeout", h.RemoveTimeout)
 	mux.HandleFunc("POST /guilds/{id}/members/{uid}/warn", h.WarnMember)
 	mux.HandleFunc("GET /guilds/{id}/audit-log", h.ListModLogs)
 }
@@ -981,6 +982,21 @@ func (h *GuildHandler) TimeoutMember(w http.ResponseWriter, r *http.Request) {
 
 	dur := time.Duration(body.Duration) * time.Second
 	if err := h.svc.TimeoutMember(r.Context(), guildID, targetUID, userID, dur, body.Reason); err != nil {
+		classifyError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *GuildHandler) RemoveTimeout(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	guildID := r.PathValue("id")
+	targetUID := r.PathValue("uid")
+
+	if err := h.svc.RemoveTimeout(r.Context(), guildID, targetUID, userID); err != nil {
 		classifyError(w, err)
 		return
 	}

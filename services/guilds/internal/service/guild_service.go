@@ -1079,6 +1079,19 @@ func (s *GuildService) TimeoutMember(ctx context.Context, guildID, targetID, mod
 	return nil
 }
 
+func (s *GuildService) RemoveTimeout(ctx context.Context, guildID, targetID, modID string) error {
+	if err := s.checkPermission(ctx, guildID, modID, model.PermTimeoutMembers); err != nil {
+		return err
+	}
+
+	if err := s.moderation.RemoveTimeout(ctx, guildID, targetID); err != nil {
+		return fmt.Errorf("remove timeout: %w", err)
+	}
+
+	s.logModAction(ctx, guildID, modID, targetID, "untimeout", "", nil)
+	return nil
+}
+
 func (s *GuildService) WarnMember(ctx context.Context, guildID, targetID, modID, reason string) error {
 	// Require at least kick or ban permission to warn
 	if err := s.checkPermission(ctx, guildID, modID, model.PermKickMembers); err != nil {

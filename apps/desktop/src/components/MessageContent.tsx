@@ -75,7 +75,7 @@ interface MediaEmbed {
 
 // ---- Parse message content ----
 
-function parseContent(text: string, usernames?: Record<string, string>): { segments: React.ReactNode[]; embeds: MediaEmbed[] } {
+function parseContent(text: string, usernames?: Record<string, string>, currentUserId?: string): { segments: React.ReactNode[]; embeds: MediaEmbed[] } {
   const embeds: MediaEmbed[] = [];
   const parts = text.split(URL_REGEX);
 
@@ -126,13 +126,13 @@ function parseContent(text: string, usernames?: Record<string, string>): { segme
 
     // Text segments — parse markdown + emotes
     if (!part) return null;
-    return parseMarkdownAndEmotes(part, i, usernames);
+    return parseMarkdownAndEmotes(part, i, usernames, currentUserId);
   });
 
   return { segments: segments.filter(Boolean), embeds };
 }
 
-function parseMarkdownAndEmotes(text: string, keyBase: number, usernames?: Record<string, string>): React.ReactNode {
+function parseMarkdownAndEmotes(text: string, keyBase: number, usernames?: Record<string, string>, currentUserId?: string): React.ReactNode {
   // Process markdown: ```code blocks```, `inline code`, **bold**, *italic*, ~~strikethrough~~, @mentions
   const parts: React.ReactNode[] = [];
   let remaining = text;
@@ -203,7 +203,19 @@ function parseMarkdownAndEmotes(text: string, keyBase: number, usernames?: Recor
         break;
       case "mention": {
         const mentionName = usernames?.[m[1]] || m[1].slice(0, 8);
-        parts.push(<span key={`${keyBase}-md-${key++}`} className="rounded bg-nexe-500/20 px-1 text-nexe-400 font-medium cursor-pointer hover:bg-nexe-500/30">@{mentionName}</span>);
+        const isSelfMention = currentUserId && m[1] === currentUserId;
+        parts.push(
+          <span
+            key={`${keyBase}-md-${key++}`}
+            className={`rounded px-1 font-medium cursor-pointer ${
+              isSelfMention
+                ? "bg-nexe-500/30 text-nexe-300 hover:bg-nexe-500/40"
+                : "bg-nexe-500/20 text-nexe-400 hover:bg-nexe-500/30"
+            }`}
+          >
+            @{mentionName}
+          </span>
+        );
         break;
       }
     }
@@ -571,9 +583,10 @@ interface MessageContentProps {
   content: string;
   bridgeEmotes?: { id: string; text: string }[];
   usernames?: Record<string, string>;
+  currentUserId?: string;
 }
 
-export default function MessageContent({ content, bridgeEmotes, usernames }: MessageContentProps) {
+export default function MessageContent({ content, bridgeEmotes, usernames, currentUserId }: MessageContentProps) {
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
 
   // If bridge emotes are provided (from Twitch EventSub fragments), use those
@@ -581,7 +594,7 @@ export default function MessageContent({ content, bridgeEmotes, usernames }: Mes
     ? renderBridgeEmotes(content, bridgeEmotes)
     : null;
 
-  const { segments, embeds } = parseContent(content, usernames);
+  const { segments, embeds } = parseContent(content, usernames, currentUserId);
 
   // Check if message is only emotes (for bigger rendering)
   const isOnlyEmotes = /^(\s*:[a-zA-Z0-9_]+:\s*)+$/.test(content.trim());

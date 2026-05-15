@@ -322,6 +322,33 @@ func (r *MessageRepository) Update(ctx context.Context, id, newContent string) e
 	return nil
 }
 
+func (r *MessageRepository) BulkDelete(ctx context.Context, channelID string, messageIDs []string) (int64, error) {
+	if len(messageIDs) == 0 {
+		return 0, nil
+	}
+	// Build placeholders: $1 = channelID, $2..$N+1 = message IDs
+	args := make([]interface{}, 0, len(messageIDs)+1)
+	args = append(args, channelID)
+	placeholders := ""
+	for i, id := range messageIDs {
+		if i > 0 {
+			placeholders += ","
+		}
+		placeholders += fmt.Sprintf("$%d", i+2)
+		args = append(args, id)
+	}
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE messages SET deleted = true, deleted_at = NOW()
+		 WHERE channel_id = $1 AND id IN (`+placeholders+`) AND deleted = false`,
+		args...,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("bulk delete: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 func (r *MessageRepository) Delete(ctx context.Context, id string) error {
 	_, err := r.db.ExecContext(ctx,
 		`UPDATE messages SET deleted = true, deleted_at = NOW() WHERE id = $1`, id,

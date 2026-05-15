@@ -340,6 +340,44 @@ func (s *MessageService) DeleteMessage(ctx context.Context, messageID, requester
 	return nil
 }
 
+// BulkDeleteMessages soft-deletes multiple messages. Requires MANAGE_MESSAGES permission.
+func (s *MessageService) BulkDeleteMessages(ctx context.Context, channelID, requesterID string, messageIDs []string) (int64, error) {
+	if len(messageIDs) == 0 || len(messageIDs) > 100 {
+		return 0, fmt.Errorf("must provide 1-100 message IDs")
+	}
+
+	access, err := s.checkChannelAccess(ctx, channelID, requesterID)
+	if err != nil {
+		return 0, fmt.Errorf("access denied")
+	}
+	if !access.ManageMessages {
+		return 0, fmt.Errorf("missing permission: MANAGE_MESSAGES")
+	}
+
+	n, err := s.messages.BulkDelete(ctx, channelID, messageIDs)
+	if err != nil {
+		return 0, fmt.Errorf("bulk delete: %w", err)
+	}
+
+	slog.Debug("bulk delete", "channel", channelID, "count", n, "by", requesterID)
+
+	if s.events != nil {
+		go func() {
+			guildID, err := s.messages.GetChannelGuildID(context.Background(), channelID)
+			if err != nil {
+				return
+			}
+			s.events.Publish(context.Background(), guildID, channelID, EventMessageDelete, requesterID, map[string]interface{}{
+				"channelId":  channelID,
+				"ids":        messageIDs,
+				"bulkDelete": true,
+			})
+		}()
+	}
+
+	return n, nil
+}
+
 // PinMessage pins a message in its channel.
 func (s *MessageService) PinMessage(ctx context.Context, messageID, requesterID, requesterName string) error {
 	msg, err := s.messages.GetByID(ctx, messageID)
