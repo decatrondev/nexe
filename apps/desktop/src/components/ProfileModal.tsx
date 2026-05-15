@@ -70,6 +70,7 @@ export default function ProfileModal({ userId, streamStatus, onClose }: Props) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [badges, setBadges] = useState<UserBadge[]>([]);
   const [activity, setActivity] = useState<{ id: string; type: string; data: Record<string, unknown>; createdAt: string }[]>([]);
+  const [clips, setClips] = useState<{ title: string; thumbnail_url: string; url: string; view_count: number; creator_name: string; video_url?: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const color = userColor(userId);
   const myGuilds = useGuildStore((s) => s.guilds);
@@ -94,7 +95,15 @@ export default function ProfileModal({ userId, streamStatus, onClose }: Props) {
 
   useEffect(() => {
     let cancel = false;
-    api.getProfile(userId).then((p) => { if (!cancel) { setProfile(p); setLoading(false); } }).catch(() => { if (!cancel) setLoading(false); });
+    api.getProfile(userId).then((p) => {
+      if (cancel) return;
+      setProfile(p);
+      setLoading(false);
+      // Fetch clips if user has Twitch linked
+      if (p?.twitchId) {
+        api.getTwitchClips(p.twitchId).then((c) => { if (!cancel) setClips(Array.isArray(c) ? c : []); }).catch(() => {});
+      }
+    }).catch(() => { if (!cancel) setLoading(false); });
     api.getBadges(userId).then((b) => { if (!cancel) setBadges(b ?? []); }).catch(() => {});
     api.getActivity(userId, 10).then((a) => { if (!cancel) setActivity(a ?? []); }).catch(() => {});
     return () => { cancel = true; };
@@ -338,6 +347,37 @@ export default function ProfileModal({ userId, streamStatus, onClose }: Props) {
                         <span className="flex-1 text-slate-300">{activityLabel(a.type, a.data)}</span>
                         <span className="shrink-0 text-[10px] text-slate-600">{timeAgo(a.createdAt)}</span>
                       </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Twitch Clips */}
+              {clips.length > 0 && (
+                <div>
+                  <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-400">Twitch Clips</h4>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {clips.slice(0, 6).map((clip, i) => (
+                      <a
+                        key={i}
+                        href={clip.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="group relative overflow-hidden rounded-md bg-dark-900"
+                      >
+                        <img
+                          src={clip.thumbnail_url}
+                          alt={clip.title}
+                          className="aspect-video w-full object-cover group-hover:brightness-110 transition"
+                          loading="lazy"
+                        />
+                        <div className="absolute inset-0 flex items-end bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                          <p className="truncate px-1.5 pb-1 text-[10px] text-white">{clip.title}</p>
+                        </div>
+                        <span className="absolute right-1 top-1 rounded bg-black/60 px-1 text-[9px] text-white">
+                          {clip.view_count.toLocaleString()} views
+                        </span>
+                      </a>
                     ))}
                   </div>
                 </div>

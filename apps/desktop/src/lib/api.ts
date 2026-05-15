@@ -211,6 +211,8 @@ export interface UserProfile {
   createdAt: string;
   updatedAt: string;
   status?: "online" | "idle" | "dnd" | "offline" | "invisible";
+  twitchId?: string;
+  twitchLogin?: string;
 }
 
 export interface UpdateProfileData {
@@ -442,6 +444,10 @@ export const api = {
 
   getTwitchClip(clipId: string) {
     return request<Record<string, unknown>>("GET", `/twitch/clip/${clipId}`);
+  },
+
+  getTwitchClips(broadcasterId: string) {
+    return request<{ title: string; thumbnail_url: string; url: string; view_count: number; creator_name: string; video_url?: string }[]>("GET", `/twitch/clips/${broadcasterId}`);
   },
 
   updateProfile(data: UpdateProfileData) {

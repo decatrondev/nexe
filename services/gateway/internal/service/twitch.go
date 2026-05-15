@@ -211,6 +211,52 @@ func (s *TwitchService) GetClip(ctx context.Context, clipID string) (map[string]
 	return clip, nil
 }
 
+// GetClipsByBroadcaster fetches recent clips for a broadcaster from Twitch API.
+func (s *TwitchService) GetClipsByBroadcaster(ctx context.Context, broadcasterID string, limit int) ([]map[string]interface{}, error) {
+	token, err := s.GetAppToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 || limit > 20 {
+		limit = 12
+	}
+
+	req, _ := http.NewRequestWithContext(ctx, "GET",
+		fmt.Sprintf("https://api.twitch.tv/helix/clips?broadcaster_id=%s&first=%d", url.QueryEscape(broadcasterID), limit), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Client-Id", s.clientID)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("get clips: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Data []map[string]interface{} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode clips: %w", err)
+	}
+
+	// Resolve video URLs for each clip
+	for _, clip := range result.Data {
+		if thumb, ok := clip["thumbnail_url"].(string); ok {
+			if idx := strings.Index(thumb, "-preview-"); idx != -1 {
+				clip["video_url"] = thumb[:idx] + ".mp4"
+				continue
+			}
+		}
+		if slug, ok := clip["id"].(string); ok {
+			if videoURL := s.resolveClipVideoGQL(ctx, slug); videoURL != "" {
+				clip["video_url"] = videoURL
+			}
+		}
+	}
+
+	return result.Data, nil
+}
+
 // resolveClipVideoGQL uses Twitch's internal GQL API to get the direct MP4 URL for a clip.
 // This handles the new CloudFront-based clip format that doesn't use the -preview- thumbnail pattern.
 // Returns the full video URL including auth signature and token query params.

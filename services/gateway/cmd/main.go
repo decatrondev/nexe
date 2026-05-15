@@ -145,6 +145,20 @@ func main() {
 	mux.Handle("POST /twitch/eventsub/setup", authMiddleware(http.HandlerFunc(twitchHandler.SetupEventSub)))
 	mux.HandleFunc("POST /twitch/webhook", twitchHandler.EventSubWebhook)
 
+	// Twitch clips by broadcaster (public, rate limited)
+	mux.Handle("GET /twitch/clips/{broadcasterId}", apiRateLimiter.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		broadcasterID := r.PathValue("broadcasterId")
+		clips, err := twitchSvc.GetClipsByBroadcaster(r.Context(), broadcasterID, 12)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]interface{}{"data": []struct{}{}})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"data": clips})
+	})))
+
 	// Link unfurl (public, rate limited — no user auth needed)
 	mux.Handle("GET /unfurl", apiRateLimiter.Middleware(http.HandlerFunc(handler.HandleUnfurl)))
 

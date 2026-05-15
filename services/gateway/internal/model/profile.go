@@ -20,6 +20,8 @@ type Profile struct {
 	TotalXP        int64        `json:"totalXp"`
 	CreatedAt      time.Time    `json:"createdAt"`
 	UpdatedAt      time.Time    `json:"updatedAt"`
+	TwitchID       *string      `json:"twitchId,omitempty"`
+	TwitchLogin    *string      `json:"twitchLogin,omitempty"`
 }
 
 type Badge struct {

@@ -25,14 +25,16 @@ func (r *ProfileRepository) GetByUserID(ctx context.Context, userID string) (*mo
 		SELECT p.user_id, u.username, p.display_name, p.bio, p.avatar_url, p.banner_url,
 		       p.accent_color, p.background_url, p.layout, p.social_links,
 		       p.featured_clips, p.stream_schedule, p.visibility,
-		       p.level, p.total_xp, p.created_at, p.updated_at
+		       p.level, p.total_xp, p.created_at, p.updated_at,
+		       u.twitch_id, u.twitch_login
 		FROM profiles p
 		JOIN users u ON u.id = p.user_id
 		WHERE p.user_id = $1`, userID,
 	).Scan(&p.UserID, &p.Username, &p.DisplayName, &p.Bio, &p.AvatarUrl, &p.BannerUrl,
 		&p.AccentColor, &p.BackgroundUrl, &layout, &socialLinks,
 		&featuredClips, &streamSchedule, &visibility,
-		&p.Level, &p.TotalXP, &p.CreatedAt, &p.UpdatedAt)
+		&p.Level, &p.TotalXP, &p.CreatedAt, &p.UpdatedAt,
+		&p.TwitchID, &p.TwitchLogin)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
