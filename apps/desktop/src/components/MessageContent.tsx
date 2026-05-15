@@ -311,10 +311,7 @@ function TwitchClipPlayer({ clipId, url }: { clipId: string; url: string }) {
   const [clipData, setClipData] = useState<{ title?: string; broadcaster_name?: string; thumbnail_url?: string } | null>(null);
   const [error, setError] = useState(false);
 
-  // Detect parent domain for Twitch embed
-  const parentDomain = typeof window !== "undefined"
-    ? (window.location.hostname === "tauri.localhost" ? "tauri.localhost" : window.location.hostname)
-    : "nexe.decatron.net";
+  const isTauri = typeof window !== "undefined" && ("__TAURI_INTERNALS__" in window || window.location.hostname === "tauri.localhost");
 
   useEffect(() => {
     api.getTwitchClip(clipId).then((data) => {
@@ -327,10 +324,11 @@ function TwitchClipPlayer({ clipId, url }: { clipId: string; url: string }) {
     }).catch(() => setError(true));
   }, [clipId]);
 
+  // Loading state
   if (!videoUrl && !error) {
     return (
       <div className="w-[640px] max-w-full overflow-hidden rounded border-l-4 border-l-purple-500 bg-dark-800">
-        <div className="flex h-[360px] items-center justify-center bg-dark-900">
+        <div className="flex items-center justify-center bg-dark-900" style={{ aspectRatio: "16/9" }}>
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-dark-600 border-t-purple-500" />
         </div>
         <div className="px-3 py-2">
@@ -344,29 +342,67 @@ function TwitchClipPlayer({ clipId, url }: { clipId: string; url: string }) {
     );
   }
 
-  // If native video failed, use Twitch's official embed iframe
-  const useIframe = error;
+  // Error fallback: Tauri can't iframe Twitch, so show thumbnail + external link
+  // Web can use iframe since parent domain is valid
+  if (error) {
+    if (isTauri) {
+      return (
+        <div className="w-[640px] max-w-full overflow-hidden rounded border-l-4 border-l-purple-500 bg-dark-800">
+          <a href={url} target="_blank" rel="noopener noreferrer" className="group relative block">
+            <div className="flex items-center justify-center bg-dark-900" style={{ aspectRatio: "16/9" }}>
+              <div className="flex flex-col items-center gap-3">
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-purple-600 shadow-lg group-hover:bg-purple-500 transition-colors">
+                  <svg viewBox="0 0 24 24" className="h-7 w-7 fill-white"><path d="M11.64 5.93h1.43v4.28h-1.43m3.93-4.28H17v4.28h-1.43M7 2L3.43 5.57v12.86h4.28V22l3.58-3.57h2.85L20.57 12V2m-1.43 9.29l-2.85 2.85h-2.86l-2.5 2.5v-2.5H7.71V3.43h11.43z" /></svg>
+                </div>
+                <span className="text-sm text-slate-400 group-hover:text-slate-200 transition-colors">Open clip on Twitch</span>
+              </div>
+            </div>
+          </a>
+          <div className="px-3 py-2">
+            <div className="flex items-center gap-1.5 text-[11px] text-purple-400">
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor"><path d="M11.64 5.93h1.43v4.28h-1.43m3.93-4.28H17v4.28h-1.43M7 2L3.43 5.57v12.86h4.28V22l3.58-3.57h2.85L20.57 12V2m-1.43 9.29l-2.85 2.85h-2.86l-2.5 2.5v-2.5H7.71V3.43h11.43z" /></svg>
+              Twitch
+            </div>
+            <a href={url} target="_blank" rel="noopener noreferrer" className="mt-0.5 block text-sm font-medium text-nexe-400 hover:underline truncate">
+              Twitch Clip
+            </a>
+          </div>
+        </div>
+      );
+    }
 
+    // Web fallback: use Twitch iframe embed
+    return (
+      <div className="w-[640px] max-w-full overflow-hidden rounded border-l-4 border-l-purple-500 bg-dark-800">
+        <iframe
+          src={`https://clips.twitch.tv/embed?clip=${clipId}&parent=${window.location.hostname}&autoplay=false`}
+          className="block w-full"
+          style={{ border: 0, aspectRatio: "16/9" }}
+          allowFullScreen
+        />
+        <div className="px-3 py-2">
+          <div className="flex items-center gap-1.5 text-[11px] text-purple-400">
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor"><path d="M11.64 5.93h1.43v4.28h-1.43m3.93-4.28H17v4.28h-1.43M7 2L3.43 5.57v12.86h4.28V22l3.58-3.57h2.85L20.57 12V2m-1.43 9.29l-2.85 2.85h-2.86l-2.5 2.5v-2.5H7.71V3.43h11.43z" /></svg>
+            Twitch
+          </div>
+          <a href={url} target="_blank" rel="noopener noreferrer" className="mt-0.5 block text-sm font-medium text-nexe-400 hover:underline truncate">
+            Twitch Clip
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  // Success: native video player
   return (
     <div className="w-[640px] max-w-full overflow-hidden rounded border-l-4 border-l-purple-500 bg-dark-800">
-      {useIframe ? (
-        <iframe
-          src={`https://clips.twitch.tv/embed?clip=${clipId}&parent=${parentDomain}&autoplay=false`}
-          width="640"
-          height="360"
-          allowFullScreen
-          className="block max-w-full"
-          style={{ border: 0 }}
-        />
-      ) : (
-        <video
-          src={videoUrl!}
-          controls
-          preload="metadata"
-          className="block w-full"
-          poster={clipData?.thumbnail_url}
-        />
-      )}
+      <video
+        src={videoUrl!}
+        controls
+        preload="metadata"
+        className="block w-full"
+        poster={clipData?.thumbnail_url}
+      />
       <div className="px-3 py-2">
         <div className="flex items-center gap-1.5 text-[11px] text-purple-400">
           <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor"><path d="M11.64 5.93h1.43v4.28h-1.43m3.93-4.28H17v4.28h-1.43M7 2L3.43 5.57v12.86h4.28V22l3.58-3.57h2.85L20.57 12V2m-1.43 9.29l-2.85 2.85h-2.86l-2.5 2.5v-2.5H7.71V3.43h11.43z" /></svg>
@@ -391,12 +427,10 @@ function YouTubeEmbed({ videoId, url }: { videoId: string; url: string }) {
       {playing ? (
         <iframe
           src={`https://www.youtube.com/embed/${videoId}?autoplay=1`}
-          width="640"
-          height="360"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowFullScreen
-          className="block max-w-full"
-          style={{ border: 0 }}
+          className="block w-full"
+          style={{ border: 0, aspectRatio: "16/9" }}
         />
       ) : (
         <button
