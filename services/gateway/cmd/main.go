@@ -290,6 +290,7 @@ func corsMiddleware(next http.Handler, frontendURL string) http.Handler {
 		"http://localhost:1420": true,
 		"http://localhost:3013": true,
 		"https://tauri.localhost": true,
+		"http://tauri.localhost":  true,
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
