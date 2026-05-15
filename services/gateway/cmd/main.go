@@ -121,6 +121,7 @@ func main() {
 	mux.Handle("GET /users/{id}/badges", authMiddleware(http.HandlerFunc(profileHandler.GetBadges)))
 	mux.Handle("GET /users/{id}/activity", authMiddleware(http.HandlerFunc(profileHandler.GetActivity)))
 	mux.Handle("POST /internal/xp", apiRateLimiter.Middleware(http.HandlerFunc(profileHandler.AddXP)))
+	mux.Handle("POST /internal/activity", apiRateLimiter.Middleware(http.HandlerFunc(profileHandler.LogActivityEndpoint)))
 
 	// Upload routes (require auth)
 	mux.Handle("POST /users/@me/avatar", authMiddleware(http.HandlerFunc(uploadHandler.UploadAvatar)))

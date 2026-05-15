@@ -407,6 +407,21 @@ func (h *TwitchHandler) LinkTwitch(w http.ResponseWriter, r *http.Request) {
 
 	slog.Info("twitch linked", "userId", claims.Subject, "twitchId", twitchUser.ID)
 
+	// Log activity
+	go func() {
+		body, _ := json.Marshal(map[string]interface{}{
+			"userId": claims.Subject,
+			"type":   "twitch_linked",
+			"data":   map[string]string{"twitchLogin": twitchUser.Login},
+		})
+		req, _ := http.NewRequestWithContext(context.Background(), "POST",
+			"http://localhost:8090/internal/activity", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		if resp, err := http.DefaultClient.Do(req); err == nil {
+			resp.Body.Close()
+		}
+	}()
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"data": map[string]interface{}{
 			"twitchId":      twitchUser.ID,

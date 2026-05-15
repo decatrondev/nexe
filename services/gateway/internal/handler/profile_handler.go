@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -79,6 +80,11 @@ func (h *ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Log activity
+	go h.profiles.LogActivity(context.Background(), claims.Subject, "profile_update", map[string]interface{}{
+		"fields": func() []string { keys := make([]string, 0, len(fields)); for k := range fields { keys = append(keys, k) }; return keys }(),
+	})
+
 	profile, _ := h.profiles.GetByUserID(r.Context(), claims.Subject)
 	writeJSON(w, http.StatusOK, map[string]interface{}{"data": profile})
 }
@@ -127,6 +133,26 @@ func (h *ProfileHandler) GetActivity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"data": activity})
+}
+
+func (h *ProfileHandler) LogActivityEndpoint(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		UserID string                 `json:"userId"`
+		Type   string                 `json:"type"`
+		Data   map[string]interface{} `json:"data"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.UserID == "" || body.Type == "" {
+		writeError(w, http.StatusBadRequest, "invalid_body", "userId and type required")
+		return
+	}
+	if body.Data == nil {
+		body.Data = map[string]interface{}{}
+	}
+	if err := h.profiles.LogActivity(r.Context(), body.UserID, body.Type, body.Data); err != nil {
+		writeError(w, http.StatusInternalServerError, "activity_error", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *ProfileHandler) AddXP(w http.ResponseWriter, r *http.Request) {

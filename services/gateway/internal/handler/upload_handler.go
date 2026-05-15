@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
@@ -125,6 +126,13 @@ func (h *UploadHandler) handleUpload(w http.ResponseWriter, r *http.Request, buc
 		writeError(w, http.StatusInternalServerError, "update_error", "failed to update profile")
 		return
 	}
+
+	// Log activity
+	actType := "avatar_update"
+	if field == "bannerUrl" {
+		actType = "banner_update"
+	}
+	go h.profiles.LogActivity(context.Background(), claims.Subject, actType, map[string]string{})
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"url": url,
