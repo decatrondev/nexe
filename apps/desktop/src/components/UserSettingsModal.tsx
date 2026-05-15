@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAuthStore } from "../stores/auth";
 import { api, type SocialLink } from "../lib/api";
 import ImageCropModal from "./ImageCropModal";
-import { Tabs, TabList, TabPanel, Select, ColorPicker, type TabItem } from "@nexe/ui";
+import { Tabs, TabList, TabPanel, Select, ColorPicker, Toggle, type TabItem } from "@nexe/ui";
 
 interface Props { onClose: () => void }
 
@@ -802,9 +802,120 @@ function SecurityTab() {
 // ═══════════════════════════
 
 function AppearanceTab() {
+  const [chatFontSize, setChatFontSize] = useState(() =>
+    Number(localStorage.getItem("nexe:chatFontSize") || "14")
+  );
+  const [compactMode, setCompactMode] = useState(() =>
+    localStorage.getItem("nexe:compactMode") === "true"
+  );
+  const [showAvatars, setShowAvatars] = useState(() =>
+    localStorage.getItem("nexe:showAvatars") !== "false"
+  );
+  const [animateEmotes, setAnimateEmotes] = useState(() =>
+    localStorage.getItem("nexe:animateEmotes") !== "false"
+  );
+  const [showLinkPreviews, setShowLinkPreviews] = useState(() =>
+    localStorage.getItem("nexe:showLinkPreviews") !== "false"
+  );
+
+  const updateSetting = (key: string, value: string) => {
+    localStorage.setItem(`nexe:${key}`, value);
+    // Dispatch event so other components can react
+    window.dispatchEvent(new CustomEvent("nexe:appearance-change", { detail: { key, value } }));
+  };
+
   return (
-    <div className="py-12 text-center">
-      <p className="text-sm text-slate-500">Theme customization coming soon.</p>
+    <div className="space-y-6">
+      <h2 className="text-xl font-bold text-slate-100">Appearance</h2>
+
+      {/* Chat Font Size */}
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-300">
+          Chat Font Size — {chatFontSize}px
+        </label>
+        <p className="mb-3 text-xs text-slate-500">Adjust the size of text in chat messages.</p>
+        <div className="flex items-center gap-4">
+          <span className="text-xs text-slate-500">12px</span>
+          <input
+            type="range"
+            min={12}
+            max={20}
+            value={chatFontSize}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              setChatFontSize(v);
+              updateSetting("chatFontSize", String(v));
+            }}
+            className="flex-1 accent-nexe-500"
+          />
+          <span className="text-xs text-slate-500">20px</span>
+        </div>
+        <div className="mt-3 rounded-lg border border-dark-700 bg-dark-900 p-3">
+          <p className="text-slate-400" style={{ fontSize: `${chatFontSize}px` }}>
+            This is a preview of your chat font size.
+          </p>
+        </div>
+      </div>
+
+      {/* Compact Mode */}
+      <div className="flex items-center justify-between rounded-lg border border-dark-700 bg-dark-800 p-4">
+        <div>
+          <p className="text-sm font-medium text-slate-200">Compact Mode</p>
+          <p className="text-xs text-slate-500">Reduce spacing between messages for a denser layout.</p>
+        </div>
+        <Toggle
+          checked={compactMode}
+          onChange={(v) => {
+            setCompactMode(v);
+            updateSetting("compactMode", String(v));
+          }}
+        />
+      </div>
+
+      {/* Show Avatars */}
+      <div className="flex items-center justify-between rounded-lg border border-dark-700 bg-dark-800 p-4">
+        <div>
+          <p className="text-sm font-medium text-slate-200">Show Avatars</p>
+          <p className="text-xs text-slate-500">Display user avatars next to messages.</p>
+        </div>
+        <Toggle
+          checked={showAvatars}
+          onChange={(v) => {
+            setShowAvatars(v);
+            updateSetting("showAvatars", String(v));
+          }}
+        />
+      </div>
+
+      {/* Animate Emotes */}
+      <div className="flex items-center justify-between rounded-lg border border-dark-700 bg-dark-800 p-4">
+        <div>
+          <p className="text-sm font-medium text-slate-200">Animate Emotes</p>
+          <p className="text-xs text-slate-500">Play animated emotes (GIF). Disable to save performance.</p>
+        </div>
+        <Toggle
+          checked={animateEmotes}
+          onChange={(v) => {
+            setAnimateEmotes(v);
+            updateSetting("animateEmotes", String(v));
+          }}
+        />
+      </div>
+
+      {/* Show Link Previews */}
+      <div className="flex items-center justify-between rounded-lg border border-dark-700 bg-dark-800 p-4">
+        <div>
+          <p className="text-sm font-medium text-slate-200">Show Link Previews</p>
+          <p className="text-xs text-slate-500">Display embedded previews for links shared in chat.</p>
+        </div>
+        <Toggle
+          checked={showLinkPreviews}
+          onChange={(v) => {
+            setShowLinkPreviews(v);
+            updateSetting("showLinkPreviews", String(v));
+          }}
+        />
+      </div>
     </div>
   );
 }
