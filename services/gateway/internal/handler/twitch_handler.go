@@ -578,6 +578,9 @@ func (h *TwitchHandler) handleStreamOnline(ctx context.Context, event json.RawMe
 
 	// Forward to presence service
 	h.notifyPresenceStreamStatus(ctx, e.BroadcasterUserID, true)
+
+	// Send "X is now live" notification to guild system channels
+	go h.sendLiveNotification(ctx, e.BroadcasterUserID, e.BroadcasterUserName, e.BroadcasterUserLogin)
 }
 
 func (h *TwitchHandler) handleStreamOffline(ctx context.Context, event json.RawMessage) {
@@ -1616,4 +1619,70 @@ func (h *TwitchHandler) SendToTwitchChat(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// sendLiveNotification sends a system message to all guilds where the streamer is a member.
+func (h *TwitchHandler) sendLiveNotification(ctx context.Context, twitchID, displayName, login string) {
+	user, err := h.users.GetByTwitchID(ctx, twitchID)
+	if err != nil || user == nil {
+		return
+	}
+
+	// Get stream info for the message
+	stream, _ := h.twitch.GetStreamByUserID(ctx, twitchID)
+	streamTitle := ""
+	gameName := ""
+	if stream != nil {
+		streamTitle = stream.Title
+		gameName = stream.GameName
+	}
+
+	// Build notification message
+	content := fmt.Sprintf("🔴 **%s** is now live on Twitch!", displayName)
+	if streamTitle != "" {
+		content += fmt.Sprintf("\n> %s", streamTitle)
+	}
+	if gameName != "" {
+		content += fmt.Sprintf("\n🎮 %s", gameName)
+	}
+	content += fmt.Sprintf("\nhttps://twitch.tv/%s", login)
+
+	// Get all guilds the user is a member of
+	resp, err := http.Get(h.guildsURL + "/users/" + user.ID + "/guilds")
+	if err != nil {
+		slog.Error("failed to get user guilds for live notification", "error", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	var guilds []struct {
+		ID              string  `json:"id"`
+		SystemChannelID *string `json:"systemChannelId"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&guilds); err != nil {
+		return
+	}
+
+	for _, guild := range guilds {
+		channelID := ""
+		if guild.SystemChannelID != nil && *guild.SystemChannelID != "" {
+			channelID = *guild.SystemChannelID
+		}
+		if channelID == "" {
+			continue // No system channel configured, skip
+		}
+
+		// Send system message via messaging service
+		msgBody, _ := json.Marshal(map[string]interface{}{
+			"content":      content,
+			"type":         "system",
+			"bridgeAuthor": displayName,
+		})
+		req, _ := http.NewRequestWithContext(ctx, "POST",
+			h.messagingURL+"/channels/"+channelID+"/messages", bytes.NewReader(msgBody))
+		req.Header.Set("Content-Type", "application/json")
+		if resp, err := http.DefaultClient.Do(req); err == nil {
+			resp.Body.Close()
+		}
+	}
 }

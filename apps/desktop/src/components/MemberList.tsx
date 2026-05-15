@@ -234,8 +234,8 @@ export default function MemberList() {
                         )}
                       </div>
                       {isLive && (
-                        <p className="truncate text-xs text-slate-500">
-                          Streaming on Twitch
+                        <p className="truncate text-xs text-purple-400/70">
+                          {streamStatusMap[member.userId]?.game || "Streaming on Twitch"}
                         </p>
                       )}
                     </div>
