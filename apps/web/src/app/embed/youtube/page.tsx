@@ -1,38 +1,28 @@
-"use client";
-
-import { useSearchParams } from "next/navigation";
-import { Suspense } from "react";
-
-function YouTubeEmbed() {
-  const params = useSearchParams();
-  const id = params.get("id");
+export default async function EmbedYouTubePage({ searchParams }: { searchParams: Promise<{ id?: string }> }) {
+  const { id } = await searchParams;
 
   if (!id) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#0f172a", color: "#64748b", fontFamily: "sans-serif", fontSize: 14 }}>
-        Missing video ID
-      </div>
+      <html>
+        <body style={{ margin: 0, background: "#0f172a", display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", color: "#64748b", fontFamily: "sans-serif" }}>
+          Missing video ID
+        </body>
+      </html>
     );
   }
 
   return (
-    <iframe
-      src={`https://www.youtube.com/embed/${id}`}
-      width="100%"
-      height="100%"
-      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-      allowFullScreen
-      style={{ border: 0, position: "absolute", inset: 0 }}
-    />
-  );
-}
-
-export default function EmbedYouTubePage() {
-  return (
-    <div style={{ position: "relative", width: "100vw", height: "100vh", background: "#0f172a", overflow: "hidden" }}>
-      <Suspense fallback={<div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#0f172a", color: "#64748b" }}>Loading...</div>}>
-        <YouTubeEmbed />
-      </Suspense>
-    </div>
+    <html>
+      <body style={{ margin: 0, overflow: "hidden", background: "#000" }}>
+        <iframe
+          src={`https://www.youtube.com/embed/${id}?rel=0&modestbranding=1`}
+          width="100%"
+          height="100%"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+          style={{ border: 0, position: "absolute", inset: 0 }}
+        />
+      </body>
+    </html>
   );
 }

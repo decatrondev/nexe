@@ -311,6 +311,11 @@ function TwitchClipPlayer({ clipId, url }: { clipId: string; url: string }) {
   const [clipData, setClipData] = useState<{ title?: string; broadcaster_name?: string; thumbnail_url?: string } | null>(null);
   const [error, setError] = useState(false);
 
+  // Detect parent domain for Twitch embed
+  const parentDomain = typeof window !== "undefined"
+    ? (window.location.hostname === "tauri.localhost" ? "tauri.localhost" : window.location.hostname)
+    : "nexe.decatron.net";
+
   useEffect(() => {
     api.getTwitchClip(clipId).then((data) => {
       if (data?.video_url) {
@@ -322,39 +327,106 @@ function TwitchClipPlayer({ clipId, url }: { clipId: string; url: string }) {
     }).catch(() => setError(true));
   }, [clipId]);
 
-  if (error) {
+  if (!videoUrl && !error) {
     return (
-      <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-lg border border-dark-700 bg-dark-800 px-3 py-2 text-sm text-purple-400 hover:bg-dark-700 transition-colors">
-        <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="currentColor"><path d="M11.64 5.93h1.43v4.28h-1.43m3.93-4.28H17v4.28h-1.43M7 2L3.43 5.57v12.86h4.28V22l3.58-3.57h2.85L20.57 12V2m-1.43 9.29l-2.85 2.85h-2.86l-2.5 2.5v-2.5H7.71V3.43h11.43z" /></svg>
-        Twitch Clip — Click to watch
-      </a>
-    );
-  }
-
-  if (!videoUrl) {
-    return (
-      <div className="flex h-[309px] max-w-[550px] items-center justify-center rounded-lg border border-dark-700 bg-dark-800">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-dark-600 border-t-purple-500" />
+      <div className="w-[640px] max-w-full overflow-hidden rounded border-l-4 border-l-purple-500 bg-dark-800">
+        <div className="flex h-[360px] items-center justify-center bg-dark-900">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-dark-600 border-t-purple-500" />
+        </div>
+        <div className="px-3 py-2">
+          <div className="flex items-center gap-1.5 text-[11px] text-purple-400">
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor"><path d="M11.64 5.93h1.43v4.28h-1.43m3.93-4.28H17v4.28h-1.43M7 2L3.43 5.57v12.86h4.28V22l3.58-3.57h2.85L20.57 12V2m-1.43 9.29l-2.85 2.85h-2.86l-2.5 2.5v-2.5H7.71V3.43h11.43z" /></svg>
+            Twitch
+          </div>
+          <p className="mt-1 text-sm text-slate-500">Loading clip...</p>
+        </div>
       </div>
     );
   }
 
+  // If native video failed, use Twitch's official embed iframe
+  const useIframe = error;
+
   return (
-    <div className="max-w-[550px] overflow-hidden rounded-lg border border-dark-700 bg-dark-800">
-      <video
-        src={videoUrl}
-        controls
-        preload="metadata"
-        className="w-full"
-        poster={clipData?.thumbnail_url}
-      />
-      {clipData?.title && (
-        <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 text-xs text-slate-400 hover:text-slate-200 transition-colors">
-          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0 text-purple-400" fill="currentColor"><path d="M11.64 5.93h1.43v4.28h-1.43m3.93-4.28H17v4.28h-1.43M7 2L3.43 5.57v12.86h4.28V22l3.58-3.57h2.85L20.57 12V2m-1.43 9.29l-2.85 2.85h-2.86l-2.5 2.5v-2.5H7.71V3.43h11.43z" /></svg>
-          <span className="truncate">{clipData.title}</span>
-          {clipData.broadcaster_name && <span className="shrink-0 text-slate-600">— {clipData.broadcaster_name}</span>}
-        </a>
+    <div className="w-[640px] max-w-full overflow-hidden rounded border-l-4 border-l-purple-500 bg-dark-800">
+      {useIframe ? (
+        <iframe
+          src={`https://clips.twitch.tv/embed?clip=${clipId}&parent=${parentDomain}&autoplay=false`}
+          width="640"
+          height="360"
+          allowFullScreen
+          className="block max-w-full"
+          style={{ border: 0 }}
+        />
+      ) : (
+        <video
+          src={videoUrl!}
+          controls
+          preload="metadata"
+          className="block w-full"
+          poster={clipData?.thumbnail_url}
+        />
       )}
+      <div className="px-3 py-2">
+        <div className="flex items-center gap-1.5 text-[11px] text-purple-400">
+          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor"><path d="M11.64 5.93h1.43v4.28h-1.43m3.93-4.28H17v4.28h-1.43M7 2L3.43 5.57v12.86h4.28V22l3.58-3.57h2.85L20.57 12V2m-1.43 9.29l-2.85 2.85h-2.86l-2.5 2.5v-2.5H7.71V3.43h11.43z" /></svg>
+          Twitch
+        </div>
+        <a href={url} target="_blank" rel="noopener noreferrer" className="mt-0.5 block text-sm font-medium text-nexe-400 hover:underline truncate">
+          {clipData?.title || "Twitch Clip"}
+        </a>
+        {clipData?.broadcaster_name && (
+          <p className="mt-0.5 text-xs text-slate-500">{clipData.broadcaster_name}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function YouTubeEmbed({ videoId, url }: { videoId: string; url: string }) {
+  const [playing, setPlaying] = useState(false);
+
+  return (
+    <div className="w-[640px] max-w-full overflow-hidden rounded border-l-4 border-l-red-600 bg-dark-800">
+      {playing ? (
+        <iframe
+          src={`https://www.youtube.com/embed/${videoId}?autoplay=1`}
+          width="640"
+          height="360"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+          className="block max-w-full"
+          style={{ border: 0 }}
+        />
+      ) : (
+        <button
+          onClick={() => setPlaying(true)}
+          className="group relative block w-full"
+        >
+          <img
+            src={`https://img.youtube.com/vi/${videoId}/hqdefault.jpg`}
+            alt=""
+            className="block w-full object-cover"
+            style={{ aspectRatio: "16/9" }}
+          />
+          <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/40 transition-colors">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-red-600 shadow-lg group-hover:bg-red-500 transition-colors">
+              <svg viewBox="0 0 24 24" className="ml-1 h-7 w-7 fill-white">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </div>
+          </div>
+        </button>
+      )}
+      <div className="px-3 py-2">
+        <div className="flex items-center gap-1.5 text-[11px] text-red-400">
+          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor"><path d="M21.58 7.19c-.23-.86-.91-1.54-1.77-1.77C18.25 5 12 5 12 5s-6.25 0-7.81.42c-.86.23-1.54.91-1.77 1.77C2 8.75 2 12 2 12s0 3.25.42 4.81c.23.86.91 1.54 1.77 1.77C5.75 19 12 19 12 19s6.25 0 7.81-.42c.86-.23 1.54-.91 1.77-1.77C22 15.25 22 12 22 12s0-3.25-.42-4.81z" /><path d="M10 15.5l5.5-3.5L10 8.5v7z" fill="#fff" /></svg>
+          YouTube
+        </div>
+        <a href={url} target="_blank" rel="noopener noreferrer" className="mt-0.5 block text-sm font-medium text-nexe-400 hover:underline truncate">
+          Watch on YouTube
+        </a>
+      </div>
     </div>
   );
 }
@@ -390,7 +462,7 @@ function LinkPreview({ url }: { url: string }) {
       href={url}
       target="_blank"
       rel="noopener noreferrer"
-      className="mt-1 flex max-w-[420px] overflow-hidden rounded-lg border border-dark-700 bg-dark-800 transition-colors hover:border-dark-600"
+      className="mt-1 flex w-[480px] max-w-full overflow-hidden rounded border-l-4 border-l-dark-600 bg-dark-800 transition-colors hover:brightness-110"
     >
       {data.image && (
         <div className="w-20 shrink-0 bg-dark-900">
@@ -456,12 +528,12 @@ export default function MessageContent({ content, bridgeEmotes, usernames }: Mes
                   <button
                     key={i}
                     onClick={() => setLightboxSrc(embed.url)}
-                    className="block overflow-hidden rounded-lg border border-dark-700 hover:border-dark-600 transition-colors"
+                    className="block max-w-[640px] overflow-hidden rounded hover:brightness-110 transition"
                   >
                     <img
                       src={embed.url}
                       alt=""
-                      className="max-w-[550px] max-h-[400px] object-contain"
+                      className="max-h-[400px] w-auto rounded object-contain"
                       loading="lazy"
                       onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                     />
@@ -470,30 +542,18 @@ export default function MessageContent({ content, bridgeEmotes, usernames }: Mes
 
               case "video":
                 return (
-                  <div key={i} className="overflow-hidden rounded-lg border border-dark-700">
+                  <div key={i} className="w-[640px] max-w-full overflow-hidden rounded border-l-4 border-l-dark-600 bg-dark-800">
                     <video
                       src={embed.url}
                       controls
                       preload="metadata"
-                      className="max-w-[550px] max-h-[400px]"
+                      className="block w-full max-h-[400px]"
                     />
                   </div>
                 );
 
               case "youtube":
-                return (
-                  <div key={i} className="overflow-hidden rounded-lg border border-dark-700 bg-dark-800">
-                    <iframe
-                      src={`https://nexe.decatron.net/embed/youtube?id=${embed.embedId}`}
-                      width="550"
-                      height="309"
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      allowFullScreen
-                      className="max-w-full"
-                      style={{ border: 0 }}
-                    />
-                  </div>
-                );
+                return <YouTubeEmbed key={i} videoId={embed.embedId!} url={embed.url} />;
 
               case "twitch-clip":
                 return <TwitchClipPlayer key={i} clipId={embed.embedId!} url={embed.url} />;
