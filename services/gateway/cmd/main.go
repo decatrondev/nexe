@@ -140,11 +140,11 @@ func main() {
 	mux.Handle("POST /twitch/eventsub/setup", authMiddleware(http.HandlerFunc(twitchHandler.SetupEventSub)))
 	mux.HandleFunc("POST /twitch/webhook", twitchHandler.EventSubWebhook)
 
-	// Link unfurl
-	mux.Handle("GET /unfurl", authMiddleware(apiRateLimiter.Middleware(http.HandlerFunc(handler.HandleUnfurl))))
+	// Link unfurl (public, rate limited — no user auth needed)
+	mux.Handle("GET /unfurl", apiRateLimiter.Middleware(http.HandlerFunc(handler.HandleUnfurl)))
 
-	// Twitch clip resolve (returns video URL)
-	mux.Handle("GET /twitch/clip/{id}", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Twitch clip resolve (public, rate limited — uses app token, not user auth)
+	mux.Handle("GET /twitch/clip/{id}", apiRateLimiter.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		clipID := r.PathValue("id")
 		clip, err := twitchSvc.GetClip(r.Context(), clipID)
 		if err != nil {

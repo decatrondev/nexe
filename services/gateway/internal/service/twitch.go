@@ -161,7 +161,7 @@ func (s *TwitchService) GetAppToken(ctx context.Context) (string, error) {
 	return s.appToken, nil
 }
 
-// GetClip fetches clip data from Twitch API. The thumbnail URL can be used to derive the MP4 URL.
+// GetClip fetches clip data from Twitch API and resolves the MP4 video URL.
 func (s *TwitchService) GetClip(ctx context.Context, clipID string) (map[string]interface{}, error) {
 	token, err := s.GetAppToken(ctx)
 	if err != nil {
@@ -191,16 +191,93 @@ func (s *TwitchService) GetClip(ctx context.Context, clipID string) (map[string]
 	}
 
 	clip := result.Data[0]
-	// Derive MP4 video URL from thumbnail URL
+
+	// Method 1: Old format — derive MP4 from thumbnail with -preview- pattern
 	// Thumbnail: https://clips-media-assets2.twitch.tv/AT-cm|123-preview-480x272.jpg
 	// Video:     https://clips-media-assets2.twitch.tv/AT-cm|123.mp4
 	if thumb, ok := clip["thumbnail_url"].(string); ok {
 		if idx := strings.Index(thumb, "-preview-"); idx != -1 {
 			clip["video_url"] = thumb[:idx] + ".mp4"
+			return clip, nil
 		}
 	}
 
+	// Method 2: New format — use Twitch GQL to get direct MP4 URL from CloudFront
+	videoURL := s.resolveClipVideoGQL(ctx, clipID)
+	if videoURL != "" {
+		clip["video_url"] = videoURL
+	}
+
 	return clip, nil
+}
+
+// resolveClipVideoGQL uses Twitch's internal GQL API to get the direct MP4 URL for a clip.
+// This handles the new CloudFront-based clip format that doesn't use the -preview- thumbnail pattern.
+// Returns the full video URL including auth signature and token query params.
+func (s *TwitchService) resolveClipVideoGQL(ctx context.Context, slug string) string {
+	gqlPayload := fmt.Sprintf(
+		`[{"operationName":"VideoAccessToken_Clip","variables":{"slug":"%s"},"extensions":{"persistedQuery":{"version":1,"sha256Hash":"36b89d2507fce29e5ca551df756d27c1cfe079e2609642b4390aa4c35796eb11"}}}]`,
+		slug,
+	)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://gql.twitch.tv/gql", strings.NewReader(gqlPayload))
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Client-ID", "kimne78kx3ncx6brgo4mv6wki5h1ko")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	var gqlResult []struct {
+		Data struct {
+			Clip struct {
+				PlaybackAccessToken struct {
+					Signature string `json:"signature"`
+					Value     string `json:"value"`
+				} `json:"playbackAccessToken"`
+				VideoQualities []struct {
+					Quality   string `json:"quality"`
+					SourceURL string `json:"sourceURL"`
+				} `json:"videoQualities"`
+			} `json:"clip"`
+		} `json:"data"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&gqlResult); err != nil || len(gqlResult) == 0 {
+		return ""
+	}
+
+	clip := gqlResult[0].Data.Clip
+	qualities := clip.VideoQualities
+	if len(qualities) == 0 {
+		return ""
+	}
+
+	// Prefer 720p, fallback to first available
+	var sourceURL string
+	for _, q := range qualities {
+		if q.Quality == "720" {
+			sourceURL = q.SourceURL
+			break
+		}
+	}
+	if sourceURL == "" {
+		sourceURL = qualities[0].SourceURL
+	}
+
+	// Append auth params — CloudFront requires sig + token
+	sig := clip.PlaybackAccessToken.Signature
+	token := clip.PlaybackAccessToken.Value
+	if sig != "" && token != "" {
+		sourceURL += "?sig=" + sig + "&token=" + url.QueryEscape(token)
+	}
+
+	return sourceURL
 }
 
 // GetStreamByUserID checks if a user is currently streaming
