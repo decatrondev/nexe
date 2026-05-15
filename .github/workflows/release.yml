@@ -91,21 +91,26 @@ jobs:
           $releaseDir = "apps/desktop/src-tauri/target/release"
           $outDir = "update-package"
           New-Item -ItemType Directory -Path $outDir -Force
-          Copy-Item "$releaseDir/Nexe.exe" "$outDir/"
-          # Include WebView2Loader if present
-          if (Test-Path "$releaseDir/WebView2Loader.dll") {
-            Copy-Item "$releaseDir/WebView2Loader.dll" "$outDir/"
+          # Find the main exe (Nexe.exe or app.exe)
+          $exe = Get-ChildItem "$releaseDir/*.exe" | Where-Object { $_.Name -notmatch 'setup|build' } | Select-Object -First 1
+          if ($exe) {
+            Copy-Item $exe.FullName "$outDir/Nexe.exe"
           }
-          Compress-Archive -Path "$outDir/*" -DestinationPath "nexe-${version}-windows-x86_64.zip"
+          # Include any DLLs
+          Get-ChildItem "$releaseDir/*.dll" | ForEach-Object { Copy-Item $_.FullName "$outDir/" }
+          if ((Get-ChildItem "$outDir" | Measure-Object).Count -gt 0) {
+            Compress-Archive -Path "$outDir/*" -DestinationPath "nexe-${version}-windows-x86_64.zip"
+          }
 
       - name: Create update zip (macOS)
         if: matrix.platform == 'macos'
         run: |
           VERSION="${{ github.ref_name }}"
           BUNDLE_DIR="apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos"
-          if [ -d "$BUNDLE_DIR/Nexe.app" ]; then
+          APP=$(find "$BUNDLE_DIR" -maxdepth 1 -name "*.app" -type d | head -1)
+          if [ -n "$APP" ]; then
             cd "$BUNDLE_DIR"
-            zip -r "$GITHUB_WORKSPACE/nexe-${VERSION}-darwin-universal.zip" Nexe.app
+            zip -r "$GITHUB_WORKSPACE/nexe-${VERSION}-darwin-universal.zip" "$(basename "$APP")"
           fi
 
       - name: Create update zip (Linux)
@@ -114,8 +119,13 @@ jobs:
           VERSION="${{ github.ref_name }}"
           RELEASE_DIR="apps/desktop/src-tauri/target/release"
           mkdir -p update-package
-          # The binary name matches productName in lowercase
-          cp "$RELEASE_DIR/nexe" update-package/ 2>/dev/null || cp "$RELEASE_DIR/Nexe" update-package/ 2>/dev/null || true
+          # Find the binary (could be nexe, Nexe, or app)
+          for name in nexe Nexe app; do
+            if [ -f "$RELEASE_DIR/$name" ] && file "$RELEASE_DIR/$name" | grep -q ELF; then
+              cp "$RELEASE_DIR/$name" update-package/nexe
+              break
+            fi
+          done
           if [ "$(ls -A update-package)" ]; then
             cd update-package
             zip -r "$GITHUB_WORKSPACE/nexe-${VERSION}-linux-x86_64.zip" .
