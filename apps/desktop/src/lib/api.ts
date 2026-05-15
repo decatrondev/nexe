@@ -472,6 +472,18 @@ export const api = {
     return res.json();
   },
 
+  async uploadAttachment(file: File): Promise<{ url: string; filename: string; size: number }> {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`${API_URL}/upload/attachment`, {
+      method: "POST",
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+      body: form,
+    });
+    if (!res.ok) throw new Error("Upload failed");
+    return res.json();
+  },
+
   getGuildEmotes(guildId: string) {
     return request<{
       twitch: { name: string; url: string; animated?: boolean; source: string }[];

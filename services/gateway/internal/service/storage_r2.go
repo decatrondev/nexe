@@ -78,6 +78,41 @@ func (s *R2Storage) Upload(bucket string, filename string, reader io.Reader) (st
 	return url, nil
 }
 
+var r2AttachmentTypes = map[string]string{
+	".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+	".gif": "image/gif", ".webp": "image/webp",
+	".mp4": "video/mp4", ".webm": "video/webm", ".mov": "video/quicktime",
+	".pdf": "application/pdf", ".txt": "text/plain",
+	".zip": "application/zip", ".json": "application/json",
+	".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".wav": "audio/wav",
+}
+
+func (s *R2Storage) UploadAttachment(filename string, reader io.Reader) (string, error) {
+	ext := strings.ToLower(filepath.Ext(filename))
+	if ext == "" {
+		ext = ".bin"
+	}
+	contentType, ok := r2AttachmentTypes[ext]
+	if !ok {
+		return "", fmt.Errorf("unsupported file type: %s", ext)
+	}
+
+	key := fmt.Sprintf("attachments/%s%s", uuid.New().String(), ext)
+
+	_, err := s.client.PutObject(context.Background(), &s3.PutObjectInput{
+		Bucket:      aws.String(s.bucket),
+		Key:         aws.String(key),
+		Body:        reader,
+		ContentType: aws.String(contentType),
+	})
+	if err != nil {
+		return "", fmt.Errorf("r2 upload attachment: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/%s", s.publicURL, key)
+	return url, nil
+}
+
 func (s *R2Storage) Delete(url string) error {
 	if url == "" {
 		return nil

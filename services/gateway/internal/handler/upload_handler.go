@@ -40,6 +40,41 @@ func (h *UploadHandler) DeleteBanner(w http.ResponseWriter, r *http.Request) {
 	h.handleDelete(w, r, "bannerUrl")
 }
 
+// UploadAttachment handles POST /upload/attachment — for chat file uploads
+func (h *UploadHandler) UploadAttachment(w http.ResponseWriter, r *http.Request) {
+	claims := middleware.GetClaims(r)
+	if claims == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "not authenticated")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
+	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
+		writeError(w, http.StatusBadRequest, "too_large", "file must be under 8MB")
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "no_file", "file field is required")
+		return
+	}
+	defer file.Close()
+
+	url, err := h.storage.UploadAttachment(header.Filename, file)
+	if err != nil {
+		slog.Error("attachment upload failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "upload_error", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"url":      url,
+		"filename": header.Filename,
+		"size":     header.Size,
+	})
+}
+
 func (h *UploadHandler) handleUpload(w http.ResponseWriter, r *http.Request, bucket, field string) {
 	claims := middleware.GetClaims(r)
 	if claims == nil {

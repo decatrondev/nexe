@@ -14,6 +14,8 @@ import (
 type Storage interface {
 	// Upload saves a file and returns its public URL.
 	Upload(bucket string, filename string, reader io.Reader) (string, error)
+	// UploadAttachment saves a chat attachment (images, videos, documents) and returns its public URL.
+	UploadAttachment(filename string, reader io.Reader) (string, error)
 	// Delete removes a file by its public URL.
 	Delete(url string) error
 }
@@ -63,6 +65,45 @@ func (s *LocalStorage) Upload(bucket string, filename string, reader io.Reader) 
 	}
 
 	url := fmt.Sprintf("%s/%s/%s", strings.TrimRight(s.BaseURL, "/"), bucket, newName)
+	return url, nil
+}
+
+var attachmentAllowed = map[string]bool{
+	".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true,
+	".mp4": true, ".webm": true, ".mov": true,
+	".pdf": true, ".txt": true, ".zip": true, ".json": true,
+	".mp3": true, ".ogg": true, ".wav": true,
+}
+
+func (s *LocalStorage) UploadAttachment(filename string, reader io.Reader) (string, error) {
+	dir := filepath.Join(s.BasePath, "attachments")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", fmt.Errorf("create directory: %w", err)
+	}
+
+	ext := strings.ToLower(filepath.Ext(filename))
+	if ext == "" {
+		ext = ".bin"
+	}
+	if !attachmentAllowed[ext] {
+		return "", fmt.Errorf("unsupported file type: %s", ext)
+	}
+
+	newName := uuid.New().String() + ext
+	fullPath := filepath.Join(dir, newName)
+
+	file, err := os.Create(fullPath)
+	if err != nil {
+		return "", fmt.Errorf("create file: %w", err)
+	}
+	defer file.Close()
+
+	if _, err := io.Copy(file, reader); err != nil {
+		os.Remove(fullPath)
+		return "", fmt.Errorf("write file: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/attachments/%s", strings.TrimRight(s.BaseURL, "/"), newName)
 	return url, nil
 }
 

@@ -127,6 +127,7 @@ func main() {
 	mux.Handle("POST /users/@me/banner", authMiddleware(http.HandlerFunc(uploadHandler.UploadBanner)))
 	mux.Handle("DELETE /users/@me/avatar", authMiddleware(http.HandlerFunc(uploadHandler.DeleteAvatar)))
 	mux.Handle("DELETE /users/@me/banner", authMiddleware(http.HandlerFunc(uploadHandler.DeleteBanner)))
+	mux.Handle("POST /upload/attachment", authMiddleware(http.HandlerFunc(uploadHandler.UploadAttachment)))
 
 	// 2FA TOTP routes
 	mux.Handle("POST /auth/2fa/enable", authMiddleware(http.HandlerFunc(totpHandler.Enable)))

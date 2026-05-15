@@ -90,6 +90,7 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
   // Edit state
@@ -148,6 +149,7 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const prevMessageCountRef = useRef(0);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const editInputRef = useRef<HTMLTextAreaElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -1157,6 +1159,44 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
             <form onSubmit={handleSubmit}>
               <div className={`bg-dark-800 px-4 transition-colors ${replyTo ? "rounded-b-lg" : "rounded-lg"}`}>
                 <div className="flex items-end">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  className="hidden"
+                  accept="image/*,video/*,.pdf,.txt,.zip,.json,.mp3,.ogg,.wav"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    e.target.value = "";
+                    try {
+                      setUploading(true);
+                      const result = await api.uploadAttachment(file);
+                      const url = result.url;
+                      // Insert URL into message input
+                      const current = input.trim();
+                      handleInputChange(current ? `${current}\n${url}` : url);
+                    } catch {
+                      setSendError("Failed to upload file");
+                    } finally {
+                      setUploading(false);
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="mr-1 rounded p-1.5 text-slate-400 transition-colors hover:bg-dark-700 hover:text-white disabled:opacity-50"
+                  title="Upload file"
+                >
+                  {uploading ? (
+                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-dark-600 border-t-nexe-500" />
+                  ) : (
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
+                  )}
+                </button>
                 <textarea
                   ref={inputRef}
                   value={input}
