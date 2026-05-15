@@ -9,7 +9,7 @@ import (
 	"github.com/decatrondev/nexe/services/gateway/internal/service"
 )
 
-const maxUploadSize = 8 << 20 // 8 MB
+const maxUploadSize = 50 << 20 // 50 MB (Free tier)
 
 type UploadHandler struct {
 	storage  service.Storage
@@ -50,7 +50,7 @@ func (h *UploadHandler) UploadAttachment(w http.ResponseWriter, r *http.Request)
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
-		writeError(w, http.StatusBadRequest, "too_large", "file must be under 8MB")
+		writeError(w, http.StatusBadRequest, "too_large", "file must be under 50MB")
 		return
 	}
 
@@ -84,7 +84,7 @@ func (h *UploadHandler) handleUpload(w http.ResponseWriter, r *http.Request, buc
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
 	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
-		writeError(w, http.StatusBadRequest, "too_large", "file must be under 8MB")
+		writeError(w, http.StatusBadRequest, "too_large", "file must be under 50MB")
 		return
 	}
 
