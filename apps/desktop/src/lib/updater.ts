@@ -1,3 +1,21 @@
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+
+export interface UpdateInfo {
+  update_available: boolean;
+  version: string;
+  current_version: string;
+  download_url?: string;
+  size?: number;
+  notes?: string;
+}
+
+export interface DownloadProgress {
+  downloaded: number;
+  total: number;
+  percent: number;
+}
+
 export type UpdateStatus =
   | { stage: "checking" }
   | { stage: "downloading"; progress: number }
@@ -8,7 +26,35 @@ export type UpdateStatus =
 
 export type UpdateCallback = (status: UpdateStatus) => void;
 
-export async function checkAndInstallUpdate(onStatus: UpdateCallback): Promise<boolean> {
+export async function checkForUpdate(): Promise<UpdateInfo> {
+  return invoke<UpdateInfo>("check_for_update");
+}
+
+export async function downloadUpdate(
+  downloadUrl: string,
+  onProgress: (progress: DownloadProgress) => void
+): Promise<void> {
+  const unlisten = await listen<DownloadProgress>("update-progress", (event) => {
+    onProgress(event.payload);
+  });
+
+  try {
+    await invoke("download_update", { downloadUrl });
+  } finally {
+    unlisten();
+  }
+}
+
+export async function relaunchApp(): Promise<void> {
+  const { relaunch } = await import("@tauri-apps/plugin-process");
+  await relaunch();
+}
+
+/**
+ * Full update flow for the splash window.
+ * Returns true if an update was downloaded and the app needs to relaunch.
+ */
+export async function runUpdateFlow(onStatus: UpdateCallback): Promise<boolean> {
   try {
     if (!("__TAURI_INTERNALS__" in window)) {
       onStatus({ stage: "no-update" });
@@ -17,42 +63,29 @@ export async function checkAndInstallUpdate(onStatus: UpdateCallback): Promise<b
 
     onStatus({ stage: "checking" });
 
-    const { check } = await import("@tauri-apps/plugin-updater");
-    const { relaunch } = await import("@tauri-apps/plugin-process");
+    const info = await checkForUpdate();
 
-    const update = await check();
-
-    if (!update) {
+    if (!info.update_available || !info.download_url) {
       onStatus({ stage: "no-update" });
       return false;
     }
 
     onStatus({ stage: "downloading", progress: 0 });
 
-    let totalBytes = 0;
-    let downloadedBytes = 0;
-
-    await update.downloadAndInstall((event) => {
-      if (event.event === "Started" && event.data.contentLength) {
-        totalBytes = event.data.contentLength;
-      } else if (event.event === "Progress") {
-        downloadedBytes += event.data.chunkLength;
-        const progress = totalBytes > 0 ? Math.min(downloadedBytes / totalBytes, 1) : 0;
-        onStatus({ stage: "downloading", progress });
-      } else if (event.event === "Finished") {
-        onStatus({ stage: "installing" });
-      }
+    await downloadUpdate(info.download_url, (progress) => {
+      onStatus({ stage: "downloading", progress: progress.percent });
     });
 
-    onStatus({ stage: "restarting" });
+    onStatus({ stage: "installing" });
+    await new Promise((r) => setTimeout(r, 300));
 
-    // Brief pause so user sees "Installing..." before restart
+    onStatus({ stage: "restarting" });
     await new Promise((r) => setTimeout(r, 500));
-    await relaunch();
+    await relaunchApp();
+
     return true;
   } catch (error) {
-    // Don't show error to user — just skip update silently
-    console.error("Update check failed:", error);
+    console.error("Update flow failed:", error);
     onStatus({ stage: "no-update" });
     return false;
   }

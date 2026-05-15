@@ -1,8 +1,13 @@
+mod updater;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![
+            updater::check_for_update,
+            updater::download_update,
+        ])
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -11,6 +16,13 @@ pub fn run() {
                         .build(),
                 )?;
             }
+
+            // Apply staged update from previous download (before any window shows)
+            updater::apply_staged_update(app.handle());
+
+            // Clean up .old files from previous updates
+            updater::cleanup_old_files();
+
             Ok(())
         })
         .run(tauri::generate_context!())

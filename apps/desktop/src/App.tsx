@@ -6,8 +6,120 @@ import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import TwitchCallbackPage from "./pages/TwitchCallbackPage";
 import HomePage from "./pages/HomePage";
 import { useAuthStore } from "./stores/auth";
-import { checkAndInstallUpdate, type UpdateStatus } from "./lib/updater";
+import { runUpdateFlow, type UpdateStatus } from "./lib/updater";
 import { ToastContainer } from "@nexe/ui";
+
+const APP_VERSION = "0.0.21";
+const API_URL =
+  typeof window !== "undefined" &&
+  (window.location.protocol === "https:" || "__TAURI__" in window || "__TAURI_INTERNALS__" in window || window.location.hostname === "tauri.localhost")
+    ? "https://nexeapi.decatron.net"
+    : "http://161.132.53.175:8090";
+
+// Detect which Tauri window we're in
+function getWindowLabel(): string {
+  try {
+    if ("__TAURI_INTERNALS__" in window) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return (window as any).__TAURI_INTERNALS__?.metadata?.currentWindow?.label || "main";
+    }
+  } catch { /* not in Tauri */ }
+  return "main";
+}
+
+// ── Splash Window (small 300x170, no decorations) ──
+
+function SplashWindow() {
+  const [statusText, setStatusText] = useState("Starting...");
+  const [progress, setProgress] = useState(15);
+
+  const handleUpdateStatus = useCallback((status: UpdateStatus) => {
+    switch (status.stage) {
+      case "checking":
+        setStatusText("Checking for updates...");
+        setProgress(30);
+        break;
+      case "downloading":
+        setStatusText(`Downloading update... ${Math.round(status.progress)}%`);
+        setProgress(30 + (status.progress / 100) * 50);
+        break;
+      case "installing":
+        setStatusText("Installing update...");
+        setProgress(85);
+        break;
+      case "restarting":
+        setStatusText("Restarting...");
+        setProgress(100);
+        break;
+      case "no-update":
+        setStatusText("Starting...");
+        setProgress(90);
+        break;
+    }
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function init() {
+      // Run update check
+      const updated = await runUpdateFlow(handleUpdateStatus);
+
+      // If update downloaded, app will relaunch — don't continue
+      if (updated || !mounted) return;
+
+      // No update — show main window, close splash
+      setProgress(100);
+      await new Promise((r) => setTimeout(r, 300));
+
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        // Show main window
+        const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+        const mainWindow = await WebviewWindow.getByLabel("main");
+        if (mainWindow) {
+          await mainWindow.show();
+          await mainWindow.setFocus();
+        }
+        // Close splash
+        await getCurrentWindow().close();
+      } catch {
+        // Not in Tauri (web fallback) — just continue
+      }
+    }
+
+    init();
+    return () => { mounted = false; };
+  }, [handleUpdateStatus]);
+
+  return (
+    <div className="flex h-screen w-screen flex-col items-center justify-center bg-dark-950 select-none" data-tauri-drag-region>
+      <div className="relative mb-6">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-nexe-500 to-nexe-700 text-lg font-bold text-white shadow-modal animate-pulse-subtle">
+          N
+        </div>
+        <div className="absolute -inset-1.5 rounded-2xl bg-nexe-500/10 animate-pulse-subtle" />
+      </div>
+
+      <p className="mb-3 text-xs text-slate-400 animate-fade-in">
+        {statusText}
+      </p>
+
+      <div className="h-[2px] w-36 overflow-hidden rounded-full bg-dark-800">
+        <div
+          className="h-full rounded-full bg-nexe-500 transition-all duration-300 ease-out"
+          style={{ width: `${progress ?? 0}%` }}
+        />
+      </div>
+
+      <p className="mt-4 text-[10px] text-slate-700">
+        Nexe v{APP_VERSION}
+      </p>
+    </div>
+  );
+}
+
+// ── Route Guards ──
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
@@ -34,108 +146,32 @@ function AuthRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-// ── Splash Screen ──
+// ── Main App (full window, shown after splash closes) ──
 
-function SplashScreen({ status, progress }: { status: string; progress: number }) {
-  return (
-    <div className="flex h-screen w-screen flex-col items-center justify-center bg-dark-950 select-none" data-tauri-drag-region>
-      {/* Logo with pulse animation */}
-      <div className="relative mb-8">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-nexe-500 to-nexe-700 text-2xl font-bold text-white shadow-modal animate-pulse-subtle">
-          N
-        </div>
-        <div className="absolute -inset-2 rounded-3xl bg-nexe-500/10 animate-pulse-subtle" />
-      </div>
-
-      {/* Status text */}
-      <p className="mb-4 text-sm text-slate-400 animate-fade-in">
-        {status}
-      </p>
-
-      {/* Progress bar */}
-      <div className="h-[3px] w-48 overflow-hidden rounded-full bg-dark-800">
-        <div
-          className="h-full rounded-full bg-nexe-500 transition-all duration-300 ease-out"
-          style={{ width: `${progress ?? 0}%` }}
-        />
-      </div>
-
-      {/* Version */}
-      <p className="mt-6 text-[11px] text-slate-700">
-        Nexe v{APP_VERSION}
-      </p>
-    </div>
-  );
-}
-
-const APP_VERSION = "0.0.20";
-const API_URL =
-  typeof window !== "undefined" &&
-  (window.location.protocol === "https:" || "__TAURI__" in window || "__TAURI_INTERNALS__" in window || window.location.hostname === "tauri.localhost")
-    ? "https://nexeapi.decatron.net"
-    : "http://161.132.53.175:8090";
-
-export default function App() {
+function MainApp() {
   const loadFromStorage = useAuthStore((s) => s.loadFromStorage);
   const authLoading = useAuthStore((s) => s.authLoading);
-  const [splashDone, setSplashDone] = useState(false);
-  const [statusText, setStatusText] = useState("Starting...");
-  const [progress, setProgress] = useState(15);
-
-  const handleUpdateStatus = useCallback((status: UpdateStatus) => {
-    switch (status.stage) {
-      case "checking":
-        setStatusText("Checking for updates...");
-        setProgress(30);
-        break;
-      case "downloading":
-        setStatusText(`Downloading update... ${Math.round(status.progress * 100)}%`);
-        setProgress(30 + status.progress * 50);
-        break;
-      case "installing":
-        setStatusText("Installing update...");
-        setProgress(85);
-        break;
-      case "restarting":
-        setStatusText("Restarting...");
-        setProgress(100);
-        break;
-      case "no-update":
-        setStatusText("Connecting...");
-        setProgress(90);
-        break;
-    }
-  }, []);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let mounted = true;
 
     async function init() {
-      // Warm up the network — Tauri webview needs a moment on cold start
-      setStatusText("Starting...");
+      // Warm up the network
       for (let i = 0; i < 5; i++) {
         try {
           await fetch(API_URL + "/health", { method: "GET", signal: AbortSignal.timeout(3000) });
-          break; // network ready
+          break;
         } catch {
           await new Promise((r) => setTimeout(r, 500));
         }
       }
 
-      // Start auth load (reads from localStorage, then calls getMe in background)
       loadFromStorage();
 
-      // Check for updates
-      const updated = await checkAndInstallUpdate(handleUpdateStatus);
-
-      // If update installed, app will relaunch — don't continue
-      if (updated) return;
-
-      // Small delay to show "Connecting..." before dismissing splash
       if (mounted) {
-        setProgress(100);
-        await new Promise((r) => setTimeout(r, 400));
-        setSplashDone(true);
+        await new Promise((r) => setTimeout(r, 200));
+        setReady(true);
       }
     }
 
@@ -144,9 +180,12 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Show splash while updating or loading
-  if (!splashDone || authLoading) {
-    return <SplashScreen status={statusText} progress={progress} />;
+  if (!ready || authLoading) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-dark-950">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-dark-600 border-t-nexe-500" />
+      </div>
+    );
   }
 
   return (
@@ -193,4 +232,18 @@ export default function App() {
       </Routes>
     </BrowserRouter>
   );
+}
+
+// ── Entry Point ──
+
+export default function App() {
+  const windowLabel = getWindowLabel();
+
+  // Splash window: small updater window
+  if (windowLabel === "splash") {
+    return <SplashWindow />;
+  }
+
+  // Main window: full app
+  return <MainApp />;
 }

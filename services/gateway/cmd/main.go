@@ -96,6 +96,10 @@ func main() {
 		w.Write([]byte(`{"status":"ok","service":"gateway"}`))
 	})
 
+	// Desktop app update check (public, rate limited)
+	updateHandler := handler.NewUpdateHandler(rdb, "decatrondev", "nexe")
+	mux.Handle("GET /update/check", apiRateLimiter.Middleware(http.HandlerFunc(updateHandler.Check)))
+
 	// Auth routes (rate limited, no auth required)
 	mux.Handle("POST /auth/register", authRateLimiter.Middleware(http.HandlerFunc(authHandler.Register)))
 	mux.Handle("POST /auth/verify-email", authRateLimiter.Middleware(http.HandlerFunc(authHandler.VerifyEmail)))

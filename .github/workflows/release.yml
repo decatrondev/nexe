@@ -81,3 +81,50 @@ jobs:
             - **Linux:** `.deb` or `.AppImage`
           releaseDraft: false
           prerelease: false
+
+      # Create portable .zip for auto-updates (no installer needed)
+      - name: Create update zip (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}"
+          $releaseDir = "apps/desktop/src-tauri/target/release"
+          $outDir = "update-package"
+          New-Item -ItemType Directory -Path $outDir -Force
+          Copy-Item "$releaseDir/Nexe.exe" "$outDir/"
+          # Include WebView2Loader if present
+          if (Test-Path "$releaseDir/WebView2Loader.dll") {
+            Copy-Item "$releaseDir/WebView2Loader.dll" "$outDir/"
+          }
+          Compress-Archive -Path "$outDir/*" -DestinationPath "nexe-${version}-windows-x86_64.zip"
+
+      - name: Create update zip (macOS)
+        if: matrix.platform == 'macos'
+        run: |
+          VERSION="${{ github.ref_name }}"
+          BUNDLE_DIR="apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos"
+          if [ -d "$BUNDLE_DIR/Nexe.app" ]; then
+            cd "$BUNDLE_DIR"
+            zip -r "$GITHUB_WORKSPACE/nexe-${VERSION}-darwin-universal.zip" Nexe.app
+          fi
+
+      - name: Create update zip (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          VERSION="${{ github.ref_name }}"
+          RELEASE_DIR="apps/desktop/src-tauri/target/release"
+          mkdir -p update-package
+          # The binary name matches productName in lowercase
+          cp "$RELEASE_DIR/nexe" update-package/ 2>/dev/null || cp "$RELEASE_DIR/Nexe" update-package/ 2>/dev/null || true
+          if [ "$(ls -A update-package)" ]; then
+            cd update-package
+            zip -r "$GITHUB_WORKSPACE/nexe-${VERSION}-linux-x86_64.zip" .
+          fi
+
+      - name: Upload update zip
+        uses: softprops/action-gh-release@v2
+        with:
+          files: nexe-*.zip
+          tag_name: ${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
