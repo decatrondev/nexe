@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Nexe",
-  "version": "0.0.17",
+  "version": "0.0.18",
   "identifier": "net.decatron.nexe",
   "build": {
     "frontendDist": "../dist",
@@ -27,7 +27,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis", "app", "dmg", "deb", "rpm", "appimage"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -35,7 +35,12 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": true,
+    "windows": {
+      "nsis": {
+        "installMode": "both"
+      }
+    }
   },
   "plugins": {
     "updater": {
