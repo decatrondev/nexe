@@ -88,54 +88,65 @@ async function request<T>(
   body?: unknown,
   extraHeaders?: Record<string, string>,
 ): Promise<T> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+  const maxRetries = method === "GET" ? 3 : 1;
+  let lastError: Error | null = null;
 
-  let res: Response;
-  try {
-    res = await fetch(`${API_URL}${path}`, {
-      method,
-      headers: headers(extraHeaders),
-      body: body ? JSON.stringify(body) : undefined,
-      signal: controller.signal,
-    });
-  } catch (err) {
-    clearTimeout(timeout);
-    if (err instanceof DOMException && err.name === "AbortError") {
-      throw new Error("Request timed out");
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, 1000 * attempt));
     }
-    throw new Error("Network error — check your connection");
-  } finally {
-    clearTimeout(timeout);
-  }
 
-  // Handle 401 — try refresh before giving up
-  if (res.status === 401 && path !== "/auth/login" && path !== "/auth/refresh" && accessToken) {
-    const refreshed = await tryRefreshToken();
-    if (refreshed) {
-      // Retry the original request with new token
-      return request<T>(method, path, body, extraHeaders);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
+
+    let res: Response;
+    try {
+      res = await fetch(`${API_URL}${path}`, {
+        method,
+        headers: headers(extraHeaders),
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
+      });
+    } catch (err) {
+      clearTimeout(timeout);
+      if (err instanceof DOMException && err.name === "AbortError") {
+        lastError = new Error("Request timed out");
+      } else {
+        lastError = new Error("Network error — check your connection");
+      }
+      continue; // retry
+    } finally {
+      clearTimeout(timeout);
     }
-    // Refresh failed — clear auth
-    clearAuth();
-    throw new Error("Session expired — please log in again");
+
+    // Handle 401 — try refresh before giving up
+    if (res.status === 401 && path !== "/auth/login" && path !== "/auth/refresh" && accessToken) {
+      const refreshed = await tryRefreshToken();
+      if (refreshed) {
+        return request<T>(method, path, body, extraHeaders);
+      }
+      clearAuth();
+      throw new Error("Session expired — please log in again");
+    }
+
+    if (!res.ok) {
+      const err = (await res.json().catch(() => ({}))) as ApiErrorResponse;
+      throw new Error(err.error?.message || `Request failed (${res.status})`);
+    }
+
+    if (res.status === 204) {
+      return undefined as T;
+    }
+
+    const json = await res.json();
+    if (json && typeof json === "object" && "data" in json) {
+      return json.data as T;
+    }
+    return json as T;
   }
 
-  if (!res.ok) {
-    const err = (await res.json().catch(() => ({}))) as ApiErrorResponse;
-    throw new Error(err.error?.message || `Request failed (${res.status})`);
-  }
-
-  if (res.status === 204) {
-    return undefined as T;
-  }
-
-  const json = await res.json();
-  // Unwrap {data: T} envelope if present
-  if (json && typeof json === "object" && "data" in json) {
-    return json.data as T;
-  }
-  return json as T;
+  // All retries exhausted
+  throw lastError ?? new Error("Request failed");
 }
 
 // ---- Auth types ----

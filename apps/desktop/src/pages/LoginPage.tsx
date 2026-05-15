@@ -38,6 +38,8 @@ export default function LoginPage() {
         setStep("verify");
         setError("");
         setFeedback("Your email is not verified. Enter the code sent to your email, or resend it.");
+      } else if (msg.includes("Network error") || msg.includes("timed out")) {
+        setError("Server is updating, please try again in a moment");
       } else {
         setError(msg);
       }

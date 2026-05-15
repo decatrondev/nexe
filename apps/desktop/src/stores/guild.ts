@@ -156,7 +156,11 @@ export const useGuildStore = create<GuildState>((set, get) => ({
       });
     } catch (err) {
       console.error("Failed to load guilds:", err);
-      set({ guilds: [], loadingGuilds: false, error: "Failed to load servers" });
+      set({ loadingGuilds: false });
+      // Retry silently after 3 seconds (handles deploy restarts)
+      setTimeout(() => {
+        get().loadGuilds();
+      }, 3000);
     }
   },
 
@@ -246,7 +250,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
     } catch (err) {
       console.error("Failed to load guild data:", err);
       if (get().activeGuildId === guildId) {
-        set({ loading: false, error: "Failed to load server data" });
+        set({ loading: false });
       }
     }
   },
