@@ -11,6 +11,9 @@ concurrency:
   group: release
   cancel-in-progress: true
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     name: Build — ${{ matrix.platform }}
@@ -50,7 +53,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
       - run: pnpm install --no-frozen-lockfile
       - name: Install desktop deps
@@ -73,7 +76,7 @@ jobs:
             ## Nexe ${{ github.ref_name }}
 
             Download for your platform:
-            - **Windows:** `.exe` or `.msi`
+            - **Windows:** `.exe`
             - **macOS:** `.dmg` (Universal)
             - **Linux:** `.deb` or `.AppImage`
           releaseDraft: false

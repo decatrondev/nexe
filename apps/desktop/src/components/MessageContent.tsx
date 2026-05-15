@@ -306,26 +306,89 @@ interface UnfurlData {
 
 const unfurlCache = new Map<string, UnfurlData | null>();
 
+// Derive MP4 URL from Twitch thumbnail URL
+// Thumbnail: https://clips-media-assets2.twitch.tv/AT-cm|123-preview-480x272.jpg
+// Video:     https://clips-media-assets2.twitch.tv/AT-cm|123.mp4
+function deriveVideoUrl(thumbnailUrl: string): string | null {
+  const idx = thumbnailUrl.indexOf("-preview-");
+  if (idx !== -1) return thumbnailUrl.substring(0, idx) + ".mp4";
+  return null;
+}
+
 function TwitchClipPlayer({ clipId, url }: { clipId: string; url: string }) {
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [clipData, setClipData] = useState<{ title?: string; broadcaster_name?: string; thumbnail_url?: string } | null>(null);
-  const [error, setError] = useState(false);
-
-  const isTauri = typeof window !== "undefined" && ("__TAURI_INTERNALS__" in window || window.location.hostname === "tauri.localhost");
+  const [loading, setLoading] = useState(true);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
-    api.getTwitchClip(clipId).then((data) => {
-      if (data?.video_url) {
-        setVideoUrl(data.video_url as string);
-        setClipData(data as { title?: string; broadcaster_name?: string; thumbnail_url?: string });
-      } else {
-        setError(true);
-      }
-    }).catch(() => setError(true));
-  }, [clipId]);
+    let cancelled = false;
 
-  // Loading state
-  if (!videoUrl && !error) {
+    async function fetchClip() {
+      try {
+        // Step 1: Try the API
+        const data = await api.getTwitchClip(clipId);
+
+        if (cancelled) return;
+
+        if (data?.video_url) {
+          setVideoUrl(data.video_url as string);
+          setClipData(data as { title?: string; broadcaster_name?: string; thumbnail_url?: string });
+          setLoading(false);
+          return;
+        }
+
+        // Step 2: API returned data but no video_url — derive from thumbnail
+        if (data?.thumbnail_url) {
+          const derived = deriveVideoUrl(data.thumbnail_url as string);
+          if (derived) {
+            setVideoUrl(derived);
+            setClipData(data as { title?: string; broadcaster_name?: string; thumbnail_url?: string });
+            setLoading(false);
+            return;
+          }
+        }
+      } catch {
+        // API failed entirely
+      }
+
+      if (cancelled) return;
+
+      // Step 3: API failed — try unfurl to get og:image thumbnail → derive MP4
+      try {
+        const clipUrl = url.includes("clips.twitch.tv")
+          ? url
+          : `https://clips.twitch.tv/${clipId}`;
+        const unfurled = await api.unfurl(clipUrl);
+
+        if (cancelled) return;
+
+        if (unfurled?.image) {
+          const derived = deriveVideoUrl(unfurled.image);
+          if (derived) {
+            setVideoUrl(derived);
+            setClipData({ title: unfurled.title, thumbnail_url: unfurled.image });
+            setLoading(false);
+            return;
+          }
+        }
+      } catch {
+        // Unfurl also failed
+      }
+
+      if (cancelled) return;
+      setLoading(false);
+    }
+
+    setLoading(true);
+    fetchClip();
+    return () => { cancelled = true; };
+  }, [clipId, url, retryCount]);
+
+  const twitchIcon = <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor"><path d="M11.64 5.93h1.43v4.28h-1.43m3.93-4.28H17v4.28h-1.43M7 2L3.43 5.57v12.86h4.28V22l3.58-3.57h2.85L20.57 12V2m-1.43 9.29l-2.85 2.85h-2.86l-2.5 2.5v-2.5H7.71V3.43h11.43z" /></svg>;
+
+  // Loading
+  if (loading) {
     return (
       <div className="w-[640px] max-w-full overflow-hidden rounded border-l-4 border-l-purple-500 bg-dark-800">
         <div className="flex items-center justify-center bg-dark-900" style={{ aspectRatio: "16/9" }}>
@@ -333,7 +396,7 @@ function TwitchClipPlayer({ clipId, url }: { clipId: string; url: string }) {
         </div>
         <div className="px-3 py-2">
           <div className="flex items-center gap-1.5 text-[11px] text-purple-400">
-            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor"><path d="M11.64 5.93h1.43v4.28h-1.43m3.93-4.28H17v4.28h-1.43M7 2L3.43 5.57v12.86h4.28V22l3.58-3.57h2.85L20.57 12V2m-1.43 9.29l-2.85 2.85h-2.86l-2.5 2.5v-2.5H7.71V3.43h11.43z" /></svg>
+            {twitchIcon}
             Twitch
           </div>
           <p className="mt-1 text-sm text-slate-500">Loading clip...</p>
@@ -342,62 +405,39 @@ function TwitchClipPlayer({ clipId, url }: { clipId: string; url: string }) {
     );
   }
 
-  // Error fallback: Tauri can't iframe Twitch, so show thumbnail + external link
-  // Web can use iframe since parent domain is valid
-  if (error) {
-    if (isTauri) {
-      return (
-        <div className="w-[640px] max-w-full overflow-hidden rounded border-l-4 border-l-purple-500 bg-dark-800">
-          <a href={url} target="_blank" rel="noopener noreferrer" className="group relative block">
-            <div className="flex items-center justify-center bg-dark-900" style={{ aspectRatio: "16/9" }}>
-              <div className="flex flex-col items-center gap-3">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-purple-600 shadow-lg group-hover:bg-purple-500 transition-colors">
-                  <svg viewBox="0 0 24 24" className="h-7 w-7 fill-white"><path d="M11.64 5.93h1.43v4.28h-1.43m3.93-4.28H17v4.28h-1.43M7 2L3.43 5.57v12.86h4.28V22l3.58-3.57h2.85L20.57 12V2m-1.43 9.29l-2.85 2.85h-2.86l-2.5 2.5v-2.5H7.71V3.43h11.43z" /></svg>
-                </div>
-                <span className="text-sm text-slate-400 group-hover:text-slate-200 transition-colors">Open clip on Twitch</span>
-              </div>
-            </div>
-          </a>
-          <div className="px-3 py-2">
-            <div className="flex items-center gap-1.5 text-[11px] text-purple-400">
-              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor"><path d="M11.64 5.93h1.43v4.28h-1.43m3.93-4.28H17v4.28h-1.43M7 2L3.43 5.57v12.86h4.28V22l3.58-3.57h2.85L20.57 12V2m-1.43 9.29l-2.85 2.85h-2.86l-2.5 2.5v-2.5H7.71V3.43h11.43z" /></svg>
-              Twitch
-            </div>
-            <a href={url} target="_blank" rel="noopener noreferrer" className="mt-0.5 block text-sm font-medium text-nexe-400 hover:underline truncate">
-              Twitch Clip
-            </a>
-          </div>
-        </div>
-      );
-    }
-
-    // Web fallback: use Twitch iframe embed
+  // Both API and unfurl failed — show retry (no iframe, no external link)
+  if (!videoUrl) {
     return (
       <div className="w-[640px] max-w-full overflow-hidden rounded border-l-4 border-l-purple-500 bg-dark-800">
-        <iframe
-          src={`https://clips.twitch.tv/embed?clip=${clipId}&parent=${window.location.hostname}&autoplay=false`}
-          className="block w-full"
-          style={{ border: 0, aspectRatio: "16/9" }}
-          allowFullScreen
-        />
+        <div className="flex items-center justify-center bg-dark-900" style={{ aspectRatio: "16/9" }}>
+          <button
+            onClick={() => setRetryCount((c) => c + 1)}
+            className="flex flex-col items-center gap-3 group"
+          >
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-purple-600 shadow-lg group-hover:bg-purple-500 transition-colors">
+              <svg viewBox="0 0 24 24" className="h-6 w-6 fill-white"><path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" /></svg>
+            </div>
+            <span className="text-sm text-slate-400 group-hover:text-slate-200 transition-colors">Retry loading clip</span>
+          </button>
+        </div>
         <div className="px-3 py-2">
           <div className="flex items-center gap-1.5 text-[11px] text-purple-400">
-            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor"><path d="M11.64 5.93h1.43v4.28h-1.43m3.93-4.28H17v4.28h-1.43M7 2L3.43 5.57v12.86h4.28V22l3.58-3.57h2.85L20.57 12V2m-1.43 9.29l-2.85 2.85h-2.86l-2.5 2.5v-2.5H7.71V3.43h11.43z" /></svg>
+            {twitchIcon}
             Twitch
           </div>
           <a href={url} target="_blank" rel="noopener noreferrer" className="mt-0.5 block text-sm font-medium text-nexe-400 hover:underline truncate">
-            Twitch Clip
+            {clipData?.title || "Twitch Clip"}
           </a>
         </div>
       </div>
     );
   }
 
-  // Success: native video player
+  // Success: native video player — always, no iframe
   return (
     <div className="w-[640px] max-w-full overflow-hidden rounded border-l-4 border-l-purple-500 bg-dark-800">
       <video
-        src={videoUrl!}
+        src={videoUrl}
         controls
         preload="metadata"
         className="block w-full"
@@ -405,7 +445,7 @@ function TwitchClipPlayer({ clipId, url }: { clipId: string; url: string }) {
       />
       <div className="px-3 py-2">
         <div className="flex items-center gap-1.5 text-[11px] text-purple-400">
-          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="currentColor"><path d="M11.64 5.93h1.43v4.28h-1.43m3.93-4.28H17v4.28h-1.43M7 2L3.43 5.57v12.86h4.28V22l3.58-3.57h2.85L20.57 12V2m-1.43 9.29l-2.85 2.85h-2.86l-2.5 2.5v-2.5H7.71V3.43h11.43z" /></svg>
+          {twitchIcon}
           Twitch
         </div>
         <a href={url} target="_blank" rel="noopener noreferrer" className="mt-0.5 block text-sm font-medium text-nexe-400 hover:underline truncate">

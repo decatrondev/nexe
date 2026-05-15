@@ -68,7 +68,7 @@ function SplashScreen({ status, progress }: { status: string; progress: number }
   );
 }
 
-const APP_VERSION = "0.0.19";
+const APP_VERSION = "0.0.20";
 const API_URL =
   typeof window !== "undefined" &&
   (window.location.protocol === "https:" || "__TAURI__" in window || "__TAURI_INTERNALS__" in window || window.location.hostname === "tauri.localhost")
