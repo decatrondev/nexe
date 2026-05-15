@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Nexe",
-  "version": "0.0.12",
+  "version": "0.0.14",
   "identifier": "net.decatron.nexe",
   "build": {
     "frontendDist": "../dist",
