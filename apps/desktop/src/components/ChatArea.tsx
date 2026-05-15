@@ -1308,7 +1308,7 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
                 <div className="relative">
                   <button
                     type="button"
-                    onClick={() => setPlusMenuOpen((v) => !v)}
+                    onClick={(e) => { e.stopPropagation(); setPlusMenuOpen((v) => !v); }}
                     className="mr-1 rounded p-1.5 text-slate-400 transition-colors hover:bg-dark-700 hover:text-white"
                     title="Actions"
                   >
