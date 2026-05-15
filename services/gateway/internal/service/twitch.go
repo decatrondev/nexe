@@ -161,6 +161,48 @@ func (s *TwitchService) GetAppToken(ctx context.Context) (string, error) {
 	return s.appToken, nil
 }
 
+// GetClip fetches clip data from Twitch API. The thumbnail URL can be used to derive the MP4 URL.
+func (s *TwitchService) GetClip(ctx context.Context, clipID string) (map[string]interface{}, error) {
+	token, err := s.GetAppToken(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	req, _ := http.NewRequestWithContext(ctx, "GET",
+		"https://api.twitch.tv/helix/clips?id="+url.QueryEscape(clipID), nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Client-Id", s.clientID)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("get clip: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Data []map[string]interface{} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode clip: %w", err)
+	}
+
+	if len(result.Data) == 0 {
+		return nil, fmt.Errorf("clip not found")
+	}
+
+	clip := result.Data[0]
+	// Derive MP4 video URL from thumbnail URL
+	// Thumbnail: https://clips-media-assets2.twitch.tv/AT-cm|123-preview-480x272.jpg
+	// Video:     https://clips-media-assets2.twitch.tv/AT-cm|123.mp4
+	if thumb, ok := clip["thumbnail_url"].(string); ok {
+		if idx := strings.Index(thumb, "-preview-"); idx != -1 {
+			clip["video_url"] = thumb[:idx] + ".mp4"
+		}
+	}
+
+	return clip, nil
+}
+
 // GetStreamByUserID checks if a user is currently streaming
 func (s *TwitchService) GetStreamByUserID(ctx context.Context, twitchUserID string) (*TwitchStream, error) {
 	token, err := s.GetAppToken(ctx)

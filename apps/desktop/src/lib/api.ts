@@ -440,6 +440,10 @@ export const api = {
     return request<UserProfile>("GET", `/users/${userId}/profile`);
   },
 
+  getTwitchClip(clipId: string) {
+    return request<Record<string, unknown>>("GET", `/twitch/clip/${clipId}`);
+  },
+
   updateProfile(data: UpdateProfileData) {
     return request<UserProfile>("PATCH", "/users/@me/profile", data);
   },

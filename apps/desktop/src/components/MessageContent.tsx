@@ -306,6 +306,59 @@ interface UnfurlData {
 
 const unfurlCache = new Map<string, UnfurlData | null>();
 
+function TwitchClipPlayer({ clipId, url }: { clipId: string; url: string }) {
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [clipData, setClipData] = useState<{ title?: string; broadcaster_name?: string; thumbnail_url?: string } | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    api.getTwitchClip(clipId).then((data) => {
+      if (data?.video_url) {
+        setVideoUrl(data.video_url as string);
+        setClipData(data as { title?: string; broadcaster_name?: string; thumbnail_url?: string });
+      } else {
+        setError(true);
+      }
+    }).catch(() => setError(true));
+  }, [clipId]);
+
+  if (error) {
+    return (
+      <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-lg border border-dark-700 bg-dark-800 px-3 py-2 text-sm text-purple-400 hover:bg-dark-700 transition-colors">
+        <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="currentColor"><path d="M11.64 5.93h1.43v4.28h-1.43m3.93-4.28H17v4.28h-1.43M7 2L3.43 5.57v12.86h4.28V22l3.58-3.57h2.85L20.57 12V2m-1.43 9.29l-2.85 2.85h-2.86l-2.5 2.5v-2.5H7.71V3.43h11.43z" /></svg>
+        Twitch Clip — Click to watch
+      </a>
+    );
+  }
+
+  if (!videoUrl) {
+    return (
+      <div className="flex h-[309px] max-w-[550px] items-center justify-center rounded-lg border border-dark-700 bg-dark-800">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-dark-600 border-t-purple-500" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-[550px] overflow-hidden rounded-lg border border-dark-700 bg-dark-800">
+      <video
+        src={videoUrl}
+        controls
+        preload="metadata"
+        className="w-full"
+        poster={clipData?.thumbnail_url}
+      />
+      {clipData?.title && (
+        <a href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-2 text-xs text-slate-400 hover:text-slate-200 transition-colors">
+          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0 text-purple-400" fill="currentColor"><path d="M11.64 5.93h1.43v4.28h-1.43m3.93-4.28H17v4.28h-1.43M7 2L3.43 5.57v12.86h4.28V22l3.58-3.57h2.85L20.57 12V2m-1.43 9.29l-2.85 2.85h-2.86l-2.5 2.5v-2.5H7.71V3.43h11.43z" /></svg>
+          <span className="truncate">{clipData.title}</span>
+          {clipData.broadcaster_name && <span className="shrink-0 text-slate-600">— {clipData.broadcaster_name}</span>}
+        </a>
+      )}
+    </div>
+  );
+}
+
 function LinkPreview({ url }: { url: string }) {
   const [data, setData] = useState<UnfurlData | null>(unfurlCache.get(url) ?? null);
   const [loaded, setLoaded] = useState(unfurlCache.has(url));
@@ -443,18 +496,7 @@ export default function MessageContent({ content, bridgeEmotes, usernames }: Mes
                 );
 
               case "twitch-clip":
-                return (
-                  <div key={i} className="overflow-hidden rounded-lg border border-dark-700 bg-dark-800">
-                    <iframe
-                      src={`https://nexe.decatron.net/embed/clip?id=${embed.embedId}`}
-                      width="550"
-                      height="309"
-                      allowFullScreen
-                      className="max-w-full"
-                      style={{ border: 0 }}
-                    />
-                  </div>
-                );
+                return <TwitchClipPlayer key={i} clipId={embed.embedId!} url={embed.url} />;
 
               case "link":
                 return <LinkPreview key={i} url={embed.url} />;

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"os"
@@ -141,6 +142,20 @@ func main() {
 
 	// Link unfurl
 	mux.Handle("GET /unfurl", authMiddleware(apiRateLimiter.Middleware(http.HandlerFunc(handler.HandleUnfurl))))
+
+	// Twitch clip resolve (returns video URL)
+	mux.Handle("GET /twitch/clip/{id}", authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		clipID := r.PathValue("id")
+		clip, err := twitchSvc.GetClip(r.Context(), clipID)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"error":"clip not found"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"data": clip})
+	})))
 
 	// Bot API / Developer routes
 	mux.Handle("POST /api/v1/applications", authMiddleware(http.HandlerFunc(botHandler.CreateApp)))
