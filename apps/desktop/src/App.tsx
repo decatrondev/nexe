@@ -68,7 +68,12 @@ function SplashScreen({ status, progress }: { status: string; progress: number }
   );
 }
 
-const APP_VERSION = "0.0.9";
+const APP_VERSION = "0.0.10";
+const API_URL =
+  typeof window !== "undefined" &&
+  (window.location.protocol === "https:" || "__TAURI__" in window)
+    ? "https://nexeapi.decatron.net"
+    : "http://161.132.53.175:8090";
 
 export default function App() {
   const loadFromStorage = useAuthStore((s) => s.loadFromStorage);
@@ -106,7 +111,18 @@ export default function App() {
     let mounted = true;
 
     async function init() {
-      // Start auth load immediately (reads from localStorage — instant)
+      // Warm up the network — Tauri webview needs a moment on cold start
+      setStatusText("Starting...");
+      for (let i = 0; i < 5; i++) {
+        try {
+          await fetch(API_URL + "/health", { method: "GET", signal: AbortSignal.timeout(3000) });
+          break; // network ready
+        } catch {
+          await new Promise((r) => setTimeout(r, 500));
+        }
+      }
+
+      // Start auth load (reads from localStorage, then calls getMe in background)
       loadFromStorage();
 
       // Check for updates

@@ -25,27 +25,36 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
     setLoading(true);
-    try {
-      await login(email, password);
-      navigate("/");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Login failed";
-      if (msg === "requires_totp") {
-        setStep("totp");
-        setTotpCode("");
-        setError("");
-      } else if (msg.includes("email_not_verified") || msg.includes("verify your email") || msg.includes("not verified")) {
-        setStep("verify");
-        setError("");
-        setFeedback("Your email is not verified. Enter the code sent to your email, or resend it.");
-      } else if (msg.includes("Network error") || msg.includes("timed out")) {
-        setError("Server is updating, please try again in a moment");
-      } else {
-        setError(msg);
+
+    // Retry up to 3 times on network errors (Tauri cold start issue)
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await login(email, password);
+        navigate("/");
+        return;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Login failed";
+        if (msg.includes("Network error") || msg.includes("timed out")) {
+          if (attempt < 2) {
+            await new Promise((r) => setTimeout(r, 1000));
+            continue; // retry
+          }
+          setError("Unable to connect to server. Please try again.");
+        } else if (msg === "requires_totp") {
+          setStep("totp");
+          setTotpCode("");
+          setError("");
+        } else if (msg.includes("email_not_verified") || msg.includes("verify your email") || msg.includes("not verified")) {
+          setStep("verify");
+          setError("");
+          setFeedback("Your email is not verified. Enter the code sent to your email, or resend it.");
+        } else {
+          setError(msg);
+        }
+        break;
       }
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   }
 
   async function handleVerify(e: FormEvent) {
