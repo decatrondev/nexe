@@ -91,6 +91,9 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingPreview, setPendingPreview] = useState<string | null>(null);
+  const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
   // Edit state
@@ -177,7 +180,7 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
 
   // Close context menu on any click
   useEffect(() => {
-    const close = () => { setCtxMenu(null); };
+    const close = () => { setCtxMenu(null); setPlusMenuOpen(false); };
     window.addEventListener("click", close);
     return () => window.removeEventListener("click", close);
   }, []);
@@ -272,6 +275,10 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
     setTypingUsers(new Map());
     setMessageReactions({});
     setEmojiPicker(null);
+    if (pendingPreview) URL.revokeObjectURL(pendingPreview);
+    setPendingFile(null);
+    setPendingPreview(null);
+    setPlusMenuOpen(false);
     setInputEmojiPicker(null);
     setPinsOpen(false);
     setPinnedMessages([]);
@@ -449,13 +456,27 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    const content = resolveContentMentions(input.trim());
-    if (!content || sending) return;
+    let content = resolveContentMentions(input.trim());
+    if (!content && !pendingFile) return;
+    if (sending) return;
     // Check slowmode
     if (slowmodeSeconds > 0 && slowmodeRemaining > 0) return;
     setSending(true);
     setSendError(null);
     try {
+      // Upload pending file first, append URL to content
+      if (pendingFile) {
+        setUploading(true);
+        const result = await api.uploadAttachment(pendingFile);
+        content = content ? `${content}\n${result.url}` : result.url;
+        setPendingFile(null);
+        if (pendingPreview) {
+          URL.revokeObjectURL(pendingPreview);
+          setPendingPreview(null);
+        }
+        setUploading(false);
+      }
+      if (!content) return;
       await sendMessage(content, replyTo?.id);
       // If this is a bridge channel, also send to Twitch
       const guild = guilds.find((g) => g.id === activeGuildId);
@@ -501,6 +522,7 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
       setTimeout(() => setSendError((prev) => prev === errorMsg ? null : prev), 5000);
     } finally {
       setSending(false);
+      setUploading(false);
     }
   }
 
@@ -1224,46 +1246,97 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
               </div>
             )}
             <form onSubmit={handleSubmit}>
-              <div className={`bg-dark-800 px-4 transition-colors ${replyTo ? "rounded-b-lg" : "rounded-lg"}`}>
+              {/* Pending file preview card */}
+              {pendingFile && (
+                <div className={`mx-0 flex items-center gap-3 border border-b-0 border-dark-700 bg-dark-800/80 px-3 py-2 ${replyTo ? "" : "rounded-t-lg"}`}>
+                  {pendingPreview ? (
+                    <img src={pendingPreview} alt="" className="h-16 w-16 rounded object-cover" />
+                  ) : (
+                    <div className="flex h-16 w-16 items-center justify-center rounded bg-dark-700 text-slate-400">
+                      <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                      </svg>
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm text-slate-200">{pendingFile.name}</p>
+                    <p className="text-xs text-slate-500">{(pendingFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                  </div>
+                  {uploading ? (
+                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-dark-600 border-t-nexe-500" />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (pendingPreview) URL.revokeObjectURL(pendingPreview);
+                        setPendingFile(null);
+                        setPendingPreview(null);
+                      }}
+                      className="rounded p-1 text-slate-500 hover:bg-dark-700 hover:text-white"
+                    >
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              )}
+              <div className={`bg-dark-800 px-4 transition-colors ${replyTo || pendingFile ? "rounded-b-lg" : "rounded-lg"}`}>
                 <div className="flex items-end">
+                {/* Hidden file input */}
                 <input
                   type="file"
                   ref={fileInputRef}
                   className="hidden"
                   accept="image/*,video/*,.pdf,.txt,.zip,.json,.mp3,.ogg,.wav"
-                  onChange={async (e) => {
+                  onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (!file) return;
                     e.target.value = "";
-                    try {
-                      setUploading(true);
-                      const result = await api.uploadAttachment(file);
-                      const url = result.url;
-                      // Insert URL into message input
-                      const current = input.trim();
-                      handleInputChange(current ? `${current}\n${url}` : url);
-                    } catch {
-                      setSendError("Failed to upload file");
-                    } finally {
-                      setUploading(false);
+                    setPendingFile(file);
+                    // Generate local preview for images
+                    if (file.type.startsWith("image/")) {
+                      setPendingPreview(URL.createObjectURL(file));
+                    } else {
+                      setPendingPreview(null);
                     }
+                    setPlusMenuOpen(false);
+                    inputRef.current?.focus();
                   }}
                 />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploading}
-                  className="mr-1 rounded p-1.5 text-slate-400 transition-colors hover:bg-dark-700 hover:text-white disabled:opacity-50"
-                  title="Upload file"
-                >
-                  {uploading ? (
-                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-dark-600 border-t-nexe-500" />
-                  ) : (
+                {/* Plus menu button */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setPlusMenuOpen((v) => !v)}
+                    className="mr-1 rounded p-1.5 text-slate-400 transition-colors hover:bg-dark-700 hover:text-white"
+                    title="Actions"
+                  >
                     <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
                     </svg>
+                  </button>
+                  {plusMenuOpen && (
+                    <div className="absolute bottom-full left-0 mb-2 w-48 overflow-hidden rounded-lg border border-dark-700 bg-dark-800 shadow-xl animate-slide-up z-dropdown">
+                      <button
+                        type="button"
+                        onClick={() => { fileInputRef.current?.click(); }}
+                        className="flex w-full items-center gap-2.5 px-3 py-2 text-sm text-slate-300 hover:bg-dark-700 hover:text-white transition-colors"
+                      >
+                        <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" />
+                        </svg>
+                        Upload File
+                      </button>
+                      <div className="flex items-center gap-2.5 px-3 py-2 text-sm text-slate-500">
+                        <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155" />
+                        </svg>
+                        Threads (right-click message)
+                      </div>
+                    </div>
                   )}
-                </button>
+                </div>
                 <textarea
                   ref={inputRef}
                   value={input}
