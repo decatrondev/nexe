@@ -46,7 +46,7 @@ func main() {
 	botRepo := repository.NewBotRepository(db)
 
 	// Services
-	jwtSvc := service.NewJWTService(cfg.JWTSecret, 15*time.Minute, 7*24*time.Hour)
+	jwtSvc := service.NewJWTService(cfg.JWTSecret, 7*24*time.Hour, 30*24*time.Hour)
 	emailSvc := service.NewEmailService(cfg.ResendAPIKey, cfg.EmailFrom)
 	authSvc := service.NewAuthService(userRepo, sessionRepo, verificationRepo, jwtSvc, emailSvc)
 	twitchSvc := service.NewTwitchService(cfg.TwitchClientID, cfg.TwitchClientSecret, cfg.TwitchRedirectURI)

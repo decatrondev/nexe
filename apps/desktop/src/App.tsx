@@ -68,7 +68,7 @@ function SplashScreen({ status, progress }: { status: string; progress: number }
   );
 }
 
-const APP_VERSION = "0.0.8";
+const APP_VERSION = "0.0.9";
 
 export default function App() {
   const loadFromStorage = useAuthStore((s) => s.loadFromStorage);
