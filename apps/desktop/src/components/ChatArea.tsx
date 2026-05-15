@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import React, { type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useGuildStore } from "../stores/guild";
 import { useAuthStore } from "../stores/auth";
 import { api, type Message, type Role, type ReactionGroup } from "../lib/api";
@@ -953,39 +953,39 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
                   );
 
                   return (
-                    <>{showUnreadDivider && (
-                      <div className="my-2 flex items-center gap-3 px-2 animate-fade-in" key={`divider-${msg.id}`}>
+                    <React.Fragment key={msg.id}>
+                      {showUnreadDivider && (
+                        <div className="my-2 flex items-center gap-3 px-2 animate-fade-in">
+                          <div className="h-px flex-1 bg-red-500/40" />
+                          <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-red-400">New Messages</span>
+                          <div className="h-px flex-1 bg-red-500/40" />
+                        </div>
+                      )}
+                      <div
+                        id={`msg-${msg.id}`}
+                        className="flex items-center gap-2 px-4 py-1"
+                      >
+                        {systemIcon}
+                        <span className="text-[13px] text-slate-400">
+                          <span className="font-medium text-slate-300">{authorName}</span>
+                          {" "}{msg.content}
+                        </span>
+                        <span className="text-[11px] text-slate-600">{formatTimestamp(msg.createdAt)}</span>
+                      </div>
+                    </React.Fragment>
+                  );
+                }
+
+                return (
+                  <React.Fragment key={msg.id}>
+                    {showUnreadDivider && (
+                      <div className="my-2 flex items-center gap-3 px-2 animate-fade-in">
                         <div className="h-px flex-1 bg-red-500/40" />
                         <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-red-400">New Messages</span>
                         <div className="h-px flex-1 bg-red-500/40" />
                       </div>
                     )}
-                    <div
-                      key={msg.id}
-                      id={`msg-${msg.id}`}
-                      className="flex items-center gap-2 px-4 py-1"
-                    >
-                      {systemIcon}
-                      <span className="text-[13px] text-slate-400">
-                        <span className="font-medium text-slate-300">{authorName}</span>
-                        {" "}{msg.content}
-                      </span>
-                      <span className="text-[11px] text-slate-600">{formatTimestamp(msg.createdAt)}</span>
-                    </div>
-                    </>
-                  );
-                }
-
-                return (
-                  <>{showUnreadDivider && (
-                    <div className="my-2 flex items-center gap-3 px-2 animate-fade-in" key={`divider-${msg.id}`}>
-                      <div className="h-px flex-1 bg-red-500/40" />
-                      <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-red-400">New Messages</span>
-                      <div className="h-px flex-1 bg-red-500/40" />
-                    </div>
-                  )}
                   <div
-                    key={msg.id}
                     id={`msg-${msg.id}`}
                     onContextMenu={(e) => handleContextMenu(e, msg)}
                     className={`group relative flex gap-4 rounded-md px-2 py-0.5 transition-[background-color] duration-100 hover:bg-dark-800/40 ${!isGrouped ? "mt-3" : ""}`}
@@ -1151,7 +1151,7 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
                       />
                     )}
                   </div>
-                  </>
+                  </React.Fragment>
                 );
               })
             )}
