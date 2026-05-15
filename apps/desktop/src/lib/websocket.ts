@@ -1,6 +1,6 @@
 const WS_URL =
   typeof window !== "undefined" &&
-  (window.location.protocol === "https:" || "__TAURI__" in window)
+  (window.location.protocol === "https:" || "__TAURI__" in window || "__TAURI_INTERNALS__" in window || window.location.hostname === "tauri.localhost")
     ? "wss://nexews.decatron.net/ws"
     : "ws://161.132.53.175:8090/ws";
 

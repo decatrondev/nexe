@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Nexe",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "identifier": "net.decatron.nexe",
   "build": {
     "frontendDist": "../dist",
@@ -22,7 +22,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://nexeapi.decatron.net http://161.132.53.175:8090 wss://nexews.decatron.net ws://161.132.53.175:8090 wss://nexelk.decatron.net https://nexelk.decatron.net; media-src 'self' https: wss: ws: mediastream:; img-src 'self' https: data: blob:"
+      "csp": "default-src 'self' http://ipc.localhost; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://ipc.localhost https://nexeapi.decatron.net http://161.132.53.175:8090 wss://nexews.decatron.net ws://161.132.53.175:8090 wss://nexelk.decatron.net https://nexelk.decatron.net https://github.com https://objects.githubusercontent.com; media-src 'self' https: wss: ws: mediastream:; img-src 'self' https: data: blob:"
     }
   },
   "bundle": {
