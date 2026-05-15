@@ -444,16 +444,25 @@ export default function MessageContent({ content, bridgeEmotes, usernames }: Mes
 
               case "twitch-clip":
                 return (
-                  <div key={i} className="overflow-hidden rounded-lg border border-dark-700 bg-dark-800">
-                    <iframe
-                      src={`https://clips.twitch.tv/embed?clip=${embed.embedId}&parent=${window.location.hostname}`}
-                      width="550"
-                      height="309"
-                      allowFullScreen
-                      className="max-w-full"
-                      style={{ border: 0 }}
-                    />
-                  </div>
+                  <a
+                    key={i}
+                    href={embed.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group block max-w-[550px] overflow-hidden rounded-lg border border-dark-700 bg-dark-900 transition-colors hover:border-purple-500/50"
+                  >
+                    <div className="relative flex h-[200px] items-center justify-center">
+                      <div className="absolute inset-0 bg-gradient-to-b from-purple-900/20 to-dark-900" />
+                      <div className="relative flex h-14 w-14 items-center justify-center rounded-full bg-purple-600/90 text-white shadow-lg transition-transform group-hover:scale-110">
+                        <svg viewBox="0 0 24 24" fill="currentColor" className="ml-1 h-7 w-7"><path d="M8 5v14l11-7z" /></svg>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 px-3 py-2">
+                      <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-purple-400" fill="currentColor"><path d="M11.64 5.93h1.43v4.28h-1.43m3.93-4.28H17v4.28h-1.43M7 2L3.43 5.57v12.86h4.28V22l3.58-3.57h2.85L20.57 12V2m-1.43 9.29l-2.85 2.85h-2.86l-2.5 2.5v-2.5H7.71V3.43h11.43z" /></svg>
+                      <span className="truncate text-sm text-slate-300">Twitch Clip</span>
+                      <span className="ml-auto text-xs text-slate-600">Click to watch</span>
+                    </div>
+                  </a>
                 );
 
               case "link":
