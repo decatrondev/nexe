@@ -268,7 +268,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
       const newUsernames = { ...usernames };
       const unknownIds = [
         ...new Set(
-          sorted.map((m) => m.authorId).filter((id) => !newUsernames[id]),
+          sorted.map((m) => m.authorId).filter((id) => id && !newUsernames[id]),
         ),
       ];
 
@@ -276,6 +276,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
       for (let i = 0; i < unknownIds.length; i += 10) {
         batches.push(unknownIds.slice(i, i + 10));
       }
+      const newAvatarMap = { ...get().avatarMap };
       for (const batch of batches) {
         const profiles = await Promise.allSettled(
           batch.map((id) => api.getProfile(id)),
@@ -284,6 +285,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
           if (result.status === "fulfilled") {
             const p = result.value;
             newUsernames[batch[idx]] = p?.displayName || p?.username || p?.userId?.slice(0, 8) || "User";
+            if (p?.avatarUrl) newAvatarMap[batch[idx]] = p.avatarUrl;
           } else {
             newUsernames[batch[idx]] = "Unknown";
           }
@@ -293,6 +295,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
       set((s) => ({
         messages: { ...s.messages, [channelId]: sorted },
         usernames: newUsernames,
+        avatarMap: newAvatarMap,
         hasMoreMessages: {
           ...s.hasMoreMessages,
           [channelId]: msgList.length >= MESSAGE_LIMIT,
@@ -564,7 +567,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
       const newUsernames = { ...usernames };
       const unknownIds = [
         ...new Set(
-          sorted.map((m) => m.authorId).filter((id) => !newUsernames[id]),
+          sorted.map((m) => m.authorId).filter((id) => id && !newUsernames[id]),
         ),
       ];
       for (const id of unknownIds) {
