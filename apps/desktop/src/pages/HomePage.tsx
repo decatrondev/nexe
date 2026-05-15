@@ -268,6 +268,16 @@ export default function HomePage() {
         });
       });
 
+      nexeWS.on("REACTION_ADD", (data) => {
+        const { messageId, channelId, emoji, userId } = data as { messageId: string; channelId: string; emoji: string; userId: string };
+        window.dispatchEvent(new CustomEvent("nexe:reaction", { detail: { messageId, channelId, emoji, userId, type: "add" } }));
+      });
+
+      nexeWS.on("REACTION_REMOVE", (data) => {
+        const { messageId, channelId, emoji, userId } = data as { messageId: string; channelId: string; emoji: string; userId: string };
+        window.dispatchEvent(new CustomEvent("nexe:reaction", { detail: { messageId, channelId, emoji, userId, type: "remove" } }));
+      });
+
       nexeWS.on("GUILD_MEMBER_ADD", (data) => {
         const d = data as { userId: string; guildId: string };
         const currentUser = useAuthStore.getState().user;

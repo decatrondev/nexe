@@ -431,7 +431,7 @@ func (r *MessageRepository) ListPins(ctx context.Context, channelID string) ([]m
 	return messages, nil
 }
 
-func (r *MessageRepository) Search(ctx context.Context, channelID, query string, authorID *string, limit int) ([]model.Message, error) {
+func (r *MessageRepository) Search(ctx context.Context, channelID, query string, authorID, before, after *string, limit int) ([]model.Message, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 25
 	}
@@ -453,6 +453,18 @@ func (r *MessageRepository) Search(ctx context.Context, channelID, query string,
 	if authorID != nil {
 		conditions = append(conditions, fmt.Sprintf("author_id = $%d", argIdx))
 		args = append(args, *authorID)
+		argIdx++
+	}
+
+	if before != nil {
+		conditions = append(conditions, fmt.Sprintf("created_at < $%d", argIdx))
+		args = append(args, *before)
+		argIdx++
+	}
+
+	if after != nil {
+		conditions = append(conditions, fmt.Sprintf("created_at > $%d", argIdx))
+		args = append(args, *after)
 		argIdx++
 	}
 

@@ -436,8 +436,8 @@ func (s *MessageService) ListPins(ctx context.Context, channelID string) ([]mode
 	return pins, nil
 }
 
-// SearchMessages performs full-text search within a channel.
-func (s *MessageService) SearchMessages(ctx context.Context, channelID, query string, limit int) ([]model.Message, error) {
+// SearchMessages performs full-text search within a channel with optional filters.
+func (s *MessageService) SearchMessages(ctx context.Context, channelID, query string, authorID, before, after *string, limit int) ([]model.Message, error) {
 	if strings.TrimSpace(query) == "" {
 		return nil, fmt.Errorf("search query cannot be empty")
 	}
@@ -448,7 +448,7 @@ func (s *MessageService) SearchMessages(ctx context.Context, channelID, query st
 		limit = 100
 	}
 
-	results, err := s.messages.Search(ctx, channelID, query, nil, limit)
+	results, err := s.messages.Search(ctx, channelID, query, authorID, before, after, limit)
 	if err != nil {
 		return nil, fmt.Errorf("search messages: %w", err)
 	}
@@ -485,15 +485,45 @@ func (s *MessageService) AddReaction(ctx context.Context, messageID, userID, emo
 	if err := s.reactions.Add(ctx, messageID, userID, emoji); err != nil {
 		return fmt.Errorf("add reaction: %w", err)
 	}
+
+	s.publishReactionEvent(msg.ChannelID, messageID, userID, emoji, EventReactionAdd)
 	return nil
 }
 
 // RemoveReaction removes a user's reaction from a message.
 func (s *MessageService) RemoveReaction(ctx context.Context, messageID, userID, emoji string) error {
+	msg, err := s.messages.GetByID(ctx, messageID)
+	if err != nil {
+		return fmt.Errorf("remove reaction: %w", err)
+	}
+	if msg == nil {
+		return fmt.Errorf("message not found")
+	}
+
 	if err := s.reactions.Remove(ctx, messageID, userID, emoji); err != nil {
 		return fmt.Errorf("remove reaction: %w", err)
 	}
+
+	s.publishReactionEvent(msg.ChannelID, messageID, userID, emoji, EventReactionRemove)
 	return nil
+}
+
+func (s *MessageService) publishReactionEvent(channelID, messageID, userID, emoji, eventType string) {
+	if s.events == nil {
+		return
+	}
+	go func() {
+		guildID, err := s.messages.GetChannelGuildID(context.Background(), channelID)
+		if err != nil {
+			return
+		}
+		s.events.Publish(context.Background(), guildID, channelID, eventType, userID, map[string]string{
+			"messageId": messageID,
+			"channelId": channelID,
+			"emoji":     emoji,
+			"userId":    userID,
+		})
+	}()
 }
 
 // GetReactions returns grouped reactions for a message.

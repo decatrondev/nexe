@@ -282,6 +282,40 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
     setSlowmodeRemaining(0);
   }, [activeChannelId]);
 
+  // Listen for WebSocket reaction events
+  useEffect(() => {
+    function handleReactionEvent(e: Event) {
+      const { messageId, channelId, emoji, userId, type } = (e as CustomEvent).detail;
+      if (channelId !== activeChannelId) return;
+      setMessageReactions((prev) => {
+        const groups = [...(prev[messageId] || [])];
+        const idx = groups.findIndex((g) => g.emoji === emoji);
+        if (type === "add") {
+          if (idx >= 0) {
+            if (!groups[idx].users.includes(userId)) {
+              groups[idx] = { ...groups[idx], count: groups[idx].count + 1, users: [...groups[idx].users, userId] };
+            }
+          } else {
+            groups.push({ emoji, count: 1, users: [userId] });
+          }
+        } else {
+          if (idx >= 0) {
+            const users = groups[idx].users.filter((u) => u !== userId);
+            if (users.length === 0) {
+              groups.splice(idx, 1);
+            } else {
+              groups[idx] = { ...groups[idx], count: users.length, users };
+            }
+          }
+        }
+        return { ...prev, [messageId]: groups };
+      });
+    }
+    window.addEventListener("nexe:reaction", handleReactionEvent);
+    return () => window.removeEventListener("nexe:reaction", handleReactionEvent);
+  }, [activeChannelId]);
+
+
   // Focus edit input + auto-resize to fit content
   useEffect(() => {
     if (editingId && editInputRef.current) {
@@ -636,14 +670,47 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
   }
 
   async function handleSearch() {
-    const q = searchQuery.trim();
-    if (!activeChannelId || !q || q.length < 2) {
-      if (q.length > 0 && q.length < 2) setSearchResults([]); // too short
+    const raw = searchQuery.trim();
+    if (!activeChannelId || !raw || raw.length < 2) {
+      if (raw.length > 0 && raw.length < 2) setSearchResults([]);
       return;
     }
+
+    // Parse search filters: from:username, before:YYYY-MM-DD, after:YYYY-MM-DD
+    let q = raw;
+    let author: string | undefined;
+    let before: string | undefined;
+    let after: string | undefined;
+
+    const fromMatch = q.match(/from:(\S+)/i);
+    if (fromMatch) {
+      const name = fromMatch[1].toLowerCase();
+      // Resolve username to userId
+      const entry = Object.entries(usernames).find(([, uname]) => uname.toLowerCase() === name);
+      if (entry) author = entry[0];
+      q = q.replace(fromMatch[0], "").trim();
+    }
+    const beforeMatch = q.match(/before:(\S+)/i);
+    if (beforeMatch) {
+      before = beforeMatch[1];
+      q = q.replace(beforeMatch[0], "").trim();
+    }
+    const afterMatch = q.match(/after:(\S+)/i);
+    if (afterMatch) {
+      after = afterMatch[1];
+      q = q.replace(afterMatch[0], "").trim();
+    }
+
+    // If only filters and no text query, use a wildcard-like search
+    if (!q && (author || before || after)) q = "*";
+    if (!q || q.length < 1) {
+      setSearchResults([]);
+      return;
+    }
+
     setSearchLoading(true);
     try {
-      const results = await api.searchMessages(activeChannelId, q, 25);
+      const results = await api.searchMessages(activeChannelId, q, { limit: 25, author, before, after });
       setSearchResults(Array.isArray(results) ? results : []);
     } catch {
       setSearchResults([]);

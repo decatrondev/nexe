@@ -823,9 +823,12 @@ export const api = {
 
   // ---- Search methods ----
 
-  searchMessages(channelId: string, query: string, limit?: number) {
+  searchMessages(channelId: string, query: string, opts?: { limit?: number; author?: string; before?: string; after?: string }) {
     const params = new URLSearchParams({ q: query });
-    if (limit) params.set("limit", String(limit));
+    if (opts?.limit) params.set("limit", String(opts.limit));
+    if (opts?.author) params.set("author", opts.author);
+    if (opts?.before) params.set("before", opts.before);
+    if (opts?.after) params.set("after", opts.after);
     return request<Message[]>("GET", `/channels/${channelId}/search?${params}`);
   },
 

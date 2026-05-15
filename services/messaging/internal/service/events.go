@@ -22,9 +22,11 @@ func NewEventPublisher(rdb *redis.Client) *EventPublisher {
 
 // Event types for messaging.
 const (
-	EventMessageCreate = "MESSAGE_CREATE"
-	EventMessageUpdate = "MESSAGE_UPDATE"
-	EventMessageDelete = "MESSAGE_DELETE"
+	EventMessageCreate  = "MESSAGE_CREATE"
+	EventMessageUpdate  = "MESSAGE_UPDATE"
+	EventMessageDelete  = "MESSAGE_DELETE"
+	EventReactionAdd    = "REACTION_ADD"
+	EventReactionRemove = "REACTION_REMOVE"
 )
 
 // Event is the envelope published to Redis.

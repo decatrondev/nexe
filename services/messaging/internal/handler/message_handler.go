@@ -198,7 +198,18 @@ func (h *MessageHandler) SearchMessages(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	results, err := h.svc.SearchMessages(r.Context(), channelID, query, limit)
+	var authorID, before, after *string
+	if v := r.URL.Query().Get("author"); v != "" {
+		authorID = &v
+	}
+	if v := r.URL.Query().Get("before"); v != "" {
+		before = &v
+	}
+	if v := r.URL.Query().Get("after"); v != "" {
+		after = &v
+	}
+
+	results, err := h.svc.SearchMessages(r.Context(), channelID, query, authorID, before, after, limit)
 	if err != nil {
 		classifyError(w, err)
 		return
