@@ -136,6 +136,22 @@ pub fn apply_staged_update(app: &AppHandle) {
         return;
     }
 
+    // Anti-loop: track apply attempts. If we've tried 2+ times, the update is broken — abort.
+    let attempts_file = updates_dir.join(".apply_attempts");
+    let attempts: u32 = fs::read_to_string(&attempts_file)
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0);
+
+    if attempts >= 2 {
+        log::error!("Staged update failed {} times, removing to break loop", attempts);
+        let _ = fs::remove_dir_all(&staged_dir);
+        let _ = fs::remove_file(&attempts_file);
+        return;
+    }
+
+    let _ = fs::write(&attempts_file, (attempts + 1).to_string());
+
     let app_dir = match std::env::current_exe() {
         Ok(exe) => exe.parent().unwrap_or(Path::new(".")).to_path_buf(),
         Err(_) => return,
@@ -197,8 +213,9 @@ pub fn apply_staged_update(app: &AppHandle) {
         }
     }
 
-    // Clean up staging
+    // Clean up staging + reset attempt counter
     let _ = fs::remove_dir_all(&staged_dir);
+    let _ = fs::remove_file(&attempts_file);
     log::info!("Staged update applied successfully");
 }
 
