@@ -15,15 +15,119 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  build:
+  # Create the GitHub Release first (once)
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "Nexe ${{ github.ref_name }}"
+          body: |
+            ## Nexe ${{ github.ref_name }}
+
+            Download for your platform:
+            - **Windows:** `Nexe.exe` (run to install)
+            - **macOS:** `.dmg` (Universal)
+            - **Linux:** `.AppImage` or `.deb`
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Windows: build manually, upload exe + update zip (no NSIS)
+  build-windows:
+    name: Build — Windows
+    needs: create-release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        continue-on-error: true
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - run: pnpm install --no-frozen-lockfile
+      - name: Install desktop deps
+        working-directory: apps/desktop
+        run: pnpm install
+
+      - name: Build Tauri app
+        working-directory: apps/desktop
+        run: pnpm tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: Prepare artifacts
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}"
+          $releaseDir = "apps/desktop/src-tauri/target/release"
+
+          # Find the exe
+          $exe = $null
+          if (Test-Path "$releaseDir/Nexe.exe") {
+            $exe = "$releaseDir/Nexe.exe"
+          } else {
+            $found = Get-ChildItem "$releaseDir/*.exe" | Where-Object { $_.Name -notmatch 'setup|build|uninstall' } | Select-Object -First 1
+            if ($found) { $exe = $found.FullName }
+          }
+
+          if (!$exe) {
+            # Fallback: check for app.exe
+            if (Test-Path "$releaseDir/app.exe") { $exe = "$releaseDir/app.exe" }
+          }
+
+          if (!$exe) { Write-Error "No exe found!"; exit 1 }
+
+          # Copy standalone exe for download
+          Copy-Item $exe "Nexe.exe"
+
+          # Create portable update zip
+          $outDir = "update-package"
+          New-Item -ItemType Directory -Path $outDir -Force
+          Copy-Item $exe "$outDir/Nexe.exe"
+          Get-ChildItem "$releaseDir/*.dll" -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName "$outDir/" }
+
+          $zipName = "nexe-update-${version}-windows-x86_64.zip"
+          Compress-Archive -Path "$outDir/*" -DestinationPath $zipName
+
+          $hash = (Get-FileHash $zipName -Algorithm SHA256).Hash.ToLower()
+          Set-Content -Path "${zipName}.sha256" -Value $hash -NoNewline
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            Nexe.exe
+            nexe-update-*.zip
+            nexe-update-*.zip.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # macOS + Linux: use tauri-action (works fine on these platforms)
+  build-unix:
     name: Build — ${{ matrix.platform }}
+    needs: create-release
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: windows
-            os: windows-latest
-            args: ""
           - platform: macos
             os: macos-latest
             args: "--target universal-apple-darwin"
@@ -73,63 +177,11 @@ jobs:
           args: ${{ matrix.args }}
           tagName: ${{ github.ref_name }}
           releaseName: "Nexe ${{ github.ref_name }}"
-          releaseBody: |
-            ## Nexe ${{ github.ref_name }}
-
-            Download for your platform:
-            - **Windows:** `Nexe.exe` (run to install)
-            - **macOS:** `.dmg` (Universal)
-            - **Linux:** `.AppImage` or `.deb`
+          releaseBody: ""
           releaseDraft: false
           prerelease: false
 
-      # ── Upload standalone exe for Windows (self-installer, no NSIS) ──
-
-      - name: Upload Nexe.exe (Windows self-installer)
-        if: matrix.platform == 'windows'
-        shell: pwsh
-        run: |
-          $releaseDir = "apps/desktop/src-tauri/target/release"
-          $exe = Get-ChildItem "$releaseDir/Nexe.exe" -ErrorAction SilentlyContinue
-          if (!$exe) { $exe = Get-ChildItem "$releaseDir/*.exe" | Where-Object { $_.Name -notmatch 'setup|build|uninstall' } | Select-Object -First 1 }
-          if ($exe) { Copy-Item $exe.FullName "Nexe.exe" }
-
-      - name: Upload Nexe.exe to release
-        if: matrix.platform == 'windows'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: Nexe.exe
-          tag_name: ${{ github.ref_name }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # ── Portable update zips (for silent auto-updater) ──
-
-      - name: Create portable update zip (Windows)
-        if: matrix.platform == 'windows'
-        shell: pwsh
-        run: |
-          $version = "${{ github.ref_name }}"
-          $releaseDir = "apps/desktop/src-tauri/target/release"
-          $outDir = "update-package"
-          New-Item -ItemType Directory -Path $outDir -Force
-
-          $exe = Get-ChildItem "$releaseDir/Nexe.exe" -ErrorAction SilentlyContinue
-          if (!$exe) { $exe = Get-ChildItem "$releaseDir/*.exe" | Where-Object { $_.Name -notmatch 'setup|build|uninstall' } | Select-Object -First 1 }
-          if ($exe) { Copy-Item $exe.FullName "$outDir/Nexe.exe" }
-
-          Get-ChildItem "$releaseDir/*.dll" | ForEach-Object { Copy-Item $_.FullName "$outDir/" }
-
-          # Include WebView2Loader if present
-          if (Test-Path "$releaseDir/WebView2Loader.dll") { Copy-Item "$releaseDir/WebView2Loader.dll" "$outDir/" }
-
-          $zipName = "nexe-update-${version}-windows-x86_64.zip"
-          Compress-Archive -Path "$outDir/*" -DestinationPath $zipName
-
-          # SHA256
-          $hash = (Get-FileHash $zipName -Algorithm SHA256).Hash.ToLower()
-          Set-Content -Path "${zipName}.sha256" -Value $hash -NoNewline
-
+      # Portable update zips for auto-updater
       - name: Create portable update zip (macOS)
         if: matrix.platform == 'macos'
         run: |
@@ -151,14 +203,12 @@ jobs:
           RELEASE_DIR="apps/desktop/src-tauri/target/release"
           ZIP_NAME="nexe-update-${VERSION}-linux-x86_64.zip"
           mkdir -p update-package
-
           for name in nexe Nexe app; do
             if [ -f "$RELEASE_DIR/$name" ] && file "$RELEASE_DIR/$name" | grep -q ELF; then
               cp "$RELEASE_DIR/$name" update-package/nexe
               break
             fi
           done
-
           if [ "$(ls -A update-package)" ]; then
             cd update-package
             zip -r "$GITHUB_WORKSPACE/$ZIP_NAME" .
@@ -166,12 +216,12 @@ jobs:
             sha256sum "$ZIP_NAME" | awk '{print $1}' > "${ZIP_NAME}.sha256"
           fi
 
-      - name: Upload portable update zip + sha256
+      - name: Upload portable update zip
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_name }}
           files: |
             nexe-update-*.zip
             nexe-update-*.zip.sha256
-          tag_name: ${{ github.ref_name }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
