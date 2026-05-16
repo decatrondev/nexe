@@ -26,8 +26,16 @@ pub fn run() {
                 )?;
             }
 
-            // Apply staged update before any window shows
-            updater::apply_staged_update(app.handle());
+            // Apply staged update before any window shows.
+            // If applied, restart immediately so the NEW binary runs
+            // (prevents version mismatch → re-download loop).
+            if updater::apply_staged_update(app.handle()) {
+                updater::cleanup_old_files();
+                let exe = std::env::current_exe().expect("get exe path");
+                let _ = std::process::Command::new(exe).spawn();
+                std::process::exit(0);
+            }
+
             updater::cleanup_old_files();
 
             Ok(())

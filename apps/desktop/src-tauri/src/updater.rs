@@ -131,15 +131,16 @@ pub async fn download_update(
 
 // ── Startup: Apply staged update ──
 
-pub fn apply_staged_update(app: &AppHandle) {
+/// Returns true if an update was applied (caller should restart the process).
+pub fn apply_staged_update(app: &AppHandle) -> bool {
     let updates_dir = match get_updates_dir(app) {
         Ok(d) => d,
-        Err(_) => return,
+        Err(_) => return false,
     };
 
     let staged_dir = updates_dir.join("staged");
     if !staged_dir.join(".complete").exists() {
-        return;
+        return false;
     }
 
     // Anti-loop: max attempts
@@ -153,20 +154,20 @@ pub fn apply_staged_update(app: &AppHandle) {
         log::error!("Staged update failed {} times — removing to break loop", attempts);
         let _ = fs::remove_dir_all(&staged_dir);
         let _ = fs::remove_file(&attempts_file);
-        return;
+        return false;
     }
     let _ = fs::write(&attempts_file, (attempts + 1).to_string());
 
     let app_dir = match get_app_dir() {
         Some(d) => d,
-        None => return,
+        None => return false,
     };
 
     log::info!("Applying staged update from {:?} to {:?}", staged_dir, app_dir);
 
     let entries = match fs::read_dir(&staged_dir) {
         Ok(e) => e,
-        Err(_) => return,
+        Err(_) => return false,
     };
 
     for entry in entries.flatten() {
@@ -193,7 +194,7 @@ pub fn apply_staged_update(app: &AppHandle) {
                     let _ = fs::remove_file(&old_path);
                     if let Err(e) = fs::rename(&dst, &old_path) {
                         log::error!("Failed to rename {:?} to .old: {}", dst, e);
-                        return; // Abort — don't leave partial state
+                        return false; // Abort — don't leave partial state
                     }
                 } else {
                     let _ = fs::remove_file(&dst);
@@ -214,11 +215,11 @@ pub fn apply_staged_update(app: &AppHandle) {
         if src.is_dir() {
             if let Err(e) = copy_dir_recursive(&src, &dst) {
                 log::error!("Failed to copy dir {:?}: {}", src, e);
-                return;
+                return false;
             }
         } else if let Err(e) = fs::copy(&src, &dst) {
             log::error!("Failed to copy {:?} → {:?}: {}", src, dst, e);
-            return;
+            return false;
         }
 
         // Set executable on Unix
@@ -242,6 +243,7 @@ pub fn apply_staged_update(app: &AppHandle) {
     refresh_icon_cache();
 
     log::info!("Staged update applied successfully");
+    true
 }
 
 pub fn cleanup_old_files() {
