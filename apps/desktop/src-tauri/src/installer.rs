@@ -78,6 +78,9 @@ pub fn self_install(app: AppHandle) -> Result<(), String> {
 /// Called via Nexe.exe --uninstall from Add/Remove Programs.
 #[cfg(target_os = "windows")]
 pub fn run_uninstall() {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
     let install_dir = match get_install_dir() {
         Some(d) => d,
         None => return,
@@ -94,14 +97,14 @@ pub fn run_uninstall() {
     // Remove registry entry
     let _ = std::process::Command::new("reg")
         .args(["delete", r"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Nexe", "/f"])
-        .creation_flags(0x08000000)
+        .creation_flags(CREATE_NO_WINDOW)
         .output();
 
     // Schedule deletion of install directory (can't delete running exe)
     let dir_str = install_dir.to_string_lossy();
     let _ = std::process::Command::new("cmd")
         .args(["/C", &format!("timeout /t 2 /nobreak >nul & rmdir /s /q \"{}\"", dir_str)])
-        .creation_flags(0x08000000)
+        .creation_flags(CREATE_NO_WINDOW)
         .spawn();
 
     std::process::exit(0);
