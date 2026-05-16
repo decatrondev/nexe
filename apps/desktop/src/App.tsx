@@ -99,9 +99,7 @@ function SplashWindow() {
   return (
     <div className="flex h-screen w-screen flex-col items-center justify-center bg-dark-950 select-none" data-tauri-drag-region>
       <div className="relative mb-6">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-nexe-500 to-nexe-700 text-lg font-bold text-white shadow-modal animate-pulse-subtle">
-          N
-        </div>
+        <img src="/logo.png" alt="Nexe" className="h-12 w-12 animate-pulse-subtle" draggable={false} />
         <div className="absolute -inset-1.5 rounded-2xl bg-nexe-500/10 animate-pulse-subtle" />
       </div>
 
