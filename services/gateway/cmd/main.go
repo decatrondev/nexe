@@ -96,9 +96,9 @@ func main() {
 		w.Write([]byte(`{"status":"ok","service":"gateway"}`))
 	})
 
-	// Desktop app update check (public, rate limited) — Tauri updater format
+	// Desktop app update check (public, rate limited)
 	updateHandler := handler.NewUpdateHandler(rdb, "decatrondev", "nexe")
-	mux.Handle("GET /update/{target}/{arch}/{current_version}", apiRateLimiter.Middleware(http.HandlerFunc(updateHandler.Check)))
+	mux.Handle("GET /update/check", apiRateLimiter.Middleware(http.HandlerFunc(updateHandler.Check)))
 
 	// Auth routes (rate limited, no auth required)
 	mux.Handle("POST /auth/register", authRateLimiter.Middleware(http.HandlerFunc(authHandler.Register)))

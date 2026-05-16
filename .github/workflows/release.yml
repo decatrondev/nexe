@@ -82,3 +82,76 @@ jobs:
             - **Linux:** `.AppImage` or `.deb`
           releaseDraft: false
           prerelease: false
+
+      # ── Portable update zips (for silent auto-updater, no installer) ──
+
+      - name: Create portable update zip (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}"
+          $releaseDir = "apps/desktop/src-tauri/target/release"
+          $outDir = "update-package"
+          New-Item -ItemType Directory -Path $outDir -Force
+
+          $exe = Get-ChildItem "$releaseDir/Nexe.exe" -ErrorAction SilentlyContinue
+          if (!$exe) { $exe = Get-ChildItem "$releaseDir/*.exe" | Where-Object { $_.Name -notmatch 'setup|build|uninstall' } | Select-Object -First 1 }
+          if ($exe) { Copy-Item $exe.FullName "$outDir/Nexe.exe" }
+
+          Get-ChildItem "$releaseDir/*.dll" | ForEach-Object { Copy-Item $_.FullName "$outDir/" }
+
+          # Include WebView2Loader if present
+          if (Test-Path "$releaseDir/WebView2Loader.dll") { Copy-Item "$releaseDir/WebView2Loader.dll" "$outDir/" }
+
+          $zipName = "nexe-update-${version}-windows-x86_64.zip"
+          Compress-Archive -Path "$outDir/*" -DestinationPath $zipName
+
+          # SHA256
+          $hash = (Get-FileHash $zipName -Algorithm SHA256).Hash.ToLower()
+          Set-Content -Path "${zipName}.sha256" -Value $hash -NoNewline
+
+      - name: Create portable update zip (macOS)
+        if: matrix.platform == 'macos'
+        run: |
+          VERSION="${{ github.ref_name }}"
+          BUNDLE_DIR="apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/macos"
+          APP=$(find "$BUNDLE_DIR" -maxdepth 1 -name "*.app" -type d | head -1)
+          ZIP_NAME="nexe-update-${VERSION}-darwin-universal.zip"
+          if [ -n "$APP" ]; then
+            cd "$BUNDLE_DIR"
+            zip -r "$GITHUB_WORKSPACE/$ZIP_NAME" "$(basename "$APP")"
+            cd "$GITHUB_WORKSPACE"
+            shasum -a 256 "$ZIP_NAME" | awk '{print $1}' > "${ZIP_NAME}.sha256"
+          fi
+
+      - name: Create portable update zip (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          VERSION="${{ github.ref_name }}"
+          RELEASE_DIR="apps/desktop/src-tauri/target/release"
+          ZIP_NAME="nexe-update-${VERSION}-linux-x86_64.zip"
+          mkdir -p update-package
+
+          for name in nexe Nexe app; do
+            if [ -f "$RELEASE_DIR/$name" ] && file "$RELEASE_DIR/$name" | grep -q ELF; then
+              cp "$RELEASE_DIR/$name" update-package/nexe
+              break
+            fi
+          done
+
+          if [ "$(ls -A update-package)" ]; then
+            cd update-package
+            zip -r "$GITHUB_WORKSPACE/$ZIP_NAME" .
+            cd "$GITHUB_WORKSPACE"
+            sha256sum "$ZIP_NAME" | awk '{print $1}' > "${ZIP_NAME}.sha256"
+          fi
+
+      - name: Upload portable update zip + sha256
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            nexe-update-*.zip
+            nexe-update-*.zip.sha256
+          tag_name: ${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

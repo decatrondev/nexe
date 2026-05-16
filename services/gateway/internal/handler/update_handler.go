@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,13 +23,14 @@ func NewUpdateHandler(rdb *redis.Client, owner, repo string) *UpdateHandler {
 	return &UpdateHandler{rdb: rdb, githubOwner: owner, githubRepo: repo}
 }
 
-// Tauri updater expected response format
-type tauriUpdateResponse struct {
-	Version string `json:"version"`
-	Notes   string `json:"notes,omitempty"`
-	PubDate string `json:"pub_date,omitempty"`
-	URL     string `json:"url"`
-	Sig     string `json:"signature"`
+type updateCheckResponse struct {
+	UpdateAvailable bool   `json:"update_available"`
+	Version         string `json:"version"`
+	CurrentVersion  string `json:"current_version"`
+	DownloadURL     string `json:"download_url,omitempty"`
+	SHA256          string `json:"sha256,omitempty"`
+	Size            int64  `json:"size,omitempty"`
+	Notes           string `json:"notes,omitempty"`
 }
 
 type githubRelease struct {
@@ -44,117 +46,95 @@ type githubAsset struct {
 	Size               int64  `json:"size"`
 }
 
-// Check handles GET /update/{target}/{arch}/{current_version}
-// Returns 204 if no update, or 200 with Tauri's expected JSON format.
+// Check handles GET /update/check?version=0.1.5&platform=windows-x86_64
+// Returns portable zip URL + SHA256 for silent updates (no installer).
 func (h *UpdateHandler) Check(w http.ResponseWriter, r *http.Request) {
-	target := r.PathValue("target")
-	arch := r.PathValue("arch")
-	currentVersion := r.PathValue("current_version")
+	currentVersion := r.URL.Query().Get("version")
+	platform := r.URL.Query().Get("platform")
 
-	if target == "" || arch == "" || currentVersion == "" {
-		http.Error(w, "missing path params", http.StatusBadRequest)
+	if currentVersion == "" || platform == "" {
+		writeError(w, http.StatusBadRequest, "missing_params", "version and platform are required")
 		return
 	}
 
 	release, err := h.getLatestRelease(r.Context())
 	if err != nil {
-		http.Error(w, "failed to check updates", http.StatusBadGateway)
+		writeError(w, http.StatusBadGateway, "github_error", "failed to check for updates")
 		return
 	}
 
 	latestVersion := strings.TrimPrefix(release.TagName, "v")
 
 	if !isNewer(latestVersion, currentVersion) {
-		w.WriteHeader(http.StatusNoContent)
+		writeJSON(w, http.StatusOK, updateCheckResponse{
+			UpdateAvailable: false,
+			Version:         latestVersion,
+			CurrentVersion:  currentVersion,
+		})
 		return
 	}
 
-	// Find the update bundle asset for this platform
-	assetName := getUpdateAssetName(target, arch)
-	if assetName == "" {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-
-	var bundleAsset *githubAsset
-	var sigAsset *githubAsset
+	// Find the portable update zip for this platform
+	// Naming: nexe-update-vX.Y.Z-{platform}.zip
+	var asset *githubAsset
 	for i, a := range release.Assets {
-		if matchAsset(a.Name, assetName) {
-			bundleAsset = &release.Assets[i]
-		}
-		if matchAsset(a.Name, assetName) && strings.HasSuffix(a.Name, ".sig") {
-			sigAsset = &release.Assets[i]
+		if strings.HasPrefix(a.Name, "nexe-update-") && strings.Contains(a.Name, platform) && strings.HasSuffix(a.Name, ".zip") {
+			asset = &release.Assets[i]
+			break
 		}
 	}
 
-	// Also look for sig explicitly (asset.zip.sig)
-	if sigAsset == nil && bundleAsset != nil {
-		sigName := bundleAsset.Name + ".sig"
-		for i, a := range release.Assets {
-			if a.Name == sigName {
-				sigAsset = &release.Assets[i]
-				break
-			}
-		}
-	}
-
-	if bundleAsset == nil {
-		w.WriteHeader(http.StatusNoContent)
+	if asset == nil {
+		// No portable update zip available
+		writeJSON(w, http.StatusOK, updateCheckResponse{
+			UpdateAvailable: false,
+			Version:         latestVersion,
+			CurrentVersion:  currentVersion,
+		})
 		return
 	}
 
-	// Fetch signature content
-	sig := ""
-	if sigAsset != nil {
-		sig = h.fetchSignature(r.Context(), sigAsset.BrowserDownloadURL)
-	}
+	// Get SHA256 hash (from .sha256 file or cached)
+	sha := h.getAssetSHA256(r.Context(), asset.Name, release)
 
-	if sig == "" {
-		// No signature = can't verify update, skip
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
-
-	resp := tauriUpdateResponse{
-		Version: release.TagName,
-		Notes:   release.Body,
-		PubDate: release.PublishedAt,
-		URL:     bundleAsset.BrowserDownloadURL,
-		Sig:     sig,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(resp)
+	writeJSON(w, http.StatusOK, updateCheckResponse{
+		UpdateAvailable: true,
+		Version:         latestVersion,
+		CurrentVersion:  currentVersion,
+		DownloadURL:     asset.BrowserDownloadURL,
+		SHA256:          sha,
+		Size:            asset.Size,
+		Notes:           release.Body,
+	})
 }
 
-// getUpdateAssetName returns the suffix pattern to match for a given platform.
-func getUpdateAssetName(target, arch string) string {
-	switch target {
-	case "windows":
-		return "nsis.zip"
-	case "linux":
-		return "AppImage.tar.gz"
-	case "darwin":
-		return "app.tar.gz"
-	}
-	return ""
-}
+// getAssetSHA256 finds the .sha256 file for an asset and returns its content.
+func (h *UpdateHandler) getAssetSHA256(ctx context.Context, assetName string, release *githubRelease) string {
+	shaName := assetName + ".sha256"
 
-// matchAsset checks if an asset name matches the expected update bundle pattern.
-func matchAsset(name, pattern string) bool {
-	// Must end with the pattern but NOT be a .sig file
-	return strings.HasSuffix(name, pattern) && !strings.HasSuffix(name, ".sig")
-}
-
-// fetchSignature downloads the .sig file content (small text file).
-func (h *UpdateHandler) fetchSignature(ctx context.Context, url string) string {
-	// Check cache first
-	cacheKey := "nexe:update:sig:" + url
+	// Check cache
+	cacheKey := "nexe:update:sha256:" + shaName
 	if cached, err := h.rdb.Get(ctx, cacheKey).Result(); err == nil && cached != "" {
 		return cached
 	}
 
+	// Find .sha256 asset
+	for _, a := range release.Assets {
+		if a.Name == shaName {
+			sha := h.fetchSmallFile(ctx, a.BrowserDownloadURL)
+			if sha != "" {
+				// sha256 file format: "hash  filename" or just "hash"
+				sha = strings.Fields(sha)[0]
+				h.rdb.Set(ctx, cacheKey, sha, cacheTTL)
+				return sha
+			}
+		}
+	}
+
+	return ""
+}
+
+func (h *UpdateHandler) fetchSmallFile(ctx context.Context, url string) string {
 	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
@@ -170,17 +150,18 @@ func (h *UpdateHandler) fetchSignature(ctx context.Context, url string) string {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	// Limit read to 1KB (sha256 is 64 chars)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1024))
 	if err != nil {
 		return ""
 	}
+	return strings.TrimSpace(string(body))
+}
 
-	sig := strings.TrimSpace(string(body))
-
-	// Cache signature for same TTL as release
-	h.rdb.Set(ctx, cacheKey, sig, cacheTTL)
-
-	return sig
+// computeSHA256 is unused but available for future use
+func computeSHA256(data []byte) string {
+	h := sha256.Sum256(data)
+	return fmt.Sprintf("%x", h)
 }
 
 const redisCacheKey = "nexe:update:latest_release"
@@ -220,7 +201,7 @@ func (h *UpdateHandler) getLatestRelease(ctx context.Context) (*githubRelease, e
 
 	var release githubRelease
 	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return nil, fmt.Errorf("decode github release: %w", err)
+		return nil, fmt.Errorf("decode release: %w", err)
 	}
 
 	if data, err := json.Marshal(release); err == nil {
@@ -230,7 +211,6 @@ func (h *UpdateHandler) getLatestRelease(ctx context.Context) (*githubRelease, e
 	return &release, nil
 }
 
-// isNewer compares two semver-like version strings (e.g., "0.1.1" > "0.1.0").
 func isNewer(latest, current string) bool {
 	lParts := strings.Split(latest, ".")
 	cParts := strings.Split(current, ".")

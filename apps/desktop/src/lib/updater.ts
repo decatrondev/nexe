@@ -1,5 +1,22 @@
-import { check, type Update } from "@tauri-apps/plugin-updater";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { relaunch } from "@tauri-apps/plugin-process";
+
+export interface UpdateInfo {
+  update_available: boolean;
+  version: string;
+  current_version: string;
+  download_url?: string;
+  sha256?: string;
+  size?: number;
+  notes?: string;
+}
+
+export interface DownloadProgress {
+  downloaded: number;
+  total: number;
+  percent: number;
+}
 
 export type UpdateStatus =
   | { stage: "checking" }
@@ -24,39 +41,33 @@ export async function runUpdateFlow(onStatus: UpdateCallback): Promise<boolean> 
 
     onStatus({ stage: "checking" });
 
-    let update: Update | null = null;
+    let info: UpdateInfo;
     try {
-      update = await check();
+      info = await invoke<UpdateInfo>("check_for_update");
     } catch {
       onStatus({ stage: "no-update" });
       return false;
     }
 
-    if (!update) {
+    if (!info.update_available || !info.download_url) {
       onStatus({ stage: "no-update" });
       return false;
     }
 
-    let totalBytes = 0;
-    let downloadedBytes = 0;
-
     onStatus({ stage: "downloading", progress: 0 });
 
-    await update.downloadAndInstall((event) => {
-      switch (event.event) {
-        case "Started":
-          totalBytes = event.data.contentLength ?? 0;
-          break;
-        case "Progress":
-          downloadedBytes += event.data.chunkLength;
-          const percent = totalBytes > 0 ? (downloadedBytes / totalBytes) * 100 : 0;
-          onStatus({ stage: "downloading", progress: percent });
-          break;
-        case "Finished":
-          onStatus({ stage: "installing" });
-          break;
-      }
+    const unlisten = await listen<DownloadProgress>("update-progress", (event) => {
+      onStatus({ stage: "downloading", progress: event.payload.percent });
     });
+
+    try {
+      await invoke("download_update", {
+        downloadUrl: info.download_url,
+        expectedSha256: info.sha256 || "",
+      });
+    } finally {
+      unlisten();
+    }
 
     onStatus({ stage: "restarting" });
     await new Promise((r) => setTimeout(r, 500));
