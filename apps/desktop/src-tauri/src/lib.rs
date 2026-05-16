@@ -1,8 +1,18 @@
+use tauri::Manager;
+
 mod updater;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // Focus main window when a second instance is attempted
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.unminimize();
+                let _ = w.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             updater::check_for_update,

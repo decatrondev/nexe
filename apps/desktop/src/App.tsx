@@ -8,8 +8,7 @@ import HomePage from "./pages/HomePage";
 import { useAuthStore } from "./stores/auth";
 import { runUpdateFlow, type UpdateStatus } from "./lib/updater";
 import { ToastContainer } from "@nexe/ui";
-
-const APP_VERSION = "0.1.0";
+import { getVersion } from "@tauri-apps/api/app";
 const API_URL =
   typeof window !== "undefined" &&
   (window.location.protocol === "https:" || "__TAURI__" in window || "__TAURI_INTERNALS__" in window || window.location.hostname === "tauri.localhost")
@@ -32,6 +31,7 @@ function getWindowLabel(): string {
 function SplashWindow() {
   const [statusText, setStatusText] = useState("Starting...");
   const [progress, setProgress] = useState(15);
+  const [appVersion, setAppVersion] = useState("");
 
   const handleUpdateStatus = useCallback((status: UpdateStatus) => {
     switch (status.stage) {
@@ -56,6 +56,10 @@ function SplashWindow() {
         setProgress(90);
         break;
     }
+  }, []);
+
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => setAppVersion("dev"));
   }, []);
 
   useEffect(() => {
@@ -113,7 +117,7 @@ function SplashWindow() {
       </div>
 
       <p className="mt-4 text-[10px] text-slate-700">
-        Nexe v{APP_VERSION}
+        {appVersion && `Nexe v${appVersion}`}
       </p>
     </div>
   );
