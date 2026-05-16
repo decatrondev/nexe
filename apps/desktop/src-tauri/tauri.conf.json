@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Nexe",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "identifier": "net.decatron.nexe",
   "build": {
     "frontendDist": "../dist",
@@ -38,6 +38,14 @@
     ],
     "security": {
       "csp": "default-src 'self' http://ipc.localhost; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://ipc.localhost https://nexeapi.decatron.net http://161.132.53.175:8090 wss://nexews.decatron.net ws://161.132.53.175:8090 wss://nexelk.decatron.net https://nexelk.decatron.net https://github.com https://objects.githubusercontent.com; media-src 'self' https: wss: ws: mediastream:; img-src 'self' https: data: blob:; frame-src https: http:"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEEzOENCQjgwRjM2MzAwRDMKUldUVEFHUHpnTHVNbzVRVXd3VlJraktPQ0JvNEtjZGxXc2Qrc0Y4VDZPcW1DMVdHS1FJc1FCM0wK",
+      "endpoints": [
+        "https://nexeapi.decatron.net/update/{{target}}/{{arch}}/{{current_version}}"
+      ]
     }
   },
   "bundle": {

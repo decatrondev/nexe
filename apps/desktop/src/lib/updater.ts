@@ -1,20 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
-
-export interface UpdateInfo {
-  update_available: boolean;
-  version: string;
-  current_version: string;
-  download_url?: string;
-  size?: number;
-  notes?: string;
-}
-
-export interface DownloadProgress {
-  downloaded: number;
-  total: number;
-  percent: number;
-}
+import { check, type Update } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 
 export type UpdateStatus =
   | { stage: "checking" }
@@ -26,33 +11,9 @@ export type UpdateStatus =
 
 export type UpdateCallback = (status: UpdateStatus) => void;
 
-export async function checkForUpdate(): Promise<UpdateInfo> {
-  return invoke<UpdateInfo>("check_for_update");
-}
-
-export async function downloadUpdate(
-  downloadUrl: string,
-  onProgress: (progress: DownloadProgress) => void
-): Promise<void> {
-  const unlisten = await listen<DownloadProgress>("update-progress", (event) => {
-    onProgress(event.payload);
-  });
-
-  try {
-    await invoke("download_update", { downloadUrl });
-  } finally {
-    unlisten();
-  }
-}
-
-export async function relaunchApp(): Promise<void> {
-  const { relaunch } = await import("@tauri-apps/plugin-process");
-  await relaunch();
-}
-
 /**
  * Full update flow for the splash window.
- * Returns true if an update was downloaded and the app needs to relaunch.
+ * Returns true if an update was downloaded and the app will relaunch.
  */
 export async function runUpdateFlow(onStatus: UpdateCallback): Promise<boolean> {
   try {
@@ -63,25 +24,43 @@ export async function runUpdateFlow(onStatus: UpdateCallback): Promise<boolean> 
 
     onStatus({ stage: "checking" });
 
-    const info = await checkForUpdate();
-
-    if (!info.update_available || !info.download_url) {
+    let update: Update | null = null;
+    try {
+      update = await check();
+    } catch {
       onStatus({ stage: "no-update" });
       return false;
     }
 
+    if (!update) {
+      onStatus({ stage: "no-update" });
+      return false;
+    }
+
+    let totalBytes = 0;
+    let downloadedBytes = 0;
+
     onStatus({ stage: "downloading", progress: 0 });
 
-    await downloadUpdate(info.download_url, (progress) => {
-      onStatus({ stage: "downloading", progress: progress.percent });
+    await update.downloadAndInstall((event) => {
+      switch (event.event) {
+        case "Started":
+          totalBytes = event.data.contentLength ?? 0;
+          break;
+        case "Progress":
+          downloadedBytes += event.data.chunkLength;
+          const percent = totalBytes > 0 ? (downloadedBytes / totalBytes) * 100 : 0;
+          onStatus({ stage: "downloading", progress: percent });
+          break;
+        case "Finished":
+          onStatus({ stage: "installing" });
+          break;
+      }
     });
-
-    onStatus({ stage: "installing" });
-    await new Promise((r) => setTimeout(r, 300));
 
     onStatus({ stage: "restarting" });
     await new Promise((r) => setTimeout(r, 500));
-    await relaunchApp();
+    await relaunch();
 
     return true;
   } catch (error) {
