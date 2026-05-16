@@ -290,10 +290,31 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
     if (!room) return;
     const newEnabled = !screenShareEnabled;
     try {
-      await room.localParticipant.setScreenShareEnabled(newEnabled, { audio: true });
+      await room.localParticipant.setScreenShareEnabled(newEnabled, {
+        audio: true,
+        video: {
+          displaySurface: "monitor",
+        },
+        contentHint: "detail",
+        resolution: { width: 1920, height: 1080, frameRate: 60 },
+      });
       set({ screenShareEnabled: newEnabled });
       // Notify backend so others see LIVE badge
       api.updateStreaming(newEnabled, "screen").catch(() => {});
+
+      // Handle track ended (user stops share via browser, or OS interrupts)
+      if (newEnabled) {
+        const screenPub = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
+        if (screenPub?.track) {
+          const mediaTrack = screenPub.track.mediaStreamTrack;
+          if (mediaTrack) {
+            mediaTrack.onended = () => {
+              set({ screenShareEnabled: false });
+              api.updateStreaming(false, "screen").catch(() => {});
+            };
+          }
+        }
+      }
     } catch {
       // User cancelled screen share picker
       set({ screenShareEnabled: false });

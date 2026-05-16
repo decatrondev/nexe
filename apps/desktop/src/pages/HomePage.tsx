@@ -6,6 +6,7 @@ import VoiceView from "../components/VideoGrid";
 import MemberList from "../components/MemberList";
 import CreateGuildModal from "../components/CreateGuildModal";
 import JoinServerModal from "../components/JoinServerModal";
+import FloatingVoice from "../components/FloatingVoice";
 import { useGuildStore } from "../stores/guild";
 import { useAuthStore } from "../stores/auth";
 import { useVoiceStore } from "../stores/voice";
@@ -90,25 +91,12 @@ function VoiceViewOrChat({ showMembers, onToggleMembers }: { showMembers: boolea
   const channels = useGuildStore((s) => s.channels);
   const voiceConnected = useVoiceStore((s) => s.connected);
   const voiceChannelId = useVoiceStore((s) => s.channelId);
-  const wasInVoiceView = useRef(false);
 
   const guildChannels = activeGuildId ? channels[activeGuildId] : undefined;
   const activeChannel = guildChannels?.find((c) => c.id === activeChannelId);
   const isVoiceChannel = activeChannel?.type === "voice";
   const isConnectedToThis = voiceConnected && voiceChannelId === activeChannelId;
   const showVoiceView = !!(isVoiceChannel && isConnectedToThis);
-
-  // Auto-PiP when navigating away from voice view
-  useEffect(() => {
-    if (wasInVoiceView.current && !showVoiceView && voiceConnected) {
-      // Was watching, navigated away — try PiP
-      const videoEl = document.querySelector<HTMLVideoElement>(".voice-view-container video");
-      if (videoEl && document.pictureInPictureEnabled && !document.pictureInPictureElement) {
-        videoEl.requestPictureInPicture().catch(() => {});
-      }
-    }
-    wasInVoiceView.current = showVoiceView;
-  }, [showVoiceView, voiceConnected]);
 
   if (showVoiceView) {
     return <VoiceView />;
@@ -658,6 +646,9 @@ export default function HomePage() {
           onClose={() => setInviteCode(null)}
         />
       )}
+
+      {/* Floating voice mini-player — persists when navigating away from voice channel */}
+      <FloatingVoice />
     </div>
   );
 }
