@@ -236,6 +236,11 @@ pub fn apply_staged_update(app: &AppHandle) {
     // Success — clean up
     let _ = fs::remove_dir_all(&staged_dir);
     let _ = fs::remove_file(&attempts_file);
+
+    // Force Windows to refresh icon cache so new icons show immediately
+    #[cfg(target_os = "windows")]
+    refresh_icon_cache();
+
     log::info!("Staged update applied successfully");
 }
 
@@ -310,6 +315,22 @@ fn extract_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// Tell Windows to refresh icon cache after update (taskbar, desktop shortcuts).
+#[cfg(target_os = "windows")]
+fn refresh_icon_cache() {
+    // SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL)
+    // This is the correct Windows API call to force icon cache refresh.
+    #[link(name = "shell32")]
+    extern "system" {
+        fn SHChangeNotify(wEventId: i32, uFlags: u32, dwItem1: *const u8, dwItem2: *const u8);
+    }
+    const SHCNE_ASSOCCHANGED: i32 = 0x08000000;
+    const SHCNF_IDLIST: u32 = 0x0000;
+    unsafe {
+        SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, std::ptr::null(), std::ptr::null());
+    }
 }
 
 fn copy_dir_recursive(src: &Path, dst: &Path) -> io::Result<()> {
