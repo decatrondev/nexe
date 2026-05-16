@@ -77,13 +77,33 @@ jobs:
             ## Nexe ${{ github.ref_name }}
 
             Download for your platform:
-            - **Windows:** `.exe` installer
+            - **Windows:** `Nexe.exe` (run to install)
             - **macOS:** `.dmg` (Universal)
             - **Linux:** `.AppImage` or `.deb`
           releaseDraft: false
           prerelease: false
 
-      # ── Portable update zips (for silent auto-updater, no installer) ──
+      # ── Upload standalone exe for Windows (self-installer, no NSIS) ──
+
+      - name: Upload Nexe.exe (Windows self-installer)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          $releaseDir = "apps/desktop/src-tauri/target/release"
+          $exe = Get-ChildItem "$releaseDir/Nexe.exe" -ErrorAction SilentlyContinue
+          if (!$exe) { $exe = Get-ChildItem "$releaseDir/*.exe" | Where-Object { $_.Name -notmatch 'setup|build|uninstall' } | Select-Object -First 1 }
+          if ($exe) { Copy-Item $exe.FullName "Nexe.exe" }
+
+      - name: Upload Nexe.exe to release
+        if: matrix.platform == 'windows'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Nexe.exe
+          tag_name: ${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Portable update zips (for silent auto-updater) ──
 
       - name: Create portable update zip (Windows)
         if: matrix.platform == 'windows'

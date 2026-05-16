@@ -1,9 +1,20 @@
 use tauri::Manager;
 
+mod installer;
 mod updater;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Handle --uninstall flag (called from Add/Remove Programs)
+    #[cfg(target_os = "windows")]
+    {
+        let args: Vec<String> = std::env::args().collect();
+        if args.iter().any(|a| a == "--uninstall") {
+            installer::run_uninstall();
+            return;
+        }
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(w) = app.get_webview_window("main") {
@@ -16,6 +27,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             updater::check_for_update,
             updater::download_update,
+            installer::check_install_status,
+            installer::self_install,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -27,8 +40,7 @@ pub fn run() {
             }
 
             // Apply staged update before any window shows.
-            // If applied, restart immediately so the NEW binary runs
-            // (prevents version mismatch → re-download loop).
+            // If applied, restart so the NEW binary runs.
             if updater::apply_staged_update(app.handle()) {
                 updater::cleanup_old_files();
                 let exe = std::env::current_exe().expect("get exe path");

@@ -20,6 +20,7 @@ export interface DownloadProgress {
 
 export type UpdateStatus =
   | { stage: "checking" }
+  | { stage: "installing-app" }
   | { stage: "downloading"; progress: number }
   | { stage: "installing" }
   | { stage: "restarting" }
@@ -29,8 +30,10 @@ export type UpdateStatus =
 export type UpdateCallback = (status: UpdateStatus) => void;
 
 /**
- * Full update flow for the splash window.
- * Returns true if an update was downloaded and the app will relaunch.
+ * Full startup flow for the splash window:
+ * 1. Self-install if needed (first time on Windows)
+ * 2. Check for updates
+ * 3. Download + stage if available
  */
 export async function runUpdateFlow(onStatus: UpdateCallback): Promise<boolean> {
   try {
@@ -39,6 +42,20 @@ export async function runUpdateFlow(onStatus: UpdateCallback): Promise<boolean> 
       return false;
     }
 
+    // Step 1: Check if app needs to install itself
+    try {
+      const status = await invoke<string>("check_install_status");
+      if (status === "needs_install") {
+        onStatus({ stage: "installing-app" });
+        await invoke("self_install");
+        // self_install exits the process — this line won't execute
+        return true;
+      }
+    } catch {
+      // Not on Windows or install check failed, continue normally
+    }
+
+    // Step 2: Check for updates
     onStatus({ stage: "checking" });
 
     let info: UpdateInfo;
@@ -54,6 +71,7 @@ export async function runUpdateFlow(onStatus: UpdateCallback): Promise<boolean> 
       return false;
     }
 
+    // Step 3: Download update
     onStatus({ stage: "downloading", progress: 0 });
 
     const unlisten = await listen<DownloadProgress>("update-progress", (event) => {

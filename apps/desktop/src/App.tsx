@@ -35,6 +35,10 @@ function SplashWindow() {
 
   const handleUpdateStatus = useCallback((status: UpdateStatus) => {
     switch (status.stage) {
+      case "installing-app":
+        setStatusText("Installing Nexe...");
+        setProgress(50);
+        break;
       case "checking":
         setStatusText("Checking for updates...");
         setProgress(30);
