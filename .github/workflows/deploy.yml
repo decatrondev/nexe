@@ -22,32 +22,13 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script_stop: true
+          command_timeout: 10m
           script: |
             set -e
             export CI=true
 
             cd /var/www/html/nexe
-            git pull origin main
-
-            # Build Go services
-            for svc in gateway guilds messaging presence voice notifications; do
-              echo "Building $svc..."
-              cd /var/www/html/nexe/services/$svc
-              set -a && source .env 2>/dev/null; set +a
-              go build -o bin/$svc ./cmd/main.go
-            done
-
-            # Build frontend
-            cd /var/www/html/nexe/apps/desktop
             pnpm install --no-frozen-lockfile
-            pnpm build
 
-            # Build web
-            cd /var/www/html/nexe/apps/web
-            pnpm install --no-frozen-lockfile
-            npx next build
-
-            # Restart services
-            systemctl restart nexe-gateway nexe-guilds nexe-messaging nexe-presence nexe-voice nexe-notifications nexe-web
-
-            echo "Deploy complete!"
+            # Zero-downtime deploy with health checks and auto-rollback
+            bash infra/scripts/deploy.sh

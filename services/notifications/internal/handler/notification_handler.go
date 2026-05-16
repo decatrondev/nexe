@@ -19,8 +19,9 @@ func NewNotificationHandler(svc *service.NotificationService) *NotificationHandl
 func (h *NotificationHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /notifications", h.List)
 	mux.HandleFunc("GET /notifications/unread-count", h.UnreadCount)
-	mux.HandleFunc("POST /notifications/{id}/read", h.MarkRead)
+	mux.HandleFunc("POST /notifications/digest/send", h.SendDigest)
 	mux.HandleFunc("POST /notifications/read-all", h.MarkAllRead)
+	mux.HandleFunc("POST /notifications/{id}/read", h.MarkRead)
 	mux.HandleFunc("DELETE /notifications/{id}", h.Delete)
 	mux.HandleFunc("GET /notifications/preferences/{guildId}", h.GetPreference)
 	mux.HandleFunc("PUT /notifications/preferences/{guildId}", h.SetPreference)
@@ -156,6 +157,16 @@ func (h *NotificationHandler) SetPreference(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, http.StatusOK, pref)
+}
+
+// SendDigest triggers email digest for users with unread notifications (internal/cron endpoint).
+func (h *NotificationHandler) SendDigest(w http.ResponseWriter, r *http.Request) {
+	sent, err := h.svc.SendDigest(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "digest_failed", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"status": "ok", "sent": sent})
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

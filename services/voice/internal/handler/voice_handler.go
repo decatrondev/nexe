@@ -24,6 +24,9 @@ func (h *VoiceHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /voice/state/@me", h.GetMyState)
 	mux.HandleFunc("GET /voice/channel/{channelId}/participants", h.GetParticipants)
 	mux.HandleFunc("GET /voice/guild/{guildId}/states", h.GetGuildStates)
+	mux.HandleFunc("POST /voice/server-mute/{userId}", h.ServerMute)
+	mux.HandleFunc("POST /voice/move/{userId}", h.MoveUser)
+	mux.HandleFunc("PATCH /voice/streaming", h.UpdateStreaming)
 }
 
 // Join handles joining a voice channel.
@@ -147,6 +150,82 @@ func (h *VoiceHandler) GetGuildStates(w http.ResponseWriter, r *http.Request) {
 		states = []model.VoiceState{}
 	}
 	writeJSON(w, http.StatusOK, states)
+}
+
+// ServerMute handles server-side mute/deafen by a moderator.
+func (h *VoiceHandler) ServerMute(w http.ResponseWriter, r *http.Request) {
+	targetUserID := r.PathValue("userId")
+	if targetUserID == "" {
+		writeError(w, http.StatusBadRequest, "missing_user", "userId is required")
+		return
+	}
+
+	var body struct {
+		Muted    *bool `json:"muted"`
+		Deafened *bool `json:"deafened"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "invalid request body")
+		return
+	}
+
+	state, err := h.svc.ServerMuteUser(r.Context(), targetUserID, body.Muted, body.Deafened)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "server_mute_failed", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, state)
+}
+
+// MoveUser moves a user to a different voice channel.
+func (h *VoiceHandler) MoveUser(w http.ResponseWriter, r *http.Request) {
+	targetUserID := r.PathValue("userId")
+	if targetUserID == "" {
+		writeError(w, http.StatusBadRequest, "missing_user", "userId is required")
+		return
+	}
+
+	var body struct {
+		ChannelID string `json:"channelId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ChannelID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_body", "channelId is required")
+		return
+	}
+
+	if err := h.svc.MoveUser(r.Context(), targetUserID, body.ChannelID); err != nil {
+		writeError(w, http.StatusBadRequest, "move_failed", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// UpdateStreaming updates streaming state (camera/screen on/off).
+func (h *VoiceHandler) UpdateStreaming(w http.ResponseWriter, r *http.Request) {
+	userID := r.Header.Get("X-User-ID")
+	if userID == "" {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "missing user ID")
+		return
+	}
+
+	var body struct {
+		Streaming  bool   `json:"streaming"`
+		StreamType string `json:"streamType"` // "camera" or "screen"
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "invalid request body")
+		return
+	}
+
+	state, err := h.svc.UpdateStreaming(r.Context(), userID, body.Streaming, body.StreamType)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "update_failed", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, state)
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

@@ -26,6 +26,10 @@ export default function NotificationBell() {
 
   // Listen for real-time notifications via custom event
   useEffect(() => {
+    // Preload notification sound
+    const notificationSound = new Audio("/notification.wav");
+    notificationSound.volume = 0.5;
+
     const handler = (e: CustomEvent) => {
       const notif = e.detail as AppNotification;
       setUnreadCount((c) => c + 1);
@@ -42,8 +46,14 @@ export default function NotificationBell() {
         }).catch(() => {});
       }
 
-      // Desktop notification
-      if (Notification.permission === "granted") {
+      // Play notification sound (if enabled — off by default)
+      if (localStorage.getItem("nexe:notif:sound") === "true") {
+        notificationSound.currentTime = 0;
+        notificationSound.play().catch(() => {});
+      }
+
+      // Desktop notification (if enabled — off by default)
+      if (Notification.permission === "granted" && localStorage.getItem("nexe:notif:desktop") === "true") {
         const authorName = usernames[notif.authorId || ""] || "Someone";
         const guildName = guilds.find((g) => g.id === notif.guildId)?.name || "Server";
         new Notification(`${authorName} in ${guildName}`, {

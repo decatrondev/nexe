@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ServerSidebar from "../components/ServerSidebar";
 import ChannelList from "../components/ChannelList";
 import ChatArea from "../components/ChatArea";
+import VoiceView from "../components/VideoGrid";
 import MemberList from "../components/MemberList";
 import CreateGuildModal from "../components/CreateGuildModal";
 import JoinServerModal from "../components/JoinServerModal";
@@ -82,6 +83,40 @@ function WelcomeScreen({ onCreateServer }: { onCreateServer: () => void }) {
   );
 }
 
+/** Shows VoiceView when active channel is voice & connected, otherwise ChatArea */
+function VoiceViewOrChat({ showMembers, onToggleMembers }: { showMembers: boolean; onToggleMembers: () => void }) {
+  const activeChannelId = useGuildStore((s) => s.activeChannelId);
+  const activeGuildId = useGuildStore((s) => s.activeGuildId);
+  const channels = useGuildStore((s) => s.channels);
+  const voiceConnected = useVoiceStore((s) => s.connected);
+  const voiceChannelId = useVoiceStore((s) => s.channelId);
+  const wasInVoiceView = useRef(false);
+
+  const guildChannels = activeGuildId ? channels[activeGuildId] : undefined;
+  const activeChannel = guildChannels?.find((c) => c.id === activeChannelId);
+  const isVoiceChannel = activeChannel?.type === "voice";
+  const isConnectedToThis = voiceConnected && voiceChannelId === activeChannelId;
+  const showVoiceView = !!(isVoiceChannel && isConnectedToThis);
+
+  // Auto-PiP when navigating away from voice view
+  useEffect(() => {
+    if (wasInVoiceView.current && !showVoiceView && voiceConnected) {
+      // Was watching, navigated away — try PiP
+      const videoEl = document.querySelector<HTMLVideoElement>(".voice-view-container video");
+      if (videoEl && document.pictureInPictureEnabled && !document.pictureInPictureElement) {
+        videoEl.requestPictureInPicture().catch(() => {});
+      }
+    }
+    wasInVoiceView.current = showVoiceView;
+  }, [showVoiceView, voiceConnected]);
+
+  if (showVoiceView) {
+    return <VoiceView />;
+  }
+
+  return <ChatArea showMembers={showMembers} onToggleMembers={onToggleMembers} />;
+}
+
 export default function HomePage() {
   const loadGuilds = useGuildStore((s) => s.loadGuilds);
   const guilds = useGuildStore((s) => s.guilds);
@@ -89,6 +124,13 @@ export default function HomePage() {
   const loading = useGuildStore((s) => s.loading);
   const user = useAuthStore((s) => s.user);
   const token = useAuthStore((s) => s.token);
+  const activeChannelId = useGuildStore((s) => s.activeChannelId);
+  const allChannels = useGuildStore((s) => s.channels);
+  const voiceConnected = useVoiceStore((s) => s.connected);
+  const voiceChannelId = useVoiceStore((s) => s.channelId);
+  const activeChannelObj = activeGuildId ? allChannels[activeGuildId]?.find((c) => c.id === activeChannelId) : undefined;
+  const isInVoiceView = activeChannelObj?.type === "voice" && voiceConnected && voiceChannelId === activeChannelId;
+
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
   const [showMembers, setShowMembers] = useState(() => {
@@ -431,6 +473,16 @@ export default function HomePage() {
           if (d.live) {
             newMap[d.userId] = { live: true, title: d.title, game: d.game, viewers: d.viewers, startedAt: d.startedAt, thumbnail: d.thumbnail };
             if (d.guildId) newLiveGuilds.add(d.guildId);
+
+            // Desktop notification for stream going live
+            if (Notification.permission === "granted" && localStorage.getItem("nexe:notif:streamLive") === "true") {
+              const streamerName = s.usernames[d.userId] || "Someone";
+              const guildName = s.guilds.find((g) => g.id === d.guildId)?.name || "";
+              new Notification(`${streamerName} is now live!`, {
+                body: d.title ? `${d.title}${d.game ? ` — ${d.game}` : ""}` : `Streaming${guildName ? ` in ${guildName}` : ""}`,
+                tag: `stream-live-${d.userId}`,
+              });
+            }
           } else {
             delete newMap[d.userId];
             // Check if any other user in this guild is still live
@@ -586,8 +638,8 @@ export default function HomePage() {
             <ChannelList />
             <ResizeHandle side="left" onResize={handleChannelResize} />
           </div>
-          <ChatArea showMembers={showMembers} onToggleMembers={toggleMembers} />
-          {showMembers && (
+          <VoiceViewOrChat showMembers={showMembers} onToggleMembers={toggleMembers} />
+          {showMembers && !isInVoiceView && (
             <div className="flex h-full shrink-0" style={{ width: memberWidth }}>
               <ResizeHandle side="right" onResize={handleMemberResize} />
               <MemberList />

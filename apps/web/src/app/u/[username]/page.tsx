@@ -45,9 +45,29 @@ export async function generateMetadata({
   }
 
   const name = profile.display_name || profile.username;
+  const description = profile.bio || `${name}'s profile on Nexe`;
+  const profileUrl = `https://nexe.decatron.net/u/${profile.username}`;
+  const avatarImage = profile.avatar_url || undefined;
+
   return {
     title: `${name} (@${profile.username}) — Nexe`,
-    description: profile.bio || `${name}'s profile on Nexe`,
+    description,
+    openGraph: {
+      title: `${name} (@${profile.username})`,
+      description,
+      url: profileUrl,
+      siteName: "Nexe",
+      type: "profile",
+      ...(avatarImage && {
+        images: [{ url: avatarImage, width: 256, height: 256, alt: `${name}'s avatar` }],
+      }),
+    },
+    twitter: {
+      card: avatarImage ? "summary" : "summary",
+      title: `${name} (@${profile.username}) — Nexe`,
+      description,
+      ...(avatarImage && { images: [avatarImage] }),
+    },
   };
 }
 

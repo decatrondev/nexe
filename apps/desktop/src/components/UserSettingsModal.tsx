@@ -10,6 +10,8 @@ const settingsTabs: TabItem[] = [
   { id: "account", label: "My Account" },
   { id: "profile", label: "Profiles" },
   { id: "security", label: "Security" },
+  { id: "notifications", label: "Notifications" },
+  { id: "voice", label: "Voice & Video" },
   { id: "appearance", label: "Appearance" },
 ];
 
@@ -59,6 +61,8 @@ export default function UserSettingsModal({ onClose }: Props) {
               <TabPanel id="account"><AccountTab /></TabPanel>
               <TabPanel id="profile"><ProfileTab /></TabPanel>
               <TabPanel id="security"><SecurityTab /></TabPanel>
+              <TabPanel id="notifications"><NotificationsTab /></TabPanel>
+              <TabPanel id="voice"><VoiceVideoTab /></TabPanel>
               <TabPanel id="appearance"><AppearanceTab /></TabPanel>
             </div>
           </div>
@@ -915,6 +919,204 @@ function AppearanceTab() {
             updateSetting("showLinkPreviews", String(v));
           }}
         />
+      </div>
+    </div>
+  );
+}
+
+/* ─── Notifications Tab ─── */
+function NotificationsTab() {
+  const [mentions, setMentions] = useState(() => localStorage.getItem("nexe:notif:mentions") === "true");
+  const [replies, setReplies] = useState(() => localStorage.getItem("nexe:notif:replies") === "true");
+  const [streamLive, setStreamLive] = useState(() => localStorage.getItem("nexe:notif:streamLive") === "true");
+  const [sound, setSound] = useState(() => localStorage.getItem("nexe:notif:sound") === "true");
+  const [desktop, setDesktop] = useState(() => localStorage.getItem("nexe:notif:desktop") === "true");
+
+  function toggle(key: string, value: boolean, setter: (v: boolean) => void) {
+    setter(value);
+    localStorage.setItem(`nexe:notif:${key}`, String(value));
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="mb-1 text-xl font-semibold text-white">Notifications</h2>
+        <p className="text-sm text-slate-500">Choose what notifications you want to receive.</p>
+      </div>
+
+      <div className="space-y-3">
+        <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Categories</p>
+
+        <div className="flex items-center justify-between rounded-lg border border-dark-700 bg-dark-800 p-4">
+          <div>
+            <p className="text-sm font-medium text-slate-200">Mentions</p>
+            <p className="text-xs text-slate-500">When someone @mentions you or @everyone.</p>
+          </div>
+          <Toggle checked={mentions} onChange={(v) => toggle("mentions", v, setMentions)} />
+        </div>
+
+        <div className="flex items-center justify-between rounded-lg border border-dark-700 bg-dark-800 p-4">
+          <div>
+            <p className="text-sm font-medium text-slate-200">Replies</p>
+            <p className="text-xs text-slate-500">When someone replies to your message.</p>
+          </div>
+          <Toggle checked={replies} onChange={(v) => toggle("replies", v, setReplies)} />
+        </div>
+
+        <div className="flex items-center justify-between rounded-lg border border-dark-700 bg-dark-800 p-4">
+          <div>
+            <p className="text-sm font-medium text-slate-200">Stream Live</p>
+            <p className="text-xs text-slate-500">When a streamer in your servers goes live.</p>
+          </div>
+          <Toggle checked={streamLive} onChange={(v) => toggle("streamLive", v, setStreamLive)} />
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Delivery</p>
+
+        <div className="flex items-center justify-between rounded-lg border border-dark-700 bg-dark-800 p-4">
+          <div>
+            <p className="text-sm font-medium text-slate-200">Notification Sound</p>
+            <p className="text-xs text-slate-500">Play a sound when you receive a notification.</p>
+          </div>
+          <Toggle checked={sound} onChange={(v) => toggle("sound", v, setSound)} />
+        </div>
+
+        <div className="flex items-center justify-between rounded-lg border border-dark-700 bg-dark-800 p-4">
+          <div>
+            <p className="text-sm font-medium text-slate-200">Desktop Notifications</p>
+            <p className="text-xs text-slate-500">Show system notifications for new messages.</p>
+          </div>
+          <Toggle checked={desktop} onChange={(v) => toggle("desktop", v, setDesktop)} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Voice & Video Tab ─── */
+function VoiceVideoTab() {
+  const [inputDevice, setInputDevice] = useState("");
+  const [outputDevice, setOutputDevice] = useState("");
+  const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
+  const [outputDevices, setOutputDevices] = useState<MediaDeviceInfo[]>([]);
+  const [noiseSupp, setNoiseSupp] = useState(() => localStorage.getItem("nexe:voice:noiseSuppression") !== "false");
+  const [echoCancellation, setEchoCancellation] = useState(() => localStorage.getItem("nexe:voice:echoCancellation") !== "false");
+  const [autoGain, setAutoGain] = useState(() => localStorage.getItem("nexe:voice:autoGain") !== "false");
+  const [streamQuality, setStreamQuality] = useState(() => localStorage.getItem("nexe:voice:streamQuality") || "720");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((t) => t.stop());
+      } catch { /* ignore */ }
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      setAudioDevices(devices.filter((d) => d.kind === "audioinput"));
+      setOutputDevices(devices.filter((d) => d.kind === "audiooutput"));
+    })();
+  }, []);
+
+  function saveVoiceSetting(key: string, value: string) {
+    localStorage.setItem(`nexe:voice:${key}`, value);
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="mb-1 text-xl font-semibold text-white">Voice & Video</h2>
+        <p className="text-sm text-slate-500">Configure your audio and video settings.</p>
+      </div>
+
+      <div className="space-y-4">
+        <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Audio Devices</p>
+        <div className="rounded-lg border border-dark-700 bg-dark-800 p-4">
+          <label className="mb-2 block text-sm font-medium text-slate-200">Input Device</label>
+          <select
+            value={inputDevice}
+            onChange={(e) => { setInputDevice(e.target.value); saveVoiceSetting("inputDevice", e.target.value); }}
+            className="w-full rounded-lg border border-dark-600 bg-dark-900 px-3 py-2 text-sm text-white outline-none focus:border-nexe-500"
+          >
+            <option value="">Default</option>
+            {audioDevices.map((d) => (
+              <option key={d.deviceId} value={d.deviceId}>{d.label || `Microphone ${d.deviceId.slice(0, 8)}`}</option>
+            ))}
+          </select>
+        </div>
+        <div className="rounded-lg border border-dark-700 bg-dark-800 p-4">
+          <label className="mb-2 block text-sm font-medium text-slate-200">Output Device</label>
+          <select
+            value={outputDevice}
+            onChange={(e) => { setOutputDevice(e.target.value); saveVoiceSetting("outputDevice", e.target.value); }}
+            className="w-full rounded-lg border border-dark-600 bg-dark-900 px-3 py-2 text-sm text-white outline-none focus:border-nexe-500"
+          >
+            <option value="">Default</option>
+            {outputDevices.map((d) => (
+              <option key={d.deviceId} value={d.deviceId}>{d.label || `Speaker ${d.deviceId.slice(0, 8)}`}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Audio Processing</p>
+        <div className="flex items-center justify-between rounded-lg border border-dark-700 bg-dark-800 p-4">
+          <div>
+            <p className="text-sm font-medium text-slate-200">Noise Suppression</p>
+            <p className="text-xs text-slate-500">Reduce background noise from your microphone.</p>
+          </div>
+          <Toggle checked={noiseSupp} onChange={(v) => { setNoiseSupp(v); saveVoiceSetting("noiseSuppression", String(v)); }} />
+        </div>
+        <div className="flex items-center justify-between rounded-lg border border-dark-700 bg-dark-800 p-4">
+          <div>
+            <p className="text-sm font-medium text-slate-200">Echo Cancellation</p>
+            <p className="text-xs text-slate-500">Prevent echo from your speakers being captured.</p>
+          </div>
+          <Toggle checked={echoCancellation} onChange={(v) => { setEchoCancellation(v); saveVoiceSetting("echoCancellation", String(v)); }} />
+        </div>
+        <div className="flex items-center justify-between rounded-lg border border-dark-700 bg-dark-800 p-4">
+          <div>
+            <p className="text-sm font-medium text-slate-200">Auto Gain Control</p>
+            <p className="text-xs text-slate-500">Automatically adjust microphone volume.</p>
+          </div>
+          <Toggle checked={autoGain} onChange={(v) => { setAutoGain(v); saveVoiceSetting("autoGain", String(v)); }} />
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Stream Quality</p>
+        <div className="rounded-lg border border-dark-700 bg-dark-800 p-4">
+          <label className="mb-2 block text-sm font-medium text-slate-200">Screen Share Quality</label>
+          <p className="mb-3 text-xs text-slate-500">Higher quality requires a better tier.</p>
+          <div className="space-y-2">
+            {[
+              { value: "720", label: "720p (HD)", tier: "Free" },
+              { value: "1080", label: "1080p (Full HD)", tier: "Plus ($5/mo)" },
+              { value: "source", label: "Source Quality", tier: "Pro ($10/mo)" },
+            ].map((opt) => (
+              <label
+                key={opt.value}
+                className={`flex cursor-pointer items-center justify-between rounded-lg border px-3 py-2.5 transition-colors ${
+                  streamQuality === opt.value ? "border-nexe-500 bg-nexe-500/5" : "border-dark-600 hover:border-dark-500"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <input
+                    type="radio"
+                    name="streamQuality"
+                    value={opt.value}
+                    checked={streamQuality === opt.value}
+                    onChange={(e) => { setStreamQuality(e.target.value); saveVoiceSetting("streamQuality", e.target.value); }}
+                    className="accent-nexe-500"
+                  />
+                  <span className="text-sm text-white">{opt.label}</span>
+                </div>
+                <span className="text-[10px] text-slate-500">{opt.tier}</span>
+              </label>
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

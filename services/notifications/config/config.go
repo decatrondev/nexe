@@ -12,16 +12,20 @@ type Config struct {
 	RedisUrl     string
 	MessagingURL string
 	GuildsURL    string
+	ResendAPIKey string
+	EmailFrom    string
 }
 
 func Load() *Config {
 	return &Config{
-		Env:      getEnv("NEXE_ENV", "development"),
-		Port:     getEnv("NEXE_NOTIFICATIONS_PORT", "8086"),
-		DBUrl:    getEnv("NEXE_DB_URL", "postgresql://decatron_user:lfIEcCZ11kIEM573mA0PA@localhost:5432/nexe_dev?sslmode=disable"),
+		Env:          getEnv("NEXE_ENV", "development"),
+		Port:         getEnv("NEXE_NOTIFICATIONS_PORT", "8086"),
+		DBUrl:        getEnv("NEXE_DB_URL", "postgresql://decatron_user:lfIEcCZ11kIEM573mA0PA@localhost:5432/nexe_dev?sslmode=disable"),
 		RedisUrl:     getEnv("NEXE_REDIS_URL", "redis://localhost:6379/3"),
 		MessagingURL: getEnv("NEXE_MESSAGING_URL", "http://localhost:8083"),
 		GuildsURL:    getEnv("NEXE_GUILDS_URL", "http://localhost:8082"),
+		ResendAPIKey: getEnv("RESEND_API_KEY", ""),
+		EmailFrom:    getEnv("NEXE_EMAIL_FROM", "Nexe <nexe@decatron.net>"),
 	}
 }
 

@@ -3,7 +3,7 @@ import { useGuildStore } from "../stores/guild";
 import { useAuthStore } from "../stores/auth";
 import { useVoiceStore } from "../stores/voice";
 import { hasPermission, computePermissions, Permissions } from "../lib/permissions";
-import { type Channel, type Category, api } from "../lib/api";
+import { type Channel, type Category, type VoiceState, api } from "../lib/api";
 import { FREE_TIER_LIMITS } from "../lib/limits";
 import { statusColors } from "../lib/utils";
 import { DndContext, closestCenter, type DragEndEvent, PointerSensor, useSensor, useSensors, useDroppable } from "@dnd-kit/core";
@@ -129,11 +129,25 @@ function VoiceChannel({ ch, isInThisChannel, voiceConnecting: connecting }: {
 }) {
   const voiceParticipants = useVoiceStore((s) => s.participants);
   const voiceSpeaking = useVoiceStore((s) => s.speakingUsers);
+  const cameraEnabled = useVoiceStore((s) => s.cameraEnabled);
+  const screenShareEnabled = useVoiceStore((s) => s.screenShareEnabled);
   const joinVoice = useVoiceStore((s) => s.joinChannel);
   const usernames = useGuildStore((s) => s.usernames);
   const avatarMap = useGuildStore((s) => s.avatarMap);
   const activeGuildId = useGuildStore((s) => s.activeGuildId);
+  const setActiveChannel = useGuildStore((s) => s.setActiveChannel);
+  const myUserId = useAuthStore((s) => s.user?.id);
   const channelParticipants = voiceParticipants.filter((p) => p.channelId === ch.id);
+
+
+  function handleClick() {
+    if (isInThisChannel) {
+      // Already connected — select this channel to show VoiceView
+      setActiveChannel(ch.id);
+    } else if (activeGuildId) {
+      joinVoice(activeGuildId, ch.id);
+    }
+  }
 
   return (
     <div>
@@ -143,11 +157,7 @@ function VoiceChannel({ ch, isInThisChannel, voiceConnecting: connecting }: {
             ? "bg-dark-700/50 text-white"
             : "text-slate-400 hover:bg-dark-800 hover:text-slate-200"
         }`}
-        onClick={() => {
-          if (!isInThisChannel && activeGuildId) {
-            joinVoice(activeGuildId, ch.id);
-          }
-        }}
+        onClick={handleClick}
       >
         <ChannelIcon type="voice" isActive={isInThisChannel} hasUnread={false} />
         <span className="truncate">{ch.name}</span>
@@ -155,48 +165,161 @@ function VoiceChannel({ ch, isInThisChannel, voiceConnecting: connecting }: {
           <div className="ml-auto h-3 w-3 animate-spin rounded-full border border-slate-600 border-t-nexe-400" />
         )}
       </button>
+
+      {/* Participant list */}
       {channelParticipants.length > 0 && (
         <div className="ml-6 space-y-0.5 py-0.5">
-          {channelParticipants.map((p) => {
-            const isSpeaking = voiceSpeaking.has(p.userId);
-            return (
-              <div
-                key={p.userId}
-                className="flex items-center gap-1.5 rounded px-2 py-0.5 text-xs text-slate-400"
-              >
-                {avatarMap[p.userId] ? (
-                  <img
-                    src={avatarMap[p.userId]}
-                    alt={usernames[p.userId] || "User"}
-                    className={`h-5 w-5 rounded-full object-cover transition-all ${
-                      isSpeaking ? "ring-2 ring-green-500" : ""
-                    }`}
-                  />
-                ) : (
-                  <div
-                    className={`flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-semibold text-white transition-all ${
-                      isSpeaking ? "ring-2 ring-green-500 bg-green-600" : "bg-dark-600"
-                    }`}
-                  >
-                    {(usernames[p.userId] || "U").charAt(0).toUpperCase()}
-                  </div>
-                )}
-                <span className={`truncate ${isSpeaking ? "text-slate-200" : ""}`}>
-                  {usernames[p.userId] || "User"}
-                </span>
-                {p.selfMute && (
-                  <svg viewBox="0 0 24 24" className="h-3 w-3 shrink-0 fill-current text-red-400">
-                    <path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z" />
-                  </svg>
-                )}
-                {p.selfDeaf && (
-                  <svg viewBox="0 0 24 24" className="h-3 w-3 shrink-0 fill-current text-red-400">
-                    <path d="M4.34 2.93L2.93 4.34 7.29 8.7 7 9H3v6h4l5 5v-6.59l4.18 4.18c-.65.49-1.38.88-2.18 1.11v2.06a8.94 8.94 0 0 0 3.61-1.75l2.05 2.05 1.41-1.41L4.34 2.93zM19 12c0 .82-.15 1.61-.41 2.34l1.53 1.53c.56-1.17.88-2.48.88-3.87 0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zm-7-8l-1.88 1.88L12 7.76zm4.5 8A4.5 4.5 0 0 0 14 7.97v1.79l2.48 2.48c.01-.08.02-.16.02-.24z" />
-                  </svg>
-                )}
-              </div>
-            );
-          })}
+          {channelParticipants.map((p) => (
+            <VoiceParticipantRow
+              key={p.userId}
+              participant={p}
+              isSpeaking={voiceSpeaking.has(p.userId)}
+              isStreaming={p.streaming || (isInThisChannel && p.userId === myUserId && (cameraEnabled || screenShareEnabled))}
+              username={usernames[p.userId] || "User"}
+              avatarUrl={avatarMap[p.userId]}
+              channelId={ch.id}
+              guildId={activeGuildId || ""}
+              isInThisChannel={isInThisChannel}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Voice participant row with LIVE hover tooltip ──
+
+function VoiceParticipantRow({
+  participant: p,
+  isSpeaking,
+  isStreaming,
+  username,
+  avatarUrl,
+  channelId,
+  guildId,
+  isInThisChannel,
+}: {
+  participant: VoiceState;
+  isSpeaking: boolean;
+  isStreaming: boolean;
+  username: string;
+  avatarUrl?: string;
+  channelId: string;
+  guildId: string;
+  isInThisChannel: boolean;
+}) {
+  const [showTooltip, setShowTooltip] = useState(false);
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const rowRef = useRef<HTMLDivElement>(null);
+  const hideTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const joinVoice = useVoiceStore((s) => s.joinChannel);
+  const setActiveChannel = useGuildStore((s) => s.setActiveChannel);
+
+  function showTip() {
+    if (hideTimeout.current) clearTimeout(hideTimeout.current);
+    if (isStreaming && rowRef.current) {
+      const rect = rowRef.current.getBoundingClientRect();
+      setTooltipPos({ x: rect.right + 8, y: rect.top });
+      setShowTooltip(true);
+    }
+  }
+
+  function hideTip() {
+    hideTimeout.current = setTimeout(() => setShowTooltip(false), 150);
+  }
+
+  function keepTip() {
+    if (hideTimeout.current) clearTimeout(hideTimeout.current);
+  }
+
+  function handleWatchStream() {
+    if (!isInThisChannel) {
+      // Connect to voice first, then open stream view
+      joinVoice(guildId, channelId).then(() => setActiveChannel(channelId));
+    } else {
+      setActiveChannel(channelId);
+    }
+    setShowTooltip(false);
+  }
+
+  return (
+    <div
+      ref={rowRef}
+      className="relative flex items-center gap-1.5 rounded px-2 py-0.5 text-xs text-slate-400 hover:bg-dark-800/50"
+      onMouseEnter={showTip}
+      onMouseLeave={hideTip}
+    >
+      {avatarUrl ? (
+        <img
+          src={avatarUrl}
+          alt={username}
+          className={`h-5 w-5 rounded-full object-cover transition-all ${
+            isSpeaking ? "ring-2 ring-green-500" : ""
+          }`}
+        />
+      ) : (
+        <div
+          className={`flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-semibold text-white transition-all ${
+            isSpeaking ? "ring-2 ring-green-500 bg-green-600" : "bg-dark-600"
+          }`}
+        >
+          {username.charAt(0).toUpperCase()}
+        </div>
+      )}
+      <span className={`truncate ${isSpeaking ? "text-slate-200" : ""}`}>
+        {username}
+      </span>
+      {isStreaming && (
+        <span
+          className="ml-auto flex cursor-pointer items-center gap-1 rounded bg-green-500/15 px-1.5 py-0.5 transition-colors hover:bg-green-500/25"
+          onClick={handleWatchStream}
+        >
+          <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+          <span className="text-[9px] font-bold text-green-400">LIVE</span>
+        </span>
+      )}
+      {!isStreaming && p.selfMute && (
+        <svg viewBox="0 0 24 24" className="h-3 w-3 shrink-0 fill-current text-red-400 ml-auto">
+          <path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z" />
+        </svg>
+      )}
+      {!isStreaming && p.selfDeaf && (
+        <svg viewBox="0 0 24 24" className="h-3 w-3 shrink-0 fill-current text-red-400 ml-auto">
+          <path d="M4.34 2.93L2.93 4.34 7.29 8.7 7 9H3v6h4l5 5v-6.59l4.18 4.18c-.65.49-1.38.88-2.18 1.11v2.06a8.94 8.94 0 0 0 3.61-1.75l2.05 2.05 1.41-1.41L4.34 2.93zM19 12c0 .82-.15 1.61-.41 2.34l1.53 1.53c.56-1.17.88-2.48.88-3.87 0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zm-7-8l-1.88 1.88L12 7.76zm4.5 8A4.5 4.5 0 0 0 14 7.97v1.79l2.48 2.48c.01-.08.02-.16.02-.24z" />
+        </svg>
+      )}
+
+      {/* Hover tooltip for LIVE */}
+      {showTooltip && (
+        <div
+          className="fixed z-tooltip w-48 overflow-hidden rounded-lg border border-dark-700 bg-dark-850 shadow-xl"
+          style={{ left: tooltipPos.x, top: tooltipPos.y }}
+          onMouseEnter={keepTip}
+          onMouseLeave={hideTip}
+        >
+          <div className="flex items-center gap-2 border-b border-dark-700 px-3 py-2">
+            <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+            <span className="text-xs font-medium text-white">{username} is live</span>
+          </div>
+          <div className="flex aspect-video w-full items-center justify-center bg-dark-900">
+            <svg viewBox="0 0 24 24" className="h-8 w-8 fill-current text-slate-700">
+              {p.streamType === "camera" ? (
+                <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z" />
+              ) : (
+                <path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z" />
+              )}
+            </svg>
+          </div>
+          <button
+            onClick={handleWatchStream}
+            className="flex w-full items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-dark-700"
+          >
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current text-green-400">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+            Watch Stream
+          </button>
         </div>
       )}
     </div>

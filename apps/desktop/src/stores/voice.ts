@@ -26,11 +26,18 @@ interface VoiceStore {
   // Speaking indicators (from LiveKit)
   speakingUsers: Set<string>;
 
+  // Video state
+  cameraEnabled: boolean;
+  screenShareEnabled: boolean;
+  videoTracks: Map<string, { participantId: string; source: "camera" | "screen" }>;
+
   // Actions
   joinChannel: (guildId: string, channelId: string) => Promise<void>;
   leaveChannel: () => Promise<void>;
   toggleMute: () => Promise<void>;
   toggleDeafen: () => Promise<void>;
+  toggleCamera: () => Promise<void>;
+  toggleScreenShare: () => Promise<void>;
   updateParticipants: (states: VoiceState[]) => void;
   handleVoiceStateUpdate: (state: VoiceState) => void;
   reset: () => void;
@@ -46,6 +53,9 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
   selfDeaf: false,
   participants: [],
   speakingUsers: new Set(),
+  cameraEnabled: false,
+  screenShareEnabled: false,
+  videoTracks: new Map(),
 
   joinChannel: async (guildId: string, channelId: string) => {
     const { room: existingRoom, channelId: currentChannel } = get();
@@ -89,7 +99,6 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
           guildId: null,
           selfMute: false,
           selfDeaf: false,
-          participants: [],
           speakingUsers: new Set(),
         });
       });
@@ -100,25 +109,36 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
       });
 
       room.on(RoomEvent.ParticipantConnected, (_participant: RemoteParticipant) => {
-        // Refresh participants from server
+        // Only refresh if we're still connected
+        if (!get().connected) return;
         api.getVoiceParticipants(channelId, guildId).then((states) => {
-          if (states) set({ participants: states });
+          if (states && get().connected) set({ participants: states });
         });
       });
 
       room.on(RoomEvent.ParticipantDisconnected, (_participant: RemoteParticipant) => {
+        // Only refresh if we're still connected (ignore events during our own disconnect)
+        if (!get().connected) return;
         api.getVoiceParticipants(channelId, guildId).then((states) => {
-          if (states) set({ participants: states });
+          if (states && get().connected) set({ participants: states });
         });
       });
 
       room.on(
         RoomEvent.TrackSubscribed,
-        (track, _pub: RemoteTrackPublication, _participant: RemoteParticipant) => {
+        (track, pub: RemoteTrackPublication, _participant: RemoteParticipant) => {
           if (track.kind === Track.Kind.Audio) {
             const el = track.attach();
             el.id = `voice-audio-${_participant.identity}`;
             document.body.appendChild(el);
+          } else if (track.kind === Track.Kind.Video) {
+            const source = pub.source === Track.Source.ScreenShare ? "screen" : "camera";
+            const sid = track.sid ?? `${_participant.identity}-${source}`;
+            set((s) => {
+              const newTracks = new Map(s.videoTracks);
+              newTracks.set(sid, { participantId: _participant.identity, source });
+              return { videoTracks: newTracks };
+            });
           }
         },
       );
@@ -126,15 +146,20 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
       room.on(
         RoomEvent.TrackUnsubscribed,
         (track, _pub: RemoteTrackPublication, _participant: RemoteParticipant) => {
+          if (track.kind === Track.Kind.Video) {
+            const sid = track.sid ?? `${_participant.identity}-unknown`;
+            set((s) => {
+              const newTracks = new Map(s.videoTracks);
+              newTracks.delete(sid);
+              return { videoTracks: newTracks };
+            });
+          }
           track.detach().forEach((el) => el.remove());
         },
       );
 
       // Connect to LiveKit
       await room.connect(resp.url, resp.token);
-
-      // Enable microphone
-      await room.localParticipant.setMicrophoneEnabled(true);
 
       set({
         room,
@@ -144,6 +169,13 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
         connecting: false,
         participants: resp.participants || [],
       });
+
+      // Enable microphone (non-blocking — voice works even without mic)
+      try {
+        await room.localParticipant.setMicrophoneEnabled(true);
+      } catch (micErr) {
+        console.warn("Microphone unavailable on join:", micErr);
+      }
     } catch (err) {
       console.error("Failed to join voice channel:", err);
       set({ connecting: false });
@@ -175,8 +207,10 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
       guildId: null,
       selfMute: false,
       selfDeaf: false,
-      participants: [],
       speakingUsers: new Set(),
+      cameraEnabled: false,
+      screenShareEnabled: false,
+      videoTracks: new Map(),
     });
   },
 
@@ -184,16 +218,20 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
     const { room, selfMute, selfDeaf } = get();
     const newMute = !selfMute;
 
-    if (room) {
-      await room.localParticipant.setMicrophoneEnabled(!newMute);
-    }
-
+    // Update UI immediately
     set({ selfMute: newMute });
+
+    if (room) {
+      try {
+        await room.localParticipant.setMicrophoneEnabled(!newMute);
+      } catch (err) {
+        console.warn("Mic toggle failed:", err);
+      }
+    }
 
     // If unmuting while deafened, also undeafen
     if (!newMute && selfDeaf) {
       set({ selfDeaf: false });
-      // Re-enable audio playback
       document.querySelectorAll<HTMLAudioElement>("[id^='voice-audio-']").forEach((el) => {
         el.muted = false;
       });
@@ -201,9 +239,7 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
 
     try {
       await api.updateVoiceState(newMute, !newMute && selfDeaf ? false : undefined);
-    } catch {
-      // ignore
-    }
+    } catch { /* ignore */ }
   },
 
   toggleDeafen: async () => {
@@ -215,12 +251,16 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
       el.muted = newDeaf;
     });
 
-    // Deafen implies mute
-    if (newDeaf && room) {
-      await room.localParticipant.setMicrophoneEnabled(false);
-    } else if (!newDeaf && room) {
-      // Undeafen: restore mic to previous state (unmuted)
-      await room.localParticipant.setMicrophoneEnabled(true);
+    if (room) {
+      try {
+        if (newDeaf) {
+          await room.localParticipant.setMicrophoneEnabled(false);
+        } else {
+          await room.localParticipant.setMicrophoneEnabled(true);
+        }
+      } catch {
+        // Mic unavailable — still allow deafen/undeafen for audio
+      }
     }
 
     set({
@@ -230,8 +270,33 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
 
     try {
       await api.updateVoiceState(newDeaf ? true : false, newDeaf);
+    } catch { /* ignore */ }
+  },
+
+  toggleCamera: async () => {
+    const { room, cameraEnabled } = get();
+    if (!room) return;
+    const newEnabled = !cameraEnabled;
+    try {
+      await room.localParticipant.setCameraEnabled(newEnabled);
+      set({ cameraEnabled: newEnabled });
+      // Notify backend so others see LIVE badge
+      api.updateStreaming(newEnabled, "camera").catch(() => {});
+    } catch { /* ignore */ }
+  },
+
+  toggleScreenShare: async () => {
+    const { room, screenShareEnabled } = get();
+    if (!room) return;
+    const newEnabled = !screenShareEnabled;
+    try {
+      await room.localParticipant.setScreenShareEnabled(newEnabled, { audio: true });
+      set({ screenShareEnabled: newEnabled });
+      // Notify backend so others see LIVE badge
+      api.updateStreaming(newEnabled, "screen").catch(() => {});
     } catch {
-      // ignore
+      // User cancelled screen share picker
+      set({ screenShareEnabled: false });
     }
   },
 
@@ -240,9 +305,6 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
   },
 
   handleVoiceStateUpdate: (state: VoiceState) => {
-    const { channelId, guildId } = get();
-    if (!channelId || !guildId) return;
-
     // User left voice (channelId is empty)
     if (!state.channelId) {
       set((s) => ({
@@ -251,23 +313,16 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
       return;
     }
 
-    // User joined/updated in our channel
-    if (state.channelId === channelId) {
-      set((s) => {
-        const existing = s.participants.findIndex((p) => p.userId === state.userId);
-        if (existing >= 0) {
-          const updated = [...s.participants];
-          updated[existing] = state;
-          return { participants: updated };
-        }
-        return { participants: [...s.participants, state] };
-      });
-    } else {
-      // User moved to a different channel — remove from our list
-      set((s) => ({
-        participants: s.participants.filter((p) => p.userId !== state.userId),
-      }));
-    }
+    // User joined or updated — add/update in participants list
+    set((s) => {
+      const existing = s.participants.findIndex((p) => p.userId === state.userId);
+      if (existing >= 0) {
+        const updated = [...s.participants];
+        updated[existing] = state;
+        return { participants: updated };
+      }
+      return { participants: [...s.participants, state] };
+    });
   },
 
   reset: () => {
@@ -284,8 +339,10 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
       guildId: null,
       selfMute: false,
       selfDeaf: false,
-      participants: [],
       speakingUsers: new Set(),
+      cameraEnabled: false,
+      screenShareEnabled: false,
+      videoTracks: new Map(),
     });
   },
 }));

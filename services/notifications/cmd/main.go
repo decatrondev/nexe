@@ -42,8 +42,11 @@ func main() {
 	// Event publisher
 	eventPublisher := service.NewEventPublisher(rdb)
 
+	// Email service
+	emailService := service.NewEmailService(cfg.ResendAPIKey, cfg.EmailFrom)
+
 	// Service
-	notifService := service.NewNotificationService(notifRepo, prefRepo, eventPublisher, rdb, cfg.MessagingURL, cfg.GuildsURL)
+	notifService := service.NewNotificationService(notifRepo, prefRepo, eventPublisher, rdb, emailService, cfg.MessagingURL, cfg.GuildsURL)
 
 	// Start Redis event subscriber (listens for MESSAGE_CREATE to detect mentions)
 	go notifService.StartEventSubscriber(context.Background())

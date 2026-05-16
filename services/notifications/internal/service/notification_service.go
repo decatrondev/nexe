@@ -19,6 +19,7 @@ type NotificationService struct {
 	preferences   *repository.PreferenceRepository
 	events        *EventPublisher
 	rdb           *redis.Client
+	email         *EmailService
 	messagingURL  string
 	guildsURL     string
 }
@@ -28,6 +29,7 @@ func NewNotificationService(
 	preferences *repository.PreferenceRepository,
 	events *EventPublisher,
 	rdb *redis.Client,
+	email *EmailService,
 	messagingURL string,
 	guildsURL string,
 ) *NotificationService {
@@ -36,6 +38,7 @@ func NewNotificationService(
 		preferences:   preferences,
 		events:        events,
 		rdb:           rdb,
+		email:         email,
 		messagingURL:  messagingURL,
 		guildsURL:     guildsURL,
 	}
@@ -72,6 +75,24 @@ func (s *NotificationService) DeleteNotification(ctx context.Context, userID, no
 // GetPreference returns notification preference for a guild.
 func (s *NotificationService) GetPreference(ctx context.Context, userID, guildID string) (*model.NotificationPreference, error) {
 	return s.preferences.Get(ctx, userID, guildID)
+}
+
+// SendDigest sends email notifications to users with unread notifications.
+func (s *NotificationService) SendDigest(ctx context.Context) (int, error) {
+	users, err := s.notifications.GetDigestUsers(ctx, 24)
+	if err != nil {
+		return 0, err
+	}
+
+	sent := 0
+	for _, u := range users {
+		if err := s.email.SendDigest(ctx, u.Email, u.Username, u.Count); err != nil {
+			slog.Error("failed to send digest email", "error", err, "user", u.UserID)
+			continue
+		}
+		sent++
+	}
+	return sent, nil
 }
 
 // SetPreference updates notification preference.

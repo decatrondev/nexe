@@ -388,6 +388,8 @@ export interface VoiceState {
   selfMute: boolean;
   selfDeaf: boolean;
   speaking: boolean;
+  streaming: boolean;
+  streamType?: string;
 }
 
 export interface VoiceJoinResponse {
@@ -954,6 +956,18 @@ export const api = {
 
   getGuildVoiceStates(guildId: string) {
     return request<VoiceState[]>("GET", `/voice/guild/${guildId}/states`);
+  },
+
+  serverMuteUser(userId: string, muted?: boolean, deafened?: boolean) {
+    return request<VoiceState>("POST", `/voice/server-mute/${userId}`, { muted, deafened });
+  },
+
+  moveVoiceUser(userId: string, channelId: string) {
+    return request<void>("POST", `/voice/move/${userId}`, { channelId });
+  },
+
+  updateStreaming(streaming: boolean, streamType: string) {
+    return request<VoiceState>("PATCH", "/voice/streaming", { streaming, streamType });
   },
 
   // ---- Category methods ----

@@ -28,7 +28,7 @@ func (r *NotificationRepository) Create(ctx context.Context, n *model.Notificati
 }
 
 func (r *NotificationRepository) GetByUser(ctx context.Context, userID string, limit int, unreadOnly bool) ([]model.Notification, error) {
-	query := `SELECT id, user_id, type, guild_id, channel_id, COALESCE(message_id, ''), COALESCE(author_id, ''), content, read, created_at
+	query := `SELECT id, user_id, type, guild_id, channel_id, COALESCE(message_id::text, ''), COALESCE(author_id::text, ''), content, read, created_at
 			   FROM notifications WHERE user_id = $1`
 	if unreadOnly {
 		query += ` AND read = false`
@@ -86,4 +86,44 @@ func (r *NotificationRepository) DeleteOlderThan(ctx context.Context, days int) 
 		return 0, err
 	}
 	return res.RowsAffected()
+}
+
+// DigestUser represents a user who has pending unread notifications for email digest.
+type DigestUser struct {
+	UserID   string
+	Email    string
+	Username string
+	Count    int
+}
+
+// GetDigestUsers returns users who have unread notifications from the last N hours.
+func (r *NotificationRepository) GetDigestUsers(ctx context.Context, hoursAgo int) ([]DigestUser, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT n.user_id, u.email, u.username, COUNT(*) as count
+		 FROM notifications n
+		 JOIN users u ON u.id = n.user_id
+		 WHERE n.read = false
+		   AND n.created_at > NOW() - INTERVAL '1 hour' * $1
+		   AND u.email_verified = true
+		   AND u.disabled = false
+		 GROUP BY n.user_id, u.email, u.username
+		 HAVING COUNT(*) >= 3
+		 ORDER BY count DESC
+		 LIMIT 500`,
+		hoursAgo,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var users []DigestUser
+	for rows.Next() {
+		var u DigestUser
+		if err := rows.Scan(&u.UserID, &u.Email, &u.Username, &u.Count); err != nil {
+			return nil, err
+		}
+		users = append(users, u)
+	}
+	return users, nil
 }

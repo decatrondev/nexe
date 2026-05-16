@@ -255,6 +255,104 @@ func (s *VoiceService) GetGuildVoiceStates(ctx context.Context, guildID string) 
 	return states, nil
 }
 
+// UpdateStreaming updates a user's streaming state and broadcasts it.
+func (s *VoiceService) UpdateStreaming(ctx context.Context, userID string, streaming bool, streamType string) (*model.VoiceState, error) {
+	state, err := s.GetUserVoiceState(ctx, userID)
+	if err != nil || state == nil {
+		return nil, fmt.Errorf("not in a voice channel")
+	}
+
+	state.Streaming = streaming
+	if streaming {
+		state.StreamType = streamType
+	} else {
+		state.StreamType = ""
+	}
+
+	stateJSON, _ := json.Marshal(state)
+	s.rdb.Set(ctx, voiceStateKey(userID), stateJSON, 25*time.Hour)
+
+	// Publish update so everyone sees LIVE status
+	s.events.Publish(ctx, state.GuildID, state.ChannelID, EventVoiceStateUpdate, "", state)
+
+	return state, nil
+}
+
+// ServerMuteUser applies server-level mute/deafen to a user (moderator action).
+func (s *VoiceService) ServerMuteUser(ctx context.Context, targetUserID string, muted, deafened *bool) (*model.VoiceState, error) {
+	state, err := s.GetUserVoiceState(ctx, targetUserID)
+	if err != nil || state == nil {
+		return nil, fmt.Errorf("user is not in a voice channel")
+	}
+
+	if muted != nil {
+		state.Muted = *muted
+	}
+	if deafened != nil {
+		state.Deafened = *deafened
+		if *deafened {
+			state.Muted = true
+		}
+	}
+
+	stateJSON, _ := json.Marshal(state)
+	s.rdb.Set(ctx, voiceStateKey(targetUserID), stateJSON, 25*time.Hour)
+
+	// Publish state update so the target user's client reacts
+	s.events.Publish(ctx, state.GuildID, state.ChannelID, EventVoiceStateUpdate, "", state)
+
+	return state, nil
+}
+
+// MoveUser moves a user from their current voice channel to another one.
+func (s *VoiceService) MoveUser(ctx context.Context, targetUserID, newChannelID string) error {
+	state, err := s.GetUserVoiceState(ctx, targetUserID)
+	if err != nil || state == nil {
+		return fmt.Errorf("user is not in a voice channel")
+	}
+
+	oldChannelID := state.ChannelID
+	guildID := state.GuildID
+
+	// Verify new channel is a voice channel in the same guild
+	if err := s.verifyVoiceChannel(guildID, newChannelID); err != nil {
+		return err
+	}
+
+	// Remove from old channel participant set
+	s.rdb.SRem(ctx, channelParticipantsKey(oldChannelID), targetUserID)
+
+	// Remove from old LiveKit room
+	s.roomClient.RemoveParticipant(ctx, &livekit.RoomParticipantIdentity{
+		Room:     oldChannelID,
+		Identity: targetUserID,
+	})
+
+	// Update state to new channel
+	state.ChannelID = newChannelID
+	stateJSON, _ := json.Marshal(state)
+
+	pipe := s.rdb.Pipeline()
+	pipe.Set(ctx, voiceStateKey(targetUserID), stateJSON, 25*time.Hour)
+	pipe.SAdd(ctx, channelParticipantsKey(newChannelID), targetUserID)
+	pipe.Expire(ctx, channelParticipantsKey(newChannelID), 25*time.Hour)
+	pipe.Exec(ctx)
+
+	// Ensure new LiveKit room exists
+	s.roomClient.CreateRoom(ctx, &livekit.CreateRoomRequest{
+		Name:            newChannelID,
+		EmptyTimeout:    300,
+		MaxParticipants: 50,
+	})
+
+	// Publish leave event for old channel and join event for new channel
+	leaveState := model.VoiceState{UserID: targetUserID, GuildID: guildID, ChannelID: ""}
+	s.events.Publish(ctx, guildID, oldChannelID, EventVoiceStateUpdate, "", leaveState)
+	s.events.Publish(ctx, guildID, newChannelID, EventVoiceStateUpdate, "", *state)
+
+	return nil
+}
+
 // verifyVoiceChannel checks that the channel exists, belongs to the guild, and is type "voice".
 func (s *VoiceService) verifyVoiceChannel(guildID, channelID string) error {
 	url := fmt.Sprintf("%s/guilds/%s/channels", s.guildsURL, guildID)

@@ -204,6 +204,52 @@ export default function Home() {
         </div>
       </section>
 
+      {/* App Screenshots */}
+      <section className="bg-dark-900 px-6 py-24">
+        <div className="mx-auto max-w-6xl">
+          <div className="mb-12 text-center">
+            <h2 className="mb-4 text-3xl font-bold text-white sm:text-4xl">
+              See it in action
+            </h2>
+            <p className="text-lg text-slate-400">
+              A familiar layout with native streamer features built in.
+            </p>
+          </div>
+
+          <div className="relative">
+            {/* Main screenshot */}
+            <div className="overflow-hidden rounded-xl border border-slate-700 shadow-2xl shadow-nexe-600/10">
+              <img
+                src="/screenshots/app-full.png"
+                alt="Nexe desktop app — real-time chat with servers, channels, and member list"
+                className="w-full"
+                loading="lazy"
+              />
+            </div>
+
+            {/* Secondary screenshot */}
+            <div className="mt-8 grid gap-6 sm:grid-cols-2">
+              <div className="overflow-hidden rounded-xl border border-slate-700 shadow-xl">
+                <img
+                  src="/screenshots/chat.png"
+                  alt="Nexe chat with Twitch integration and bridge channels"
+                  className="w-full"
+                  loading="lazy"
+                />
+              </div>
+              <div className="overflow-hidden rounded-xl border border-slate-700 shadow-xl">
+                <img
+                  src="/screenshots/login.png"
+                  alt="Nexe login page with Twitch OAuth"
+                  className="w-full"
+                  loading="lazy"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Comparison */}
       <section className="border-y border-slate-800 bg-dark-900 px-6 py-24">
         <div className="mx-auto max-w-4xl">
