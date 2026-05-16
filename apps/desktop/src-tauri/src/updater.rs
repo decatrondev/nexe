@@ -238,9 +238,12 @@ pub fn apply_staged_update(app: &AppHandle) -> bool {
     let _ = fs::remove_dir_all(&staged_dir);
     let _ = fs::remove_file(&attempts_file);
 
-    // Force Windows to refresh icon cache so new icons show immediately
+    // Windows: update registry version + refresh shortcuts and icon cache
     #[cfg(target_os = "windows")]
-    refresh_icon_cache();
+    {
+        let version = app.package_info().version.to_string();
+        post_update_windows(&app_dir, &version);
+    }
 
     log::info!("Staged update applied successfully");
     true
@@ -319,11 +322,45 @@ fn extract_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Tell Windows to refresh icon cache after update (taskbar, desktop shortcuts).
+/// After applying an update on Windows: update registry version, recreate shortcuts, refresh icon cache.
 #[cfg(target_os = "windows")]
-fn refresh_icon_cache() {
-    // SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, NULL, NULL)
-    // This is the correct Windows API call to force icon cache refresh.
+fn post_update_windows(app_dir: &PathBuf, version: &str) {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    let exe_path = app_dir.join("Nexe.exe");
+    let exe_str = exe_path.to_string_lossy();
+
+    // Update version in Add/Remove Programs registry
+    let key = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\Nexe";
+    let _ = std::process::Command::new("reg")
+        .args(["add", key, "/v", "DisplayVersion", "/t", "REG_SZ", "/d", version, "/f"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output();
+
+    // Recreate desktop shortcut (refreshes icon)
+    if let Some(desktop) = std::env::var("USERPROFILE").ok().map(|p| PathBuf::from(p).join("Desktop")) {
+        let lnk = desktop.join("Nexe.lnk");
+        if lnk.exists() {
+            let script = format!(
+                "$ws = New-Object -ComObject WScript.Shell; \
+                 $s = $ws.CreateShortcut('{}'); \
+                 $s.TargetPath = '{}'; \
+                 $s.WorkingDirectory = '{}'; \
+                 $s.IconLocation = '{},0'; \
+                 $s.Description = 'Nexe'; \
+                 $s.Save()",
+                lnk.to_string_lossy(), exe_str,
+                app_dir.to_string_lossy(), exe_str
+            );
+            let _ = std::process::Command::new("powershell")
+                .args(["-NoProfile", "-NoLogo", "-Command", &script])
+                .creation_flags(CREATE_NO_WINDOW)
+                .output();
+        }
+    }
+
+    // Refresh icon cache
     #[link(name = "shell32")]
     extern "system" {
         fn SHChangeNotify(wEventId: i32, uFlags: u32, dwItem1: *const u8, dwItem2: *const u8);
