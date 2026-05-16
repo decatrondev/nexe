@@ -9,7 +9,7 @@ import { useAuthStore } from "./stores/auth";
 import { runUpdateFlow, type UpdateStatus } from "./lib/updater";
 import { ToastContainer } from "@nexe/ui";
 
-const APP_VERSION = "0.0.21";
+const APP_VERSION = "0.1.0";
 const API_URL =
   typeof window !== "undefined" &&
   (window.location.protocol === "https:" || "__TAURI__" in window || "__TAURI_INTERNALS__" in window || window.location.hostname === "tauri.localhost")
