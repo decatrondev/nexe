@@ -134,15 +134,15 @@ export default function Home() {
             Open Source Communication Platform
           </div>
 
-          <h1 className="mb-6 text-6xl font-bold tracking-tight text-white sm:text-7xl lg:text-8xl">
+          <h1 className="mb-6 text-4xl font-bold tracking-tight text-white sm:text-6xl lg:text-8xl">
             Nexe
           </h1>
 
-          <p className="mb-4 text-xl text-slate-300 sm:text-2xl">
+          <p className="mb-4 text-lg text-slate-300 sm:text-xl lg:text-2xl">
             The communication platform built for streamers
           </p>
 
-          <p className="mx-auto mb-10 max-w-2xl text-lg text-slate-500">
+          <p className="mx-auto mb-10 max-w-2xl text-base text-slate-500 sm:text-lg">
             Everything Discord needs bots for, Nexe does natively.
           </p>
 
@@ -171,7 +171,7 @@ export default function Home() {
       </section>
 
       {/* Features */}
-      <section id="features" className="bg-dark-950 px-6 py-24">
+      <section id="features" className="bg-dark-950 px-4 py-16 sm:px-6 sm:py-24">
         <div className="mx-auto max-w-7xl">
           <div className="mb-16 text-center">
             <h2 className="mb-4 text-3xl font-bold text-white sm:text-4xl">
@@ -183,7 +183,7 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 sm:gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {features.map((feature) => (
               <div
                 key={feature.title}
@@ -205,10 +205,10 @@ export default function Home() {
       </section>
 
       {/* App Screenshots */}
-      <section className="bg-dark-900 px-6 py-24">
+      <section className="bg-dark-900 px-4 py-16 sm:px-6 sm:py-24">
         <div className="mx-auto max-w-6xl">
           <div className="mb-12 text-center">
-            <h2 className="mb-4 text-3xl font-bold text-white sm:text-4xl">
+            <h2 className="mb-4 text-2xl font-bold text-white sm:text-3xl lg:text-4xl">
               See it in action
             </h2>
             <p className="text-lg text-slate-400">
@@ -251,7 +251,7 @@ export default function Home() {
       </section>
 
       {/* Comparison */}
-      <section className="border-y border-slate-800 bg-dark-900 px-6 py-24">
+      <section className="border-y border-slate-800 bg-dark-900 px-4 py-16 sm:px-6 sm:py-24">
         <div className="mx-auto max-w-4xl">
           <div className="mb-12 text-center">
             <h2 className="mb-4 text-3xl font-bold text-white sm:text-4xl">
@@ -262,8 +262,8 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="overflow-hidden rounded-xl border border-slate-800">
-            <table className="w-full">
+          <div className="overflow-x-auto rounded-xl border border-slate-800">
+            <table className="w-full min-w-[480px]">
               <thead>
                 <tr className="border-b border-slate-800 bg-dark-800">
                   <th className="px-6 py-4 text-left text-sm font-medium text-slate-400">
@@ -305,7 +305,7 @@ export default function Home() {
       </section>
 
       {/* Open Source */}
-      <section id="open-source" className="bg-dark-950 px-6 py-24">
+      <section id="open-source" className="bg-dark-950 px-4 py-16 sm:px-6 sm:py-24">
         <div className="mx-auto max-w-3xl text-center">
           <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-slate-700 bg-dark-800 px-4 py-1.5 text-sm text-slate-300">
             Open Source
@@ -342,8 +342,8 @@ export default function Home() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-slate-800 bg-dark-950 px-6 py-12">
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-6 sm:flex-row">
+      <footer className="border-t border-slate-800 bg-dark-950 px-4 py-8 sm:px-6 sm:py-12">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 sm:flex-row sm:gap-6">
           <div className="flex items-center gap-2">
             <div className="flex h-6 w-6 items-center justify-center rounded bg-nexe-600 text-xs font-bold text-white">
               N
