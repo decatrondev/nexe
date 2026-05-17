@@ -1041,7 +1041,7 @@ export const api = {
 
   getRelationships(type?: "friend" | "pending" | "blocked") {
     const params = type ? `?type=${type}` : "";
-    return request<Relationship[]>("GET", `/relationships${params}`);
+    return request<{ relationships: Relationship[]; users: Record<string, { id: string; username: string; avatarUrl?: string }> }>("GET", `/relationships${params}`);
   },
 
   sendFriendRequest(targetUsername: string) {

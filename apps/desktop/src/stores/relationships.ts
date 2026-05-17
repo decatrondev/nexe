@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import { api, type Relationship } from "../lib/api";
+import { useGuildStore } from "./guild";
+import { useAuthStore } from "./auth";
 
 interface RelationshipState {
   relationships: Relationship[];
@@ -21,6 +23,8 @@ interface RelationshipState {
   incomingRequests: (myId: string) => Relationship[];
   outgoingRequests: (myId: string) => Relationship[];
 
+  _resolveUser: (userId: string) => void;
+
   // WS event handlers
   handleRelationshipCreate: (rel: Relationship) => void;
   handleRelationshipUpdate: (rel: Relationship) => void;
@@ -34,8 +38,19 @@ export const useRelationshipStore = create<RelationshipState>((set, get) => ({
   async fetchRelationships() {
     set({ loading: true });
     try {
-      const rels = await api.getRelationships();
-      set({ relationships: rels });
+      const data = await api.getRelationships();
+      set({ relationships: data.relationships });
+      // Populate guild store with user info for non-guild users
+      if (data.users) {
+        const guildState = useGuildStore.getState();
+        const newUsernames = { ...guildState.usernames };
+        const newAvatarMap = { ...guildState.avatarMap };
+        for (const [uid, info] of Object.entries(data.users)) {
+          newUsernames[uid] = info.username;
+          if (info.avatarUrl) newAvatarMap[uid] = info.avatarUrl;
+        }
+        useGuildStore.setState({ usernames: newUsernames, avatarMap: newAvatarMap });
+      }
     } finally {
       set({ loading: false });
     }
@@ -108,6 +123,20 @@ export const useRelationshipStore = create<RelationshipState>((set, get) => ({
     return get().relationships.filter((r) => r.type === "pending" && r.userId === myId);
   },
 
+  // Resolve unknown usernames for relationship users
+  _resolveUser(userId: string) {
+    const { usernames } = useGuildStore.getState();
+    if (usernames[userId]) return;
+    api.getProfile(userId).then((profile) => {
+      if (!profile) return;
+      const gs = useGuildStore.getState();
+      useGuildStore.setState({
+        usernames: { ...gs.usernames, [userId]: profile.displayName || profile.username || "User" },
+        avatarMap: profile.avatarUrl ? { ...gs.avatarMap, [userId]: profile.avatarUrl } : gs.avatarMap,
+      });
+    }).catch(() => {});
+  },
+
   // WS event handlers
   handleRelationshipCreate(rel: Relationship) {
     set((s) => {
@@ -115,6 +144,10 @@ export const useRelationshipStore = create<RelationshipState>((set, get) => ({
       if (s.relationships.some((r) => r.id === rel.id)) return s;
       return { relationships: [...s.relationships, rel] };
     });
+    // Resolve unknown users
+    const myId = useAuthStore.getState().user?.id;
+    const otherId = rel.userId === myId ? rel.targetId : rel.userId;
+    get()._resolveUser(otherId);
   },
 
   handleRelationshipUpdate(rel: Relationship) {

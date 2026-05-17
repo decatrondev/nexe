@@ -38,6 +38,15 @@ func (h *RelationshipHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /relationships/mutual/{userId}", h.MutualFriends)
 }
 
+// enrichRelWithUsers adds user info to a relationship for WS events.
+func (h *RelationshipHandler) enrichRelWithUsers(ctx context.Context, rel *repository.Relationship) map[string]interface{} {
+	users := h.fetchUserInfos(ctx, []string{rel.UserID, rel.TargetID})
+	return map[string]interface{}{
+		"relationship": rel,
+		"users":        users,
+	}
+}
+
 // publishToUser sends an event to a specific user via Redis → Gateway WS.
 func (h *RelationshipHandler) publishToUser(ctx context.Context, userID, eventType string, data interface{}) {
 	event := struct {
@@ -105,7 +114,15 @@ func (h *RelationshipHandler) ListRelationships(w http.ResponseWriter, r *http.R
 	if rels == nil {
 		rels = []repository.Relationship{}
 	}
-	writeJSON(w, http.StatusOK, rels)
+
+	// Enrich with user info
+	userIDs := collectRelUserIDs(rels, userID)
+	users := h.fetchUserInfos(r.Context(), userIDs)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"relationships": rels,
+		"users":         users,
+	})
 }
 
 // CreateRelationship handles friend requests and blocking.
@@ -383,6 +400,64 @@ func (h *RelationshipHandler) MutualFriends(w http.ResponseWriter, r *http.Reque
 		ids = []string{}
 	}
 	writeJSON(w, http.StatusOK, ids)
+}
+
+// RelUserInfo is basic user info returned alongside relationships.
+type RelUserInfo struct {
+	ID        string  `json:"id"`
+	Username  string  `json:"username"`
+	AvatarURL *string `json:"avatarUrl,omitempty"`
+}
+
+// fetchUserInfos returns basic user info for a list of user IDs.
+func (h *RelationshipHandler) fetchUserInfos(ctx context.Context, userIDs []string) map[string]RelUserInfo {
+	if len(userIDs) == 0 {
+		return map[string]RelUserInfo{}
+	}
+	result := make(map[string]RelUserInfo, len(userIDs))
+
+	// Build query with IN clause
+	placeholders := make([]string, len(userIDs))
+	args := make([]interface{}, len(userIDs))
+	for i, id := range userIDs {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+	query := fmt.Sprintf(
+		`SELECT u.id, u.username, p.avatar_url FROM users u LEFT JOIN profiles p ON p.user_id = u.id WHERE u.id IN (%s)`,
+		strings.Join(placeholders, ","),
+	)
+	rows, err := h.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return result
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var info RelUserInfo
+		if err := rows.Scan(&info.ID, &info.Username, &info.AvatarURL); err != nil {
+			continue
+		}
+		result[info.ID] = info
+	}
+	return result
+}
+
+// collectRelUserIDs gathers all unique "other" user IDs from relationships.
+func collectRelUserIDs(rels []repository.Relationship, myID string) []string {
+	seen := make(map[string]bool)
+	var ids []string
+	for _, r := range rels {
+		other := r.TargetID
+		if r.TargetID == myID {
+			other = r.UserID
+		}
+		if !seen[other] {
+			seen[other] = true
+			ids = append(ids, other)
+		}
+	}
+	return ids
 }
 
 // resolveUsername looks up a user ID by username (case-insensitive).
