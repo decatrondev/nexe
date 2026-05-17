@@ -7,6 +7,7 @@ interface DMState {
   activeChannelId: string | null;
   messages: Record<string, DMMessage[]>;
   unreads: Record<string, number>; // channelId → unread count
+  readReceipts: Record<string, { userId: string; messageId: string }>; // channelId → last read by other
   typing: Record<string, { userId: string; timeout: ReturnType<typeof setTimeout> }>; // channelId → typing user
   loading: boolean;
 
@@ -34,6 +35,7 @@ interface DMState {
   handleDMMessageUpdate: (msg: DMMessage) => void;
   handleDMMessageDelete: (data: { id: string; channelId: string }) => void;
   handleDMTyping: (data: { channelId: string; userId: string }) => void;
+  handleDMRead: (data: { channelId: string; userId: string; messageId: string }) => void;
 }
 
 export const useDMStore = create<DMState>((set, get) => ({
@@ -42,6 +44,7 @@ export const useDMStore = create<DMState>((set, get) => ({
   activeChannelId: null,
   messages: {},
   unreads: {},
+  readReceipts: {},
   typing: {},
   loading: false,
 
@@ -263,6 +266,12 @@ export const useDMStore = create<DMState>((set, get) => ({
         ...s.messages,
         [data.channelId]: (s.messages[data.channelId] || []).filter((m) => m.id !== data.id),
       },
+    }));
+  },
+
+  handleDMRead(data: { channelId: string; userId: string; messageId: string }) {
+    set((s) => ({
+      readReceipts: { ...s.readReceipts, [data.channelId]: { userId: data.userId, messageId: data.messageId } },
     }));
   },
 

@@ -1122,6 +1122,10 @@ export const api = {
     return request<void>("POST", `/dm-channels/${channelId}/ack`, { messageId });
   },
 
+  searchDMMessages(channelId: string, query: string, limit = 25) {
+    return request<DMMessage[]>("GET", `/dm-channels/${channelId}/search?q=${encodeURIComponent(query)}&limit=${limit}`);
+  },
+
   getDMUnreads() {
     return request<{ channelId: string; unreadCount: number; lastReadId: string }[]>("GET", "/dm-unreads");
   },

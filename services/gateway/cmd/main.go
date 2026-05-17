@@ -256,6 +256,7 @@ func main() {
 	mux.Handle("DELETE /dm-channels/{id}/members/{userId}", guildsProxy(gp))
 	mux.Handle("DELETE /dm-channels/{id}/members/@me", guildsProxy(gp))
 	mux.Handle("GET /dm-channels/{id}/messages", guildsProxy(gp))
+	mux.Handle("GET /dm-channels/{id}/search", guildsProxy(gp))
 	mux.Handle("POST /dm-channels/{id}/messages", guildsProxy(gp))
 	mux.Handle("PATCH /dm-messages/{id}", guildsProxy(gp))
 	mux.Handle("DELETE /dm-messages/{id}", guildsProxy(gp))

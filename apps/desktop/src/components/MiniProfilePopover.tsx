@@ -371,6 +371,22 @@ export default function MiniProfilePopover({ userId, x, y, streamStatus, onClose
               </div>
             )}
 
+            {/* Message (open DM) */}
+            {!isOwnProfile && (
+              <button
+                onClick={async () => {
+                  const { useDMStore } = await import("../stores/dm");
+                  const { useGuildStore: gs } = await import("../stores/guild");
+                  gs.setState({ activeGuildId: null, activeChannelId: null });
+                  await useDMStore.getState().openDM(userId);
+                  onClose();
+                }}
+                className="mt-1 w-full rounded-md bg-dark-600 py-2 text-[13px] font-semibold text-slate-200 transition-colors hover:bg-dark-500"
+              >
+                Message
+              </button>
+            )}
+
             {/* View Full Profile */}
             {onViewFull && (
               <button

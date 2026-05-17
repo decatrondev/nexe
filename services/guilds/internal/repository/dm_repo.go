@@ -524,3 +524,28 @@ func (r *DMRepository) DeleteMessage(ctx context.Context, id string) error {
 	)
 	return err
 }
+
+// SearchMessages searches DM messages by content within a channel.
+func (r *DMRepository) SearchMessages(ctx context.Context, channelID, query string, limit int) ([]DMMessage, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, channel_id, author_id, content, type, reply_to_id,
+		       embeds, attachments, mention_everyone, edited_at, deleted, pinned, created_at
+		FROM dm_messages
+		WHERE channel_id = $1 AND deleted = false AND content ILIKE '%' || $2 || '%'
+		ORDER BY created_at DESC LIMIT $3`, channelID, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var messages []DMMessage
+	for rows.Next() {
+		var m DMMessage
+		if err := rows.Scan(&m.ID, &m.ChannelID, &m.AuthorID, &m.Content, &m.Type, &m.ReplyToID,
+			&m.Embeds, &m.Attachments, &m.MentionEveryone, &m.EditedAt, &m.Deleted, &m.Pinned, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		messages = append(messages, m)
+	}
+	return messages, nil
+}

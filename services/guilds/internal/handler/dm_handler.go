@@ -41,6 +41,9 @@ func (h *DMHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /dm-channels/{id}/members/{userId}", h.RemoveParticipant)
 	mux.HandleFunc("DELETE /dm-channels/{id}/members/@me", h.LeaveGroupDM)
 
+	// DM Search
+	mux.HandleFunc("GET /dm-channels/{id}/search", h.SearchMessages)
+
 	// DM Read States & Pins
 	mux.HandleFunc("POST /dm-channels/{id}/ack", h.AckDM)
 	mux.HandleFunc("GET /dm-unreads", h.GetUnreads)
@@ -261,6 +264,14 @@ func (h *DMHandler) AckDM(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "dm_error", err.Error())
 		return
 	}
+
+	// Broadcast read receipt to other participants
+	h.publishToParticipants(r.Context(), channelID, "DM_READ", map[string]string{
+		"channelId": channelID,
+		"userId":    userID,
+		"messageId": body.MessageID,
+	}, userID)
+
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -337,6 +348,45 @@ func (h *DMHandler) GetMessages(w http.ResponseWriter, r *http.Request) {
 	before := r.URL.Query().Get("before")
 
 	messages, err := h.repo.GetMessages(r.Context(), channelID, limit, before)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "dm_error", err.Error())
+		return
+	}
+	if messages == nil {
+		messages = []repository.DMMessage{}
+	}
+	writeJSON(w, http.StatusOK, messages)
+}
+
+// SearchMessages searches messages in a DM channel.
+// GET /dm-channels/:id/search?q=query&limit=25
+func (h *DMHandler) SearchMessages(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	channelID := r.PathValue("id")
+
+	ok, _ = h.repo.IsParticipant(r.Context(), channelID, userID)
+	if !ok {
+		writeError(w, http.StatusForbidden, "forbidden", "not a participant")
+		return
+	}
+
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		writeJSON(w, http.StatusOK, []repository.DMMessage{})
+		return
+	}
+
+	limit := 25
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if n, err := strconv.Atoi(l); err == nil && n > 0 && n <= 50 {
+			limit = n
+		}
+	}
+
+	messages, err := h.repo.SearchMessages(r.Context(), channelID, query, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "dm_error", err.Error())
 		return

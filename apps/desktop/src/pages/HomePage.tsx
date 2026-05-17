@@ -558,6 +558,9 @@ export default function HomePage() {
       nexeWS.on("DM_TYPING_START", (data) => {
         useDMStore.getState().handleDMTyping(data as { channelId: string; userId: string });
       });
+      nexeWS.on("DM_READ", (data) => {
+        useDMStore.getState().handleDMRead(data as { channelId: string; userId: string; messageId: string });
+      });
 
       // Relationship events (friends)
       nexeWS.on("RELATIONSHIP_CREATE", (data) => {
