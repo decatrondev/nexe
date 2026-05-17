@@ -45,11 +45,18 @@ export default function DMSidebar() {
   return (
     <>
     <div className="flex h-full w-60 shrink-0 flex-col bg-dark-800 border-r border-dark-700">
-      {/* Search placeholder */}
-      <div className="px-2 pt-3 pb-2">
-        <button className="w-full rounded-md bg-dark-900 px-2 py-1.5 text-left text-xs text-slate-500">
-          Find or start a conversation
-        </button>
+      {/* Search */}
+      <div className="px-2.5 pt-3 pb-2">
+        <div className="flex items-center rounded-md bg-dark-900 px-2.5 py-1.5 ring-1 ring-dark-700 transition-colors focus-within:ring-nexe-500/30">
+          <input
+            placeholder="Find or start a conversation"
+            className="flex-1 bg-transparent text-xs text-slate-300 outline-none placeholder:text-slate-600"
+            readOnly
+          />
+          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 text-slate-600">
+            <path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
+          </svg>
+        </div>
       </div>
 
       {/* Friends button */}

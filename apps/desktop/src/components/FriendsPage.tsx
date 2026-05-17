@@ -280,10 +280,10 @@ export default function FriendsPage() {
             <button
               key={t}
               onClick={() => { setTab(t); setSearch(""); }}
-              className={`relative rounded px-2.5 py-1 text-sm font-medium capitalize transition-colors ${
+              className={`relative rounded-md px-3 py-1.5 text-sm font-medium capitalize transition-all duration-150 ${
                 tab === t
-                  ? "bg-dark-700 text-white"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-dark-800"
+                  ? "bg-dark-600 text-white shadow-sm"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-dark-700/60"
               }`}
             >
               {t}
@@ -299,10 +299,10 @@ export default function FriendsPage() {
         {/* Add Friend button */}
         <button
           onClick={() => { setTab("add"); setAddSuccess(""); }}
-          className={`rounded px-2.5 py-1 text-sm font-medium transition-colors ${
+          className={`rounded-md px-3 py-1.5 text-sm font-medium transition-all duration-150 ${
             tab === "add"
-              ? "bg-transparent text-green-400"
-              : "bg-green-600 text-white hover:bg-green-700"
+              ? "bg-green-500/10 text-green-400 ring-1 ring-green-500/30"
+              : "bg-green-600 text-white hover:bg-green-500 shadow-sm"
           }`}
         >
           Add Friend

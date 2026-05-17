@@ -141,15 +141,17 @@ export default function DMChat() {
       <div className="flex flex-1 flex-col min-w-0">
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-slate-500">
+          <div className="flex flex-col items-center justify-center py-20 text-slate-500 animate-fade-in">
             <div
-              className="mb-4 flex h-16 w-16 items-center justify-center rounded-full text-2xl font-bold text-white"
+              className="mb-5 flex h-20 w-20 items-center justify-center rounded-full text-3xl font-bold text-white shadow-lg shadow-nexe-500/10"
               style={{ backgroundColor: otherUser ? userColor(otherUser.userId) : "#4f46e5" }}
             >
               {channelName.charAt(0).toUpperCase()}
             </div>
-            <p className="text-lg font-semibold text-white">{channelName}</p>
-            <p className="mt-1 text-sm">This is the beginning of your direct message history with <strong className="text-slate-300">{channelName}</strong>.</p>
+            <p className="text-xl font-bold text-white">{channelName}</p>
+            <p className="mt-2 max-w-sm text-center text-sm leading-relaxed text-slate-500">
+              This is the very beginning of your direct message history with <strong className="text-slate-300">{channelName}</strong>.
+            </p>
           </div>
         ) : (
           messages.map((msg, idx) => {
@@ -167,7 +169,7 @@ export default function DMChat() {
             return (
               <div
                 key={msg.id}
-                className={`group flex gap-3 hover:bg-dark-800/30 rounded px-2 ${isGrouped ? "py-0.5" : "py-2 mt-1"}`}
+                className={`group relative flex gap-3 rounded-md px-2 transition-colors hover:bg-dark-800/40 ${isGrouped ? "py-0.5" : "py-2.5 mt-0.5"}`}
               >
                 {/* Avatar or spacer */}
                 <div className="w-10 shrink-0">
@@ -220,12 +222,12 @@ export default function DMChat() {
                   )}
                 </div>
 
-                {/* Hover actions */}
+                {/* Floating action toolbar (Discord style) */}
                 {isOwn && editingId !== msg.id && (
-                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="absolute -top-3 right-2 hidden group-hover:flex items-center gap-0.5 rounded-md border border-dark-600 bg-dark-800 px-1 py-0.5 shadow-lg">
                     <button
                       onClick={() => { setEditingId(msg.id); setEditContent(msg.content); }}
-                      className="flex h-7 w-7 items-center justify-center rounded text-slate-500 hover:text-slate-300 hover:bg-dark-700"
+                      className="flex h-7 w-7 items-center justify-center rounded text-slate-400 transition-colors hover:text-white hover:bg-dark-600"
                       title="Edit"
                     >
                       <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
@@ -234,7 +236,7 @@ export default function DMChat() {
                     </button>
                     <button
                       onClick={() => handleDelete(msg.id)}
-                      className="flex h-7 w-7 items-center justify-center rounded text-slate-500 hover:text-red-400 hover:bg-dark-700"
+                      className="flex h-7 w-7 items-center justify-center rounded text-slate-400 transition-colors hover:text-red-400 hover:bg-dark-600"
                       title="Delete"
                     >
                       <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
@@ -250,28 +252,46 @@ export default function DMChat() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
       {/* Typing indicator */}
       {typingState && (
-        <div className="shrink-0 px-6 pb-1">
-          <span className="text-xs text-slate-500">
-            <strong className="text-slate-400">{usernames[typingState.userId] || "Someone"}</strong> is typing...
-          </span>
+        <div className="shrink-0 px-6 py-1 animate-fade-in">
+          <div className="flex items-center gap-1.5">
+            <div className="flex gap-0.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:0ms]" />
+              <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:150ms]" />
+              <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:300ms]" />
+            </div>
+            <span className="text-xs text-slate-500">
+              <strong className="text-slate-400">{usernames[typingState.userId] || "Someone"}</strong> is typing
+            </span>
+          </div>
         </div>
       )}
 
+      {/* Message Input */}
       <form onSubmit={handleSend} className="shrink-0 px-4 pb-4">
-        <div className="flex items-end rounded-lg bg-dark-800 px-4 py-2.5">
+        <div className="relative flex items-end rounded-xl bg-dark-800 px-4 py-3 ring-1 ring-dark-700 transition-all focus-within:ring-nexe-500/40">
           <textarea
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={`Message @${channelName}`}
-            className="flex-1 resize-none bg-transparent text-sm text-slate-200 outline-none placeholder:text-slate-500"
+            placeholder={`Message ${isGroup ? channelName : "@" + channelName}`}
+            className="flex-1 resize-none bg-transparent text-sm text-slate-200 outline-none placeholder:text-slate-500 max-h-36"
             rows={1}
             maxLength={2000}
+            style={{ height: "auto", minHeight: "20px" }}
+            onInput={(e) => {
+              const el = e.currentTarget;
+              el.style.height = "auto";
+              el.style.height = Math.min(el.scrollHeight, 144) + "px";
+            }}
           />
+          {input.length > 1800 && (
+            <span className={`absolute right-3 top-1 text-[10px] font-medium ${input.length > 1950 ? "text-red-400" : "text-slate-500"}`}>
+              {2000 - input.length}
+            </span>
+          )}
         </div>
       </form>
       </div>{/* end messages column */}
