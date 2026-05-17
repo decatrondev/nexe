@@ -61,13 +61,14 @@ function saveCollapsed(guildId: string, collapsed: Set<string>) {
 
 // ── Sortable channel wrapper ──
 
-function SortableChannel({ ch, isActive, unread, onClick, canDrag, isBridge, children }: {
+function SortableChannel({ ch, isActive, unread, onClick, canDrag, isBridge, onContextMenu, children }: {
   ch: Channel;
   isActive: boolean;
   unread: number;
   onClick: () => void;
   canDrag: boolean;
   isBridge?: boolean;
+  onContextMenu?: (e: React.MouseEvent, ch: Channel) => void;
   children?: React.ReactNode;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -96,6 +97,7 @@ function SortableChannel({ ch, isActive, unread, onClick, canDrag, isBridge, chi
           : "text-slate-400 hover:bg-dark-800/60 hover:text-slate-200"
       } ${canDrag ? "cursor-grab active:cursor-grabbing" : ""}`}
       onClick={onClick}
+      onContextMenu={(e) => { if (onContextMenu) { e.preventDefault(); onContextMenu(e, ch); } }}
     >
       <ChannelIcon type={ch.type} isActive={isActive} hasUnread={unread > 0} />
       <span className="truncate">{ch.name}</span>
@@ -349,10 +351,19 @@ function SortableVoiceWrapper({ ch, canDrag, children }: { ch: Channel; canDrag:
 
 // ── Context menu ──
 
+type ContextMenuItem = {
+  label?: string;
+  danger?: boolean;
+  active?: boolean;
+  icon?: string;
+  divider?: boolean;
+  onClick?: () => void;
+};
+
 function ContextMenu({ x, y, items, onClose }: {
   x: number;
   y: number;
-  items: { label: string; danger?: boolean; onClick: () => void }[];
+  items: ContextMenuItem[];
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -368,20 +379,31 @@ function ContextMenu({ x, y, items, onClose }: {
   return (
     <div
       ref={ref}
-      className="fixed z-50 min-w-[160px] overflow-hidden rounded-lg border border-dark-700 bg-dark-800 py-1 shadow-xl animate-slide-up"
+      className="fixed z-50 min-w-[180px] overflow-hidden rounded-lg border border-dark-700 bg-dark-800 py-1 shadow-xl animate-slide-up"
       style={{ top: y, left: x }}
     >
-      {items.map((item) => (
-        <button
-          key={item.label}
-          onClick={() => { item.onClick(); onClose(); }}
-          className={`flex w-full items-center px-3 py-1.5 text-sm transition-colors hover:bg-dark-700 ${
-            item.danger ? "text-red-400 hover:text-red-300" : "text-slate-300 hover:text-white"
-          }`}
-        >
-          {item.label}
-        </button>
-      ))}
+      {items.map((item, i) => {
+        if (item.divider) return <div key={`div-${i}`} className="my-1 border-t border-dark-700" />;
+        return (
+          <button
+            key={item.label}
+            onClick={() => { item.onClick?.(); onClose(); }}
+            className={`flex w-full items-center gap-2 px-3 py-1.5 text-sm transition-colors hover:bg-dark-700 ${
+              item.danger ? "text-red-400 hover:text-red-300"
+              : item.active ? "text-nexe-400"
+              : "text-slate-300 hover:text-white"
+            }`}
+          >
+            {item.icon && <span className="text-xs">{item.icon}</span>}
+            <span>{item.label}</span>
+            {item.active && (
+              <svg className="ml-auto h-3.5 w-3.5 text-nexe-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+              </svg>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -593,6 +615,8 @@ export default function ChannelList() {
   const [showCreateCategory, setShowCreateCategory] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; category: Category } | null>(null);
+  const [channelCtx, setChannelCtx] = useState<{ x: number; y: number; channel: Channel } | null>(null);
+  const [channelNotifLevel, setChannelNotifLevel] = useState<string | null>(null);
   const statusMenuRef = useRef<HTMLDivElement>(null);
 
   const allRoles = useGuildStore((s) => s.roles);
@@ -841,6 +865,16 @@ export default function ChannelList() {
         onClick={() => setActiveChannel(ch.id)}
         canDrag={canManageChannels}
         isBridge={activeGuild?.bridgeChannelId === ch.id}
+        onContextMenu={(e, channel) => {
+          setChannelCtx({ x: e.clientX, y: e.clientY, channel });
+          setChannelNotifLevel(null);
+          // Fetch current preference
+          if (activeGuildId) {
+            api.getNotificationPreference(activeGuildId).then((pref) => {
+              setChannelNotifLevel(pref?.level || "mentions");
+            }).catch(() => {});
+          }
+        }}
       />
     );
   }, [activeChannelId, unreadChannels, canManageChannels, setActiveChannel, voiceChannelId, voiceConnected, voiceConnecting, activeGuild]);
@@ -1079,6 +1113,50 @@ export default function ChannelList() {
             { label: "Edit Category", onClick: () => setEditingCategory(contextMenu.category) },
             { label: "Create Channel", onClick: () => handleCreateChannelInCategory(contextMenu.category.id) },
             { label: "Delete Category", danger: true, onClick: () => handleDeleteCategory(contextMenu.category) },
+          ]}
+        />
+      )}
+
+      {channelCtx && activeGuildId && (
+        <ContextMenu
+          x={channelCtx.x}
+          y={channelCtx.y}
+          onClose={() => setChannelCtx(null)}
+          items={[
+            {
+              label: "Mute Channel",
+              icon: channelNotifLevel === "nothing" ? "🔇" : "🔔",
+              onClick: () => {
+                const newLevel = channelNotifLevel === "nothing" ? "mentions" : "nothing";
+                api.setNotificationPreference(activeGuildId, newLevel, channelCtx.channel.id).catch(() => {});
+                setChannelCtx(null);
+              },
+            },
+            { divider: true },
+            {
+              label: "All Messages",
+              active: channelNotifLevel === "all",
+              onClick: () => {
+                api.setNotificationPreference(activeGuildId, "all", channelCtx.channel.id).catch(() => {});
+                setChannelCtx(null);
+              },
+            },
+            {
+              label: "Only @mentions",
+              active: channelNotifLevel === "mentions",
+              onClick: () => {
+                api.setNotificationPreference(activeGuildId, "mentions", channelCtx.channel.id).catch(() => {});
+                setChannelCtx(null);
+              },
+            },
+            {
+              label: "Nothing",
+              active: channelNotifLevel === "nothing",
+              onClick: () => {
+                api.setNotificationPreference(activeGuildId, "nothing", channelCtx.channel.id).catch(() => {});
+                setChannelCtx(null);
+              },
+            },
           ]}
         />
       )}
