@@ -25,11 +25,11 @@ export default function FloatingVoice() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState(false);
-  const [resizing, setResizing] = useState(false);
+  const [resizeDir, setResizeDir] = useState<string | null>(null);
   const [pos, setPos] = useState({ x: 16, y: 16 });
   const [size, setSize] = useState({ w: 320, h: 180 });
   const dragOffset = useRef({ x: 0, y: 0 });
-  const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0 });
+  const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0, px: 0, py: 0 });
 
   // Are we currently VIEWING the voice channel?
   const activeChannel = activeGuildId ? channels[activeGuildId]?.find((c) => c.id === activeChannelId) : null;
@@ -95,22 +95,30 @@ export default function FloatingVoice() {
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
   }, [dragging, size.w, size.h]);
 
-  // Resizing
+  // Resizing from any edge/corner
   useEffect(() => {
-    if (!resizing) return;
+    if (!resizeDir) return;
+    const MIN_W = 240, MAX_W = 640, MIN_H = 135, MAX_H = 480;
+    const s = resizeStart.current;
+
     const onMove = (e: MouseEvent) => {
-      const dw = e.clientX - resizeStart.current.x;
-      const dh = e.clientY - resizeStart.current.y;
-      setSize({
-        w: Math.max(240, Math.min(640, resizeStart.current.w + dw)),
-        h: Math.max(135, Math.min(480, resizeStart.current.h + dh)),
-      });
+      const dx = e.clientX - s.x;
+      const dy = e.clientY - s.y;
+      let newW = s.w, newH = s.h, newX = s.px, newY = s.py;
+
+      if (resizeDir.includes("r")) newW = Math.max(MIN_W, Math.min(MAX_W, s.w + dx));
+      if (resizeDir.includes("l")) { newW = Math.max(MIN_W, Math.min(MAX_W, s.w - dx)); newX = s.px + (s.w - newW); }
+      if (resizeDir.includes("b")) newH = Math.max(MIN_H, Math.min(MAX_H, s.h + dy));
+      if (resizeDir.includes("t")) { newH = Math.max(MIN_H, Math.min(MAX_H, s.h - dy)); newY = s.py + (s.h - newH); }
+
+      setSize({ w: newW, h: newH });
+      setPos({ x: newX, y: newY });
     };
-    const onUp = () => setResizing(false);
+    const onUp = () => setResizeDir(null);
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-  }, [resizing]);
+  }, [resizeDir]);
 
   if (!shouldShow) return null;
 
@@ -169,19 +177,32 @@ export default function FloatingVoice() {
         style={{ height: size.h }}
       />
 
-      {/* Resize handle (bottom-right corner) */}
-      <div
-        className="absolute bottom-0 right-0 h-4 w-4 cursor-se-resize"
-        onMouseDown={(e) => {
-          e.preventDefault();
-          resizeStart.current = { x: e.clientX, y: e.clientY, w: size.w, h: size.h };
-          setResizing(true);
-        }}
-      >
-        <svg viewBox="0 0 10 10" className="h-full w-full fill-current text-slate-600">
-          <path d="M9 1v8H1" fill="none" stroke="currentColor" strokeWidth="1.5" />
-        </svg>
-      </div>
+      {/* Resize handles — edges and corners */}
+      {(["t","b","l","r","tl","tr","bl","br"] as const).map((dir) => {
+        const cursor = { t:"n", b:"s", l:"w", r:"e", tl:"nw", tr:"ne", bl:"sw", br:"se" }[dir];
+        const cls = {
+          t: "top-0 left-2 right-2 h-1.5",
+          b: "bottom-0 left-2 right-2 h-1.5",
+          l: "left-0 top-2 bottom-2 w-1.5",
+          r: "right-0 top-2 bottom-2 w-1.5",
+          tl: "top-0 left-0 h-3 w-3",
+          tr: "top-0 right-0 h-3 w-3",
+          bl: "bottom-0 left-0 h-3 w-3",
+          br: "bottom-0 right-0 h-3 w-3",
+        }[dir];
+        return (
+          <div
+            key={dir}
+            className={`absolute ${cls}`}
+            style={{ cursor: `${cursor}-resize` }}
+            onMouseDown={(e) => {
+              e.preventDefault();
+              resizeStart.current = { x: e.clientX, y: e.clientY, w: size.w, h: size.h, px: pos.x, py: pos.y };
+              setResizeDir(dir);
+            }}
+          />
+        );
+      })}
     </div>
   );
 }
