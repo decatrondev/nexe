@@ -6,6 +6,7 @@ import { userColor, formatTimestamp } from "../lib/utils";
 import { api } from "../lib/api";
 import { toast } from "@nexe/ui";
 import MessageContent from "./MessageContent";
+import DMUserPanel from "./DMUserPanel";
 
 export default function DMChat() {
   const activeChannelId = useDMStore((s) => s.activeChannelId);
@@ -104,7 +105,7 @@ export default function DMChat() {
       <div className="flex h-12 shrink-0 items-center gap-3 border-b border-dark-700 px-4">
         <span className="text-slate-400">{isGroup ? "#" : "@"}</span>
         <span className="font-semibold text-sm text-white">{channelName}</span>
-        {isGroup && (
+        {isGroup ? (
           <>
             <span className="text-xs text-slate-500">{channel?.participants?.length ?? 0} members</span>
             <button
@@ -119,6 +120,18 @@ export default function DMChat() {
               </svg>
             </button>
           </>
+        ) : (
+          <button
+            onClick={() => setShowMembers(!showMembers)}
+            className={`ml-auto flex h-7 w-7 items-center justify-center rounded transition-colors ${
+              showMembers ? "text-white bg-dark-700" : "text-slate-400 hover:text-slate-200"
+            }`}
+            title="Toggle user info"
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+            </svg>
+          </button>
         )}
       </div>
 
@@ -301,6 +314,11 @@ export default function DMChat() {
             })}
           </div>
         </div>
+      )}
+
+      {/* 1-on-1 DM User Info Panel */}
+      {!isGroup && showMembers && otherUser && (
+        <DMUserPanel userId={otherUser.userId} />
       )}
       </div>{/* end content row */}
     </div>

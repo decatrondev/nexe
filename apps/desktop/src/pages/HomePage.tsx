@@ -11,6 +11,7 @@ import FriendsPage from "../components/FriendsPage";
 import DMSidebar from "../components/DMSidebar";
 import DMChat from "../components/DMChat";
 import DMRequestsPage from "../components/DMRequestsPage";
+import ActiveNowPanel from "../components/ActiveNowPanel";
 import { useGuildStore } from "../stores/guild";
 import { useAuthStore } from "../stores/auth";
 import { useVoiceStore } from "../stores/voice";
@@ -662,7 +663,12 @@ export default function HomePage() {
       ) : !activeGuildId ? (
         <>
           <DMSidebar />
-          {activeDMChannelId === "__requests__" ? <DMRequestsPage /> : activeDMChannelId ? <DMChat /> : <FriendsPage />}
+          {activeDMChannelId === "__requests__" ? <DMRequestsPage /> : activeDMChannelId ? <DMChat /> : (
+            <>
+              <FriendsPage />
+              <ActiveNowPanel />
+            </>
+          )}
         </>
       ) : (
         <>
