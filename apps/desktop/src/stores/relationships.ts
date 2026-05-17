@@ -50,6 +50,19 @@ export const useRelationshipStore = create<RelationshipState>((set, get) => ({
           if (info.avatarUrl) newAvatarMap[uid] = info.avatarUrl;
         }
         useGuildStore.setState({ usernames: newUsernames, avatarMap: newAvatarMap });
+
+        // Fetch presence for all related users
+        const userIds = Object.keys(data.users);
+        if (userIds.length > 0) {
+          api.getBulkPresence(userIds).then((presences) => {
+            const gs = useGuildStore.getState();
+            const newPresence = { ...gs.presenceMap };
+            for (const p of presences) {
+              newPresence[p.userId] = p.status;
+            }
+            useGuildStore.setState({ presenceMap: newPresence });
+          }).catch(() => {});
+        }
       }
     } finally {
       set({ loading: false });
@@ -57,38 +70,26 @@ export const useRelationshipStore = create<RelationshipState>((set, get) => ({
   },
 
   async sendFriendRequest(username: string) {
-    const rel = await api.sendFriendRequest(username);
-    set((s) => ({ relationships: [...s.relationships, rel] }));
+    await api.sendFriendRequest(username);
+    // Don't add optimistically — WS event will handle it
   },
 
   async acceptRequest(id: string) {
-    const rel = await api.acceptFriendRequest(id);
-    // Remove the pending, add the new friend
-    set((s) => ({
-      relationships: s.relationships
-        .filter((r) => r.id !== id)
-        .concat(rel),
-    }));
+    await api.acceptFriendRequest(id);
+    // Don't add optimistically — WS event will handle the update
   },
 
   async rejectRequest(id: string) {
     await api.deleteRelationship(id);
-    set((s) => ({ relationships: s.relationships.filter((r) => r.id !== id) }));
+    // Don't remove optimistically — WS RELATIONSHIP_REMOVE will handle it
   },
 
   async removeFriend(id: string) {
     await api.deleteRelationship(id);
-    set((s) => ({ relationships: s.relationships.filter((r) => r.id !== id) }));
   },
 
   async blockUser(targetId: string) {
-    const rel = await api.blockUser(targetId);
-    // Remove any existing relationship with this user, add the block
-    set((s) => ({
-      relationships: s.relationships
-        .filter((r) => r.targetId !== targetId && r.userId !== targetId)
-        .concat(rel),
-    }));
+    await api.blockUser(targetId);
   },
 
   async unblock(id: string) {
@@ -140,8 +141,16 @@ export const useRelationshipStore = create<RelationshipState>((set, get) => ({
   // WS event handlers
   handleRelationshipCreate(rel: Relationship) {
     set((s) => {
-      // Avoid duplicates
+      // Deduplicate by ID
       if (s.relationships.some((r) => r.id === rel.id)) return s;
+      // Also deduplicate by user pair + type (prevent double from optimistic + WS)
+      const hasSamePair = s.relationships.some(
+        (r) => r.type === rel.type && (
+          (r.userId === rel.userId && r.targetId === rel.targetId) ||
+          (r.userId === rel.targetId && r.targetId === rel.userId)
+        )
+      );
+      if (hasSamePair) return s;
       return { relationships: [...s.relationships, rel] };
     });
     // Resolve unknown users
@@ -152,13 +161,31 @@ export const useRelationshipStore = create<RelationshipState>((set, get) => ({
 
   handleRelationshipUpdate(rel: Relationship) {
     set((s) => {
-      const exists = s.relationships.some((r) => r.id === rel.id);
-      if (exists) {
-        return { relationships: s.relationships.map((r) => (r.id === rel.id ? rel : r)) };
-      }
-      // Might be new (e.g. pending→friend creates new entry)
-      return { relationships: [...s.relationships, rel] };
+      // When accepting: pending→friend. Remove old pending for this user pair, add/update the friend entry.
+      const filtered = s.relationships.filter((r) => {
+        // Remove if same ID (will be replaced)
+        if (r.id === rel.id) return false;
+        // Remove old pending between the same two users (accept flow)
+        if (r.type === "pending" && rel.type === "friend") {
+          const sameUsers = (r.userId === rel.userId && r.targetId === rel.targetId) ||
+                            (r.userId === rel.targetId && r.targetId === rel.userId);
+          if (sameUsers) return false;
+        }
+        return true;
+      });
+      // Only add if not already present (different ID but same user pair + type)
+      const alreadyExists = filtered.some(
+        (r) => r.type === rel.type && (
+          (r.userId === rel.userId && r.targetId === rel.targetId) ||
+          (r.userId === rel.targetId && r.targetId === rel.userId)
+        )
+      );
+      return { relationships: alreadyExists ? filtered : [...filtered, rel] };
     });
+    // Resolve unknown users
+    const myId = useAuthStore.getState().user?.id;
+    const otherId = rel.userId === myId ? rel.targetId : rel.userId;
+    get()._resolveUser(otherId);
   },
 
   handleRelationshipRemove(data: { id: string }) {

@@ -300,8 +300,8 @@ func (h *DMHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Broadcast to all participants (including sender for multi-device)
-	h.publishToParticipants(r.Context(), channelID, EventDMMessageCreate, msg, "")
+	// Broadcast to other participants (sender already has msg from API response)
+	h.publishToParticipants(r.Context(), channelID, EventDMMessageCreate, msg, userID)
 
 	writeJSON(w, http.StatusCreated, msg)
 }
@@ -339,7 +339,7 @@ func (h *DMHandler) EditMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updated, _ := h.repo.GetMessageByID(r.Context(), msgID)
-	h.publishToParticipants(r.Context(), msg.ChannelID, EventDMMessageUpdate, updated, "")
+	h.publishToParticipants(r.Context(), msg.ChannelID, EventDMMessageUpdate, updated, userID)
 	writeJSON(w, http.StatusOK, updated)
 }
 
@@ -368,7 +368,7 @@ func (h *DMHandler) DeleteMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.publishToParticipants(r.Context(), msg.ChannelID, EventDMMessageDelete,
-		map[string]string{"id": msgID, "channelId": msg.ChannelID}, "")
+		map[string]string{"id": msgID, "channelId": msg.ChannelID}, userID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
