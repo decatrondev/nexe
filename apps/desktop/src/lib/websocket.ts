@@ -21,6 +21,7 @@ class NexeWebSocket {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 10;
   private intentionalClose = false;
+  private messageQueue: WSMessage[] = [];
 
   connect(token: string) {
     this.token = token;
@@ -57,6 +58,7 @@ class NexeWebSocket {
     this.ws.onopen = () => {
       this.reconnectAttempts = 0;
       this.startHeartbeat();
+      this.flushQueue();
     };
 
     this.ws.onmessage = (event: MessageEvent) => {
@@ -121,6 +123,18 @@ class NexeWebSocket {
   send(msg: WSMessage) {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
+    } else {
+      // Buffer messages while disconnected (max 50 to prevent memory issues)
+      if (this.messageQueue.length < 50) {
+        this.messageQueue.push(msg);
+      }
+    }
+  }
+
+  private flushQueue() {
+    while (this.messageQueue.length > 0) {
+      const msg = this.messageQueue.shift()!;
+      this.send(msg);
     }
   }
 
