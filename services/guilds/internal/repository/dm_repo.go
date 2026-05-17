@@ -525,6 +525,88 @@ func (r *DMRepository) DeleteMessage(ctx context.Context, id string) error {
 	return err
 }
 
+// ---- Reactions ----
+
+type DMReactionGroup struct {
+	Emoji   string   `json:"emoji"`
+	Count   int      `json:"count"`
+	UserIDs []string `json:"users"`
+}
+
+// AddReaction adds a reaction to a DM message.
+func (r *DMRepository) AddReaction(ctx context.Context, messageID, userID, emoji string) error {
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO dm_reactions (message_id, user_id, emoji) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+		messageID, userID, emoji,
+	)
+	return err
+}
+
+// RemoveReaction removes a reaction from a DM message.
+func (r *DMRepository) RemoveReaction(ctx context.Context, messageID, userID, emoji string) error {
+	_, err := r.db.ExecContext(ctx,
+		`DELETE FROM dm_reactions WHERE message_id = $1 AND user_id = $2 AND emoji = $3`,
+		messageID, userID, emoji,
+	)
+	return err
+}
+
+// GetReactions returns aggregated reaction groups for a set of message IDs.
+func (r *DMRepository) GetReactions(ctx context.Context, messageIDs []string) (map[string][]DMReactionGroup, error) {
+	if len(messageIDs) == 0 {
+		return map[string][]DMReactionGroup{}, nil
+	}
+
+	// Build IN clause
+	query := `SELECT message_id, emoji, COUNT(*), ARRAY_AGG(user_id::text)
+		FROM dm_reactions WHERE message_id = ANY($1)
+		GROUP BY message_id, emoji ORDER BY MIN(created_at)`
+
+	rows, err := r.db.QueryContext(ctx, query, messageIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[string][]DMReactionGroup)
+	for rows.Next() {
+		var msgID, emoji string
+		var count int
+		var userIDs []string
+		if err := rows.Scan(&msgID, &emoji, &count, &userIDs); err != nil {
+			continue
+		}
+		result[msgID] = append(result[msgID], DMReactionGroup{
+			Emoji:   emoji,
+			Count:   count,
+			UserIDs: userIDs,
+		})
+	}
+	return result, nil
+}
+
+// GetMessageReactions returns reactions for a single message.
+func (r *DMRepository) GetMessageReactions(ctx context.Context, messageID string) ([]DMReactionGroup, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT emoji, COUNT(*), ARRAY_AGG(user_id::text)
+		FROM dm_reactions WHERE message_id = $1
+		GROUP BY emoji ORDER BY MIN(created_at)`, messageID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var groups []DMReactionGroup
+	for rows.Next() {
+		var g DMReactionGroup
+		if err := rows.Scan(&g.Emoji, &g.Count, &g.UserIDs); err != nil {
+			continue
+		}
+		groups = append(groups, g)
+	}
+	return groups, nil
+}
+
 // SearchMessages searches DM messages by content within a channel.
 func (r *DMRepository) SearchMessages(ctx context.Context, channelID, query string, limit int) ([]DMMessage, error) {
 	rows, err := r.db.QueryContext(ctx, `

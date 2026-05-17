@@ -113,6 +113,21 @@ function OverviewTab({ guildId }: { guildId: string }) {
   const [accentColor, setAccentColor] = useState(guild?.accentColor ?? "");
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [allowDms, setAllowDms] = useState(true);
+  const [dmToggleLoaded, setDmToggleLoaded] = useState(false);
+
+  useEffect(() => {
+    api.getServerDMToggle(guildId).then((r) => { setAllowDms(r.allowDms); setDmToggleLoaded(true); }).catch(() => setDmToggleLoaded(true));
+  }, [guildId]);
+
+  async function handleDmToggle(v: boolean) {
+    setAllowDms(v);
+    try {
+      await api.setServerDMToggle(guildId, v);
+    } catch {
+      setAllowDms(!v);
+    }
+  }
 
   const hasChanges = name !== (guild?.name ?? "") || description !== (guild?.description ?? "") || systemChannelId !== (guild?.systemChannelId ?? "") || accentColor !== (guild?.accentColor ?? "");
 
@@ -221,6 +236,27 @@ function OverviewTab({ guildId }: { guildId: string }) {
           {loading ? "Saving..." : "Save Changes"}
         </button>
       </form>
+
+      {/* Per-server DM toggle */}
+      {dmToggleLoaded && (
+        <div className="mt-8 border-t border-dark-700 pt-6">
+          <h3 className="mb-1 text-sm font-semibold text-slate-200">Direct Messages</h3>
+          <p className="mb-3 text-xs text-slate-500">
+            Allow other members of this server to send you direct messages.
+          </p>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <div
+              onClick={() => handleDmToggle(!allowDms)}
+              className={`relative h-6 w-11 rounded-full transition-colors ${allowDms ? "bg-nexe-500" : "bg-dark-600"}`}
+            >
+              <div className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${allowDms ? "translate-x-[22px]" : "translate-x-0.5"}`} />
+            </div>
+            <span className="text-sm text-slate-300">
+              {allowDms ? "Enabled" : "Disabled"}
+            </span>
+          </label>
+        </div>
+      )}
     </>
   );
 }

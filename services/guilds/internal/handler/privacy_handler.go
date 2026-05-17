@@ -18,6 +18,8 @@ func NewPrivacyHandler(repo *repository.PrivacyRepository) *PrivacyHandler {
 func (h *PrivacyHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /privacy", h.GetPrivacy)
 	mux.HandleFunc("PUT /privacy", h.UpdatePrivacy)
+	mux.HandleFunc("GET /guilds/{guildId}/dm-toggle", h.GetServerDMToggle)
+	mux.HandleFunc("PUT /guilds/{guildId}/dm-toggle", h.SetServerDMToggle)
 }
 
 // GET /privacy
@@ -80,4 +82,44 @@ func (h *PrivacyHandler) UpdatePrivacy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, settings)
+}
+
+// GET /guilds/:guildId/dm-toggle
+func (h *PrivacyHandler) GetServerDMToggle(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	guildID := r.PathValue("guildId")
+
+	allowed, err := h.repo.GetServerDMAllowed(r.Context(), guildID, userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "privacy_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"allowDms": allowed})
+}
+
+// PUT /guilds/:guildId/dm-toggle { "allowDms": true/false }
+func (h *PrivacyHandler) SetServerDMToggle(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	guildID := r.PathValue("guildId")
+
+	var body struct {
+		AllowDMs *bool `json:"allowDms"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.AllowDMs == nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "allowDms (boolean) required")
+		return
+	}
+
+	if err := h.repo.SetServerDMAllowed(r.Context(), guildID, userID, *body.AllowDMs); err != nil {
+		writeError(w, http.StatusInternalServerError, "privacy_error", err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]bool{"allowDms": *body.AllowDMs})
 }

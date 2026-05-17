@@ -245,6 +245,8 @@ func main() {
 	// Privacy
 	mux.Handle("GET /privacy", guildsProxy(gp))
 	mux.Handle("PUT /privacy", guildsProxy(gp))
+	mux.Handle("GET /guilds/{guildId}/dm-toggle", guildsProxy(gp))
+	mux.Handle("PUT /guilds/{guildId}/dm-toggle", guildsProxy(gp))
 
 	// DMs
 	mux.Handle("POST /dm-channels", guildsProxy(gp))
@@ -260,6 +262,9 @@ func main() {
 	mux.Handle("POST /dm-channels/{id}/messages", guildsProxy(gp))
 	mux.Handle("PATCH /dm-messages/{id}", guildsProxy(gp))
 	mux.Handle("DELETE /dm-messages/{id}", guildsProxy(gp))
+	mux.Handle("PUT /dm-messages/{id}/reactions/{emoji}/@me", guildsProxy(gp))
+	mux.Handle("DELETE /dm-messages/{id}/reactions/{emoji}/@me", guildsProxy(gp))
+	mux.Handle("GET /dm-messages/{id}/reactions", guildsProxy(gp))
 	mux.Handle("POST /dm-channels/{id}/typing", guildsProxy(gp))
 	mux.Handle("POST /dm-channels/{id}/ack", guildsProxy(gp))
 	mux.Handle("GET /dm-unreads", guildsProxy(gp))

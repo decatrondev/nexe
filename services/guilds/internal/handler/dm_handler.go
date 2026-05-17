@@ -13,11 +13,13 @@ import (
 )
 
 const (
-	EventDMChannelCreate = "DM_CHANNEL_CREATE"
-	EventDMMessageCreate = "DM_MESSAGE_CREATE"
-	EventDMMessageUpdate = "DM_MESSAGE_UPDATE"
-	EventDMMessageDelete = "DM_MESSAGE_DELETE"
-	EventDMTypingStart   = "DM_TYPING_START"
+	EventDMChannelCreate  = "DM_CHANNEL_CREATE"
+	EventDMMessageCreate  = "DM_MESSAGE_CREATE"
+	EventDMMessageUpdate  = "DM_MESSAGE_UPDATE"
+	EventDMMessageDelete  = "DM_MESSAGE_DELETE"
+	EventDMTypingStart    = "DM_TYPING_START"
+	EventDMReactionAdd    = "DM_REACTION_ADD"
+	EventDMReactionRemove = "DM_REACTION_REMOVE"
 )
 
 type DMHandler struct {
@@ -63,6 +65,11 @@ func (h *DMHandler) RegisterRoutes(mux *http.ServeMux) {
 
 	// Typing
 	mux.HandleFunc("POST /dm-channels/{id}/typing", h.Typing)
+
+	// DM Reactions
+	mux.HandleFunc("PUT /dm-messages/{id}/reactions/{emoji}/@me", h.AddReaction)
+	mux.HandleFunc("DELETE /dm-messages/{id}/reactions/{emoji}/@me", h.RemoveReaction)
+	mux.HandleFunc("GET /dm-messages/{id}/reactions", h.GetReactions)
 }
 
 // publishToParticipants sends an event to all participants of a DM channel.
@@ -761,4 +768,112 @@ func (h *DMHandler) RejectRequest(w http.ResponseWriter, r *http.Request) {
 
 	h.repo.CloseDM(r.Context(), channelID, userID)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// ---- DM Reactions ----
+
+// AddReaction adds a reaction to a DM message.
+// PUT /dm-messages/:id/reactions/:emoji/@me
+func (h *DMHandler) AddReaction(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	msgID := r.PathValue("id")
+	emoji := r.PathValue("emoji")
+
+	msg, err := h.repo.GetMessageByID(r.Context(), msgID)
+	if err != nil || msg == nil {
+		writeError(w, http.StatusNotFound, "not_found", "message not found")
+		return
+	}
+
+	isP, _ := h.repo.IsParticipant(r.Context(), msg.ChannelID, userID)
+	if !isP {
+		writeError(w, http.StatusForbidden, "forbidden", "not a participant")
+		return
+	}
+
+	if err := h.repo.AddReaction(r.Context(), msgID, userID, emoji); err != nil {
+		writeError(w, http.StatusInternalServerError, "dm_error", err.Error())
+		return
+	}
+
+	h.publishToParticipants(r.Context(), msg.ChannelID, EventDMReactionAdd, map[string]string{
+		"messageId": msgID,
+		"channelId": msg.ChannelID,
+		"userId":    userID,
+		"emoji":     emoji,
+	}, "")
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// RemoveReaction removes a reaction from a DM message.
+// DELETE /dm-messages/:id/reactions/:emoji/@me
+func (h *DMHandler) RemoveReaction(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	msgID := r.PathValue("id")
+	emoji := r.PathValue("emoji")
+
+	msg, err := h.repo.GetMessageByID(r.Context(), msgID)
+	if err != nil || msg == nil {
+		writeError(w, http.StatusNotFound, "not_found", "message not found")
+		return
+	}
+
+	isP, _ := h.repo.IsParticipant(r.Context(), msg.ChannelID, userID)
+	if !isP {
+		writeError(w, http.StatusForbidden, "forbidden", "not a participant")
+		return
+	}
+
+	if err := h.repo.RemoveReaction(r.Context(), msgID, userID, emoji); err != nil {
+		writeError(w, http.StatusInternalServerError, "dm_error", err.Error())
+		return
+	}
+
+	h.publishToParticipants(r.Context(), msg.ChannelID, EventDMReactionRemove, map[string]string{
+		"messageId": msgID,
+		"channelId": msg.ChannelID,
+		"userId":    userID,
+		"emoji":     emoji,
+	}, "")
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetReactions returns reactions for a DM message.
+// GET /dm-messages/:id/reactions
+func (h *DMHandler) GetReactions(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	msgID := r.PathValue("id")
+
+	msg, err := h.repo.GetMessageByID(r.Context(), msgID)
+	if err != nil || msg == nil {
+		writeError(w, http.StatusNotFound, "not_found", "message not found")
+		return
+	}
+
+	isP, _ := h.repo.IsParticipant(r.Context(), msg.ChannelID, userID)
+	if !isP {
+		writeError(w, http.StatusForbidden, "forbidden", "not a participant")
+		return
+	}
+
+	reactions, err := h.repo.GetMessageReactions(r.Context(), msgID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "dm_error", err.Error())
+		return
+	}
+	if reactions == nil {
+		reactions = []repository.DMReactionGroup{}
+	}
+	writeJSON(w, http.StatusOK, reactions)
 }

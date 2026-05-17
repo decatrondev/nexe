@@ -1114,6 +1114,18 @@ export const api = {
     return request<void>("DELETE", `/dm-messages/${messageId}`);
   },
 
+  addDMReaction(messageId: string, emoji: string) {
+    return request<void>("PUT", `/dm-messages/${messageId}/reactions/${encodeURIComponent(emoji)}/@me`);
+  },
+
+  removeDMReaction(messageId: string, emoji: string) {
+    return request<void>("DELETE", `/dm-messages/${messageId}/reactions/${encodeURIComponent(emoji)}/@me`);
+  },
+
+  getDMReactions(messageId: string) {
+    return request<ReactionGroup[]>("GET", `/dm-messages/${messageId}/reactions`);
+  },
+
   dmTyping(channelId: string) {
     return request<void>("POST", `/dm-channels/${channelId}/typing`);
   },
@@ -1136,6 +1148,14 @@ export const api = {
 
   unpinDM(channelId: string) {
     return request<void>("DELETE", `/dm-channels/${channelId}/pin`);
+  },
+
+  getServerDMToggle(guildId: string) {
+    return request<{ allowDms: boolean }>("GET", `/guilds/${guildId}/dm-toggle`);
+  },
+
+  setServerDMToggle(guildId: string, allowDms: boolean) {
+    return request<{ allowDms: boolean }>("PUT", `/guilds/${guildId}/dm-toggle`, { allowDms });
   },
 
   // ---- Privacy ----

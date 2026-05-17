@@ -547,7 +547,19 @@ export default function HomePage() {
         useDMStore.getState().handleDMChannelCreate(data as DMChannel);
       });
       nexeWS.on("DM_MESSAGE_CREATE", (data) => {
-        useDMStore.getState().handleDMMessageCreate(data as DMMessage);
+        const dmMsg = data as DMMessage;
+        useDMStore.getState().handleDMMessageCreate(dmMsg);
+        // Desktop notification for DMs (when not viewing the channel)
+        const dmState = useDMStore.getState();
+        if (dmMsg.channelId !== dmState.activeChannelId) {
+          const authorName = useGuildStore.getState().usernames[dmMsg.authorId] || "Someone";
+          try {
+            new Notification(`${authorName}`, {
+              body: dmMsg.content.length > 100 ? dmMsg.content.slice(0, 100) + "..." : dmMsg.content,
+              silent: false,
+            });
+          } catch { /* notification permission not granted */ }
+        }
       });
       nexeWS.on("DM_MESSAGE_UPDATE", (data) => {
         useDMStore.getState().handleDMMessageUpdate(data as DMMessage);
@@ -560,6 +572,14 @@ export default function HomePage() {
       });
       nexeWS.on("DM_READ", (data) => {
         useDMStore.getState().handleDMRead(data as { channelId: string; userId: string; messageId: string });
+      });
+      nexeWS.on("DM_REACTION_ADD", (data) => {
+        const d = data as { messageId: string; channelId: string; userId: string; emoji: string };
+        window.dispatchEvent(new CustomEvent("nexe:dm-reaction", { detail: { ...d, type: "add" } }));
+      });
+      nexeWS.on("DM_REACTION_REMOVE", (data) => {
+        const d = data as { messageId: string; channelId: string; userId: string; emoji: string };
+        window.dispatchEvent(new CustomEvent("nexe:dm-reaction", { detail: { ...d, type: "remove" } }));
       });
 
       // Relationship events (friends)
