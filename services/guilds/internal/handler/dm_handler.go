@@ -21,12 +21,13 @@ const (
 )
 
 type DMHandler struct {
-	repo *repository.DMRepository
-	rdb  *redis.Client
+	repo    *repository.DMRepository
+	privacy *repository.PrivacyRepository
+	rdb     *redis.Client
 }
 
-func NewDMHandler(repo *repository.DMRepository, rdb *redis.Client) *DMHandler {
-	return &DMHandler{repo: repo, rdb: rdb}
+func NewDMHandler(repo *repository.DMRepository, privacy *repository.PrivacyRepository, rdb *redis.Client) *DMHandler {
+	return &DMHandler{repo: repo, privacy: privacy, rdb: rdb}
 }
 
 func (h *DMHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -146,6 +147,15 @@ func (h *DMHandler) CreateDM(w http.ResponseWriter, r *http.Request) {
 	if body.TargetID == userID {
 		writeError(w, http.StatusBadRequest, "self_dm", "cannot DM yourself")
 		return
+	}
+
+	// Check privacy: can this user DM the target?
+	if h.privacy != nil {
+		canDM, _ := h.privacy.CanSendDM(r.Context(), userID, body.TargetID)
+		if !canDM {
+			writeError(w, http.StatusForbidden, "privacy", "this user is not accepting DMs from you")
+			return
+		}
 	}
 
 	ch, err := h.repo.GetOrCreateDM(r.Context(), userID, body.TargetID)

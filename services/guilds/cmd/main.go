@@ -49,6 +49,7 @@ func main() {
 	overrideRepo := repository.NewOverrideRepository(db)
 	relationshipRepo := repository.NewRelationshipRepository(db)
 	dmRepo := repository.NewDMRepository(db)
+	privacyRepo := repository.NewPrivacyRepository(db)
 
 	// Event publisher (Redis pub/sub for real-time broadcasting via gateway)
 	eventPublisher := service.NewEventPublisher(rdb)
@@ -63,8 +64,9 @@ func main() {
 	// Handler
 	guildHandler := handler.NewGuildHandler(guildService, automodRepo, overrideRepo, rdb)
 	emoteHandler := handler.NewEmoteHandler(guildService, rdb, db)
-	relationshipHandler := handler.NewRelationshipHandler(relationshipRepo, db, rdb)
-	dmHandler := handler.NewDMHandler(dmRepo, rdb)
+	relationshipHandler := handler.NewRelationshipHandler(relationshipRepo, privacyRepo, db, rdb)
+	dmHandler := handler.NewDMHandler(dmRepo, privacyRepo, rdb)
+	privacyHandler := handler.NewPrivacyHandler(privacyRepo)
 
 	// Router
 	mux := http.NewServeMux()
@@ -78,6 +80,7 @@ func main() {
 	guildHandler.RegisterRoutes(mux)
 	relationshipHandler.RegisterRoutes(mux)
 	dmHandler.RegisterRoutes(mux)
+	privacyHandler.RegisterRoutes(mux)
 	mux.HandleFunc("GET /guilds/{id}/emotes", emoteHandler.GetEmotes)
 	mux.HandleFunc("POST /guilds/{id}/emotes/validate", emoteHandler.ValidateEmotes)
 

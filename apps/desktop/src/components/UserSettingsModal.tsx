@@ -10,6 +10,7 @@ const settingsTabs: TabItem[] = [
   { id: "account", label: "My Account" },
   { id: "profile", label: "Profiles" },
   { id: "security", label: "Security" },
+  { id: "privacy", label: "Privacy" },
   { id: "notifications", label: "Notifications" },
   { id: "voice", label: "Voice & Video" },
   { id: "appearance", label: "Appearance" },
@@ -61,6 +62,7 @@ export default function UserSettingsModal({ onClose }: Props) {
               <TabPanel id="account"><AccountTab /></TabPanel>
               <TabPanel id="profile"><ProfileTab /></TabPanel>
               <TabPanel id="security"><SecurityTab /></TabPanel>
+              <TabPanel id="privacy"><PrivacyTab /></TabPanel>
               <TabPanel id="notifications"><NotificationsTab /></TabPanel>
               <TabPanel id="voice"><VoiceVideoTab /></TabPanel>
               <TabPanel id="appearance"><AppearanceTab /></TabPanel>
@@ -804,6 +806,127 @@ function SecurityTab() {
 // ═══════════════════════════
 // Appearance
 // ═══════════════════════════
+
+function PrivacyTab() {
+  const [whoCanDm, setWhoCanDm] = useState("everyone");
+  const [whoCanFriend, setWhoCanFriend] = useState("everyone");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api.getPrivacySettings().then((s) => {
+      setWhoCanDm(s.whoCanDm);
+      setWhoCanFriend(s.whoCanFriend);
+    }).finally(() => setLoading(false));
+  }, []);
+
+  async function save(field: string, value: string) {
+    setSaving(true);
+    try {
+      const updated = await api.updatePrivacySettings({ [field]: value });
+      setWhoCanDm(updated.whoCanDm);
+      setWhoCanFriend(updated.whoCanFriend);
+    } catch { /* ignore */ }
+    finally { setSaving(false); }
+  }
+
+  if (loading) return <p className="text-sm text-slate-500">Loading...</p>;
+
+  return (
+    <div className="space-y-6">
+      <h2 className="text-xl font-bold text-slate-100">Privacy & Safety</h2>
+
+      {/* Who can DM */}
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-300">
+          Who can send you direct messages
+        </label>
+        <p className="mb-3 text-xs text-slate-500">
+          Control who is allowed to send you DMs. Messages from blocked users are always hidden.
+        </p>
+        <div className="space-y-2">
+          {([
+            { value: "everyone", label: "Everyone", desc: "Anyone can DM you (strangers go to Message Requests)" },
+            { value: "server_members", label: "Server Members", desc: "Only people you share a server with or are friends with" },
+            { value: "friends", label: "Friends Only", desc: "Only people on your friends list" },
+          ] as const).map((opt) => (
+            <label
+              key={opt.value}
+              className={`flex cursor-pointer items-start gap-3 rounded-lg border px-4 py-3 transition-colors ${
+                whoCanDm === opt.value
+                  ? "border-nexe-500/50 bg-nexe-500/5"
+                  : "border-dark-700 hover:border-dark-600"
+              }`}
+            >
+              <input
+                type="radio"
+                name="whoCanDm"
+                value={opt.value}
+                checked={whoCanDm === opt.value}
+                onChange={() => { setWhoCanDm(opt.value); save("whoCanDm", opt.value); }}
+                disabled={saving}
+                className="mt-0.5 accent-nexe-500"
+              />
+              <div>
+                <span className="block text-sm font-medium text-slate-200">{opt.label}</span>
+                <span className="text-xs text-slate-500">{opt.desc}</span>
+              </div>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Who can friend request */}
+      <div>
+        <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-300">
+          Who can send you friend requests
+        </label>
+        <p className="mb-3 text-xs text-slate-500">
+          Control who can add you as a friend.
+        </p>
+        <div className="space-y-2">
+          {([
+            { value: "everyone", label: "Everyone", desc: "Anyone can send you a friend request" },
+            { value: "friends_of_friends", label: "Friends of Friends", desc: "Only people who share a mutual friend with you" },
+            { value: "nobody", label: "Nobody", desc: "No one can send you friend requests" },
+          ] as const).map((opt) => (
+            <label
+              key={opt.value}
+              className={`flex cursor-pointer items-start gap-3 rounded-lg border px-4 py-3 transition-colors ${
+                whoCanFriend === opt.value
+                  ? "border-nexe-500/50 bg-nexe-500/5"
+                  : "border-dark-700 hover:border-dark-600"
+              }`}
+            >
+              <input
+                type="radio"
+                name="whoCanFriend"
+                value={opt.value}
+                checked={whoCanFriend === opt.value}
+                onChange={() => { setWhoCanFriend(opt.value); save("whoCanFriend", opt.value); }}
+                disabled={saving}
+                className="mt-0.5 accent-nexe-500"
+              />
+              <div>
+                <span className="block text-sm font-medium text-slate-200">{opt.label}</span>
+                <span className="text-xs text-slate-500">{opt.desc}</span>
+              </div>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Block info */}
+      <div className="rounded-lg border border-dark-700 bg-dark-800/50 p-4">
+        <h3 className="text-sm font-semibold text-slate-300">Blocked Users</h3>
+        <p className="mt-1 text-xs text-slate-500">
+          Blocked users cannot send you DMs, friend requests, or see your online status.
+          Manage your block list from the Friends page → Blocked tab.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 function AppearanceTab() {
   const [chatFontSize, setChatFontSize] = useState(() =>

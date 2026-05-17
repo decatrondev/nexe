@@ -242,6 +242,10 @@ func main() {
 	mux.Handle("DELETE /relationships/{id}", guildsProxy(gp))
 	mux.Handle("GET /relationships/mutual/{userId}", guildsProxy(gp))
 
+	// Privacy
+	mux.Handle("GET /privacy", guildsProxy(gp))
+	mux.Handle("PUT /privacy", guildsProxy(gp))
+
 	// DMs
 	mux.Handle("POST /dm-channels", guildsProxy(gp))
 	mux.Handle("GET /dm-channels", guildsProxy(gp))

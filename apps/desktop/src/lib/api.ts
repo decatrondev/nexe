@@ -1117,6 +1117,16 @@ export const api = {
     return request<void>("POST", `/dm-channels/${channelId}/typing`);
   },
 
+  // ---- Privacy ----
+
+  getPrivacySettings() {
+    return request<{ userId: string; whoCanDm: string; whoCanFriend: string }>("GET", "/privacy");
+  },
+
+  updatePrivacySettings(data: { whoCanDm?: string; whoCanFriend?: string }) {
+    return request<{ userId: string; whoCanDm: string; whoCanFriend: string }>("PUT", "/privacy", data);
+  },
+
   getDMRequests() {
     return request<DMChannel[]>("GET", "/dm-requests");
   },

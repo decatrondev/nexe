@@ -21,13 +21,14 @@ const (
 )
 
 type RelationshipHandler struct {
-	repo *repository.RelationshipRepository
-	db   *sql.DB
-	rdb  *redis.Client
+	repo    *repository.RelationshipRepository
+	privacy *repository.PrivacyRepository
+	db      *sql.DB
+	rdb     *redis.Client
 }
 
-func NewRelationshipHandler(repo *repository.RelationshipRepository, db *sql.DB, rdb *redis.Client) *RelationshipHandler {
-	return &RelationshipHandler{repo: repo, db: db, rdb: rdb}
+func NewRelationshipHandler(repo *repository.RelationshipRepository, privacy *repository.PrivacyRepository, db *sql.DB, rdb *redis.Client) *RelationshipHandler {
+	return &RelationshipHandler{repo: repo, privacy: privacy, db: db, rdb: rdb}
 }
 
 func (h *RelationshipHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -174,6 +175,14 @@ func (h *RelationshipHandler) CreateRelationship(w http.ResponseWriter, r *http.
 		if blocked {
 			writeError(w, http.StatusForbidden, "blocked", "unable to send friend request")
 			return
+		}
+		// Check privacy settings
+		if h.privacy != nil {
+			canFriend, _ := h.privacy.CanSendFriendRequest(r.Context(), userID, targetID)
+			if !canFriend {
+				writeError(w, http.StatusForbidden, "privacy", "this user is not accepting friend requests")
+				return
+			}
 		}
 	}
 
