@@ -1,5 +1,7 @@
 import { useState, useCallback } from "react";
 import { useGuildStore } from "../stores/guild";
+import { useAuthStore } from "../stores/auth";
+import { useRelationshipStore } from "../stores/relationships";
 import { FREE_TIER_LIMITS } from "../lib/limits";
 import { Tooltip } from "@nexe/ui";
 import CreateGuildModal from "./CreateGuildModal";
@@ -82,6 +84,10 @@ export default function ServerSidebar() {
   const liveGuilds = useGuildStore((s) => s.liveGuilds);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
+  const myId = useAuthStore((s) => s.user?.id) ?? "";
+  const pendingCount = useRelationshipStore((s) =>
+    s.relationships.filter((r) => r.type === "pending" && r.targetId === myId).length
+  );
 
   const getGuildUnread = useCallback((guildId: string) => {
     const guildChannelList = allChannels[guildId] || [];
@@ -97,6 +103,7 @@ export default function ServerSidebar() {
           isActive={activeGuildId === null}
           onClick={() => useGuildStore.setState({ activeGuildId: null, activeChannelId: null })}
           title="Home"
+          badge={pendingCount}
         >
           <svg viewBox="0 0 24 24" className="h-6 w-6 fill-current">
             <path d="M2.391 8.84a.5.5 0 0 1 .158-.457l9-8a.5.5 0 0 1 .662 0l9 8a.5.5 0 0 1 .158.457l-1.5 11a.5.5 0 0 1-.496.434H14.5v-5a2.5 2.5 0 1 0-5 0v5H4.73a.5.5 0 0 1-.497-.434z" />

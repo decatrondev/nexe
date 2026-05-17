@@ -234,6 +234,14 @@ func main() {
 	mux.Handle("POST /guilds/{id}/automod/check", guildsProxy(gp))
 	mux.Handle("GET /guilds/{id}/emotes", guildsProxy(gp))
 	mux.Handle("POST /guilds/{id}/emotes/validate", guildsProxy(gp))
+
+	// Relationships (friends)
+	mux.Handle("GET /relationships", guildsProxy(gp))
+	mux.Handle("POST /relationships", guildsProxy(gp))
+	mux.Handle("PATCH /relationships/{id}", guildsProxy(gp))
+	mux.Handle("DELETE /relationships/{id}", guildsProxy(gp))
+	mux.Handle("GET /relationships/mutual/{userId}", guildsProxy(gp))
+
 	mux.Handle("POST /guilds/{id}/twitch/enable", guildsProxy(gp))
 	mux.Handle("POST /guilds/{id}/twitch/disable", guildsProxy(gp))
 	mux.Handle("PUT /guilds/{id}/members/{uid}/auto-roles/{rid}", guildsProxy(gp))

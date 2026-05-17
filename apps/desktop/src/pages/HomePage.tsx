@@ -7,11 +7,13 @@ import MemberList from "../components/MemberList";
 import CreateGuildModal from "../components/CreateGuildModal";
 import JoinServerModal from "../components/JoinServerModal";
 import FloatingVoice from "../components/FloatingVoice";
+import FriendsPage from "../components/FriendsPage";
 import { useGuildStore } from "../stores/guild";
 import { useAuthStore } from "../stores/auth";
 import { useVoiceStore } from "../stores/voice";
+import { useRelationshipStore } from "../stores/relationships";
 import { nexeWS } from "../lib/websocket";
-import { api, type Message, type VoiceState, type AppNotification } from "../lib/api";
+import { api, type Message, type VoiceState, type AppNotification, type Relationship } from "../lib/api";
 
 function hexToRgb(hex: string): string {
   const h = hex.replace("#", "");
@@ -173,6 +175,7 @@ export default function HomePage() {
 
   useEffect(() => {
     loadGuilds();
+    useRelationshipStore.getState().fetchRelationships();
     // Register current user's username in the guild store
     if (user) {
       useGuildStore.setState((s) => ({
@@ -530,6 +533,17 @@ export default function HomePage() {
         });
       });
 
+      // Relationship events (friends)
+      nexeWS.on("RELATIONSHIP_CREATE", (data) => {
+        useRelationshipStore.getState().handleRelationshipCreate(data as Relationship);
+      });
+      nexeWS.on("RELATIONSHIP_UPDATE", (data) => {
+        useRelationshipStore.getState().handleRelationshipUpdate(data as Relationship);
+      });
+      nexeWS.on("RELATIONSHIP_REMOVE", (data) => {
+        useRelationshipStore.getState().handleRelationshipRemove(data as { id: string });
+      });
+
       // Presence heartbeat every 60s
       heartbeatInterval = setInterval(() => {
         api.presenceHeartbeat().catch(() => {});
@@ -620,6 +634,8 @@ export default function HomePage() {
 
       {showWelcome ? (
         <WelcomeScreen onCreateServer={() => setShowCreateModal(true)} />
+      ) : !activeGuildId ? (
+        <FriendsPage />
       ) : (
         <>
           <div className="flex h-full shrink-0" style={{ width: channelWidth }}>

@@ -243,6 +243,64 @@ function ChannelsTab({ guildId }: { guildId: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  // Channel overrides state
+  const [overrides, setOverrides] = useState<Record<string, { id?: string; channelId: string; targetId: string; targetType: string; allow: number; deny: number }[]>>({});
+  const [overrideSaving, setOverrideSaving] = useState(false);
+
+  async function loadOverrides(channelId: string) {
+    try {
+      const data = await api.getChannelOverrides(channelId);
+      setOverrides((prev) => ({ ...prev, [channelId]: data }));
+    } catch {
+      // ignore
+    }
+  }
+
+  function getOverrideState(channelId: string, roleId: string, bit: number): "allow" | "deny" | "inherit" {
+    const channelOverrides = overrides[channelId] ?? [];
+    const ov = channelOverrides.find((o) => o.targetId === roleId && o.targetType === "role");
+    if (!ov) return "inherit";
+    if (ov.allow & bit) return "allow";
+    if (ov.deny & bit) return "deny";
+    return "inherit";
+  }
+
+  async function cycleOverride(channelId: string, roleId: string, bit: number) {
+    const current = getOverrideState(channelId, roleId, bit);
+    const channelOverrides = overrides[channelId] ?? [];
+    const existing = channelOverrides.find((o) => o.targetId === roleId && o.targetType === "role");
+
+    let allow = existing?.allow ?? 0;
+    let deny = existing?.deny ?? 0;
+
+    // Cycle: inherit → allow → deny → inherit
+    if (current === "inherit") {
+      allow |= bit;
+      deny &= ~bit;
+    } else if (current === "allow") {
+      allow &= ~bit;
+      deny |= bit;
+    } else {
+      allow &= ~bit;
+      deny &= ~bit;
+    }
+
+    setOverrideSaving(true);
+    try {
+      // If both allow and deny are 0, delete the override
+      if (allow === 0 && deny === 0 && existing?.id) {
+        await api.deleteChannelOverride(existing.id);
+      } else {
+        await api.upsertChannelOverride(channelId, roleId, "role", allow, deny);
+      }
+      await loadOverrides(channelId);
+    } catch {
+      // ignore
+    } finally {
+      setOverrideSaving(false);
+    }
+  }
+
   const SLOWMODE_OPTIONS = [
     { label: "Off", value: 0 },
     { label: "5s", value: 5 },
@@ -294,11 +352,11 @@ function ChannelsTab({ guildId }: { guildId: string }) {
     }
   }
 
-  // Channel permission overrides UI data
   const OVERRIDE_PERMS = [
     { name: "View Channel", bit: Permissions.VIEW_CHANNEL },
     { name: "Send Messages", bit: Permissions.SEND_MESSAGES },
     { name: "Manage Messages", bit: Permissions.MANAGE_MESSAGES },
+    { name: "Manage Channels", bit: Permissions.MANAGE_CHANNELS },
   ] as const;
 
   return (
@@ -392,7 +450,11 @@ function ChannelsTab({ guildId }: { guildId: string }) {
                       {ch.name}
                     </span>
                     <button
-                      onClick={() => setShowPermsForId(showPermsForId === ch.id ? null : ch.id)}
+                      onClick={() => {
+                        const next = showPermsForId === ch.id ? null : ch.id;
+                        setShowPermsForId(next);
+                        if (next && !overrides[ch.id]) loadOverrides(ch.id);
+                      }}
                       className={`flex h-6 w-6 items-center justify-center rounded transition-colors ${
                         showPermsForId === ch.id ? "text-nexe-400" : "text-slate-500 hover:text-slate-300"
                       }`}
@@ -430,21 +492,17 @@ function ChannelsTab({ guildId }: { guildId: string }) {
               {/* Channel Permission Overrides Panel */}
               {showPermsForId === ch.id && (
                 <div className="ml-6 mt-1 mb-2 rounded-lg border border-dark-700 bg-dark-800/70 p-4">
-                  <div className="mb-3 flex items-center justify-between">
+                  <div className="mb-3">
                     <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-300">
                       Permission Overrides
                     </h4>
-                    <span className="rounded-full bg-yellow-500/10 border border-yellow-500/20 px-2.5 py-0.5 text-[10px] font-semibold text-yellow-400">
-                      Coming soon
-                    </span>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Override server-wide role permissions for this channel. Click to cycle: Inherit → Allow → Deny.
+                    </p>
                   </div>
-                  <p className="mb-3 text-[11px] text-slate-500">
-                    Set per-channel permissions for specific roles. Override the server-wide role settings for this channel only.
-                  </p>
-                  <div className="space-y-2 opacity-50 pointer-events-none">
+                  <div className="space-y-2">
                     {guildRoles
                       .filter((r) => !r.isDefault)
-                      .slice(0, 5)
                       .map((role) => (
                         <div key={role.id} className="rounded-md bg-dark-900/60 px-3 py-2">
                           <div className="mb-2 flex items-center gap-2">
@@ -455,34 +513,34 @@ function ChannelsTab({ guildId }: { guildId: string }) {
                             <span className="text-xs font-medium text-slate-300">{role.name}</span>
                           </div>
                           <div className="flex flex-wrap gap-x-4 gap-y-1">
-                            {OVERRIDE_PERMS.map((perm) => (
-                              <div key={perm.bit} className="flex items-center gap-2">
-                                <span className="text-[11px] text-slate-400 w-28">{perm.name}</span>
-                                <div className="flex gap-1">
-                                  {(["Allow", "Deny", "Inherit"] as const).map((state) => (
-                                    <button
-                                      key={state}
-                                      disabled
-                                      className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                                        state === "Inherit"
-                                          ? "bg-dark-700 text-slate-400"
-                                          : state === "Allow"
-                                            ? "bg-dark-700 text-slate-500"
-                                            : "bg-dark-700 text-slate-500"
-                                      }`}
-                                    >
-                                      {state}
-                                    </button>
-                                  ))}
+                            {OVERRIDE_PERMS.map((perm) => {
+                              const state = getOverrideState(ch.id, role.id, perm.bit);
+                              return (
+                                <div key={perm.bit} className="flex items-center gap-2">
+                                  <span className="text-[11px] text-slate-400 w-32">{perm.name}</span>
+                                  <button
+                                    onClick={() => cycleOverride(ch.id, role.id, perm.bit)}
+                                    disabled={overrideSaving}
+                                    className={`rounded px-2 py-0.5 text-[10px] font-semibold transition-colors disabled:opacity-50 ${
+                                      state === "allow"
+                                        ? "bg-green-500/20 text-green-400 border border-green-500/30"
+                                        : state === "deny"
+                                          ? "bg-red-500/20 text-red-400 border border-red-500/30"
+                                          : "bg-dark-700 text-slate-500 border border-dark-600 hover:border-dark-500"
+                                    }`}
+                                    title={`Click to cycle: ${state} → ${state === "inherit" ? "allow" : state === "allow" ? "deny" : "inherit"}`}
+                                  >
+                                    {state === "allow" ? "✓ Allow" : state === "deny" ? "✕ Deny" : "— Inherit"}
+                                  </button>
                                 </div>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
                       ))}
                   </div>
                   {guildRoles.filter((r) => !r.isDefault).length === 0 && (
-                    <p className="text-[11px] text-slate-500 italic">No roles to configure.</p>
+                    <p className="text-[11px] text-slate-500 italic">No custom roles to configure. Create roles first.</p>
                   )}
                 </div>
               )}

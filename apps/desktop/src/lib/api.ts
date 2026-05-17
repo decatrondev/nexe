@@ -398,6 +398,17 @@ export interface VoiceJoinResponse {
   participants: VoiceState[];
 }
 
+export interface Relationship {
+  id: string;
+  userId: string;
+  targetId: string;
+  type: "pending" | "friend" | "blocked";
+  note: string;
+  isFavorite: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ---- API client ----
 
 export const api = {
@@ -990,5 +1001,40 @@ export const api = {
 
   reorderCategories(guildId: string, categoryIds: string[]) {
     return request<void>("PUT", `/guilds/${guildId}/categories/reorder`, { categoryIds });
+  },
+
+  // ---- Relationships (friends) ----
+
+  getRelationships(type?: "friend" | "pending" | "blocked") {
+    const params = type ? `?type=${type}` : "";
+    return request<Relationship[]>("GET", `/relationships${params}`);
+  },
+
+  sendFriendRequest(targetUsername: string) {
+    return request<Relationship>("POST", "/relationships", { targetUsername, type: "pending" });
+  },
+
+  sendFriendRequestById(targetId: string) {
+    return request<Relationship>("POST", "/relationships", { targetId, type: "pending" });
+  },
+
+  blockUser(targetId: string) {
+    return request<Relationship>("POST", "/relationships", { targetId, type: "blocked" });
+  },
+
+  acceptFriendRequest(relationshipId: string) {
+    return request<Relationship>("PATCH", `/relationships/${relationshipId}`, { action: "accept" });
+  },
+
+  updateRelationship(relationshipId: string, data: { note?: string; isFavorite?: boolean }) {
+    return request<Relationship>("PATCH", `/relationships/${relationshipId}`, data);
+  },
+
+  deleteRelationship(relationshipId: string) {
+    return request<void>("DELETE", `/relationships/${relationshipId}`);
+  },
+
+  getMutualFriends(userId: string) {
+    return request<string[]>("GET", `/relationships/mutual/${userId}`);
   },
 };
