@@ -292,10 +292,7 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
     try {
       await room.localParticipant.setScreenShareEnabled(newEnabled, {
         audio: true,
-        video: {
-          displaySurface: "monitor",
-        },
-        contentHint: "detail",
+        contentHint: "motion",
         resolution: { width: 1920, height: 1080, frameRate: 60 },
       });
       set({ screenShareEnabled: newEnabled });
