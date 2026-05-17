@@ -1160,6 +1160,60 @@ export const api = {
     return request<void>("POST", `/dm-requests/${channelId}/reject`);
   },
 
+  // ---- Friend Categories ----
+
+  getFriendCategories() {
+    return request<{ id: string; userId: string; name: string; color?: string; position: number; members: string[] }[]>("GET", "/friend-categories");
+  },
+
+  createFriendCategory(name: string, color?: string) {
+    return request<{ id: string; name: string; color?: string; members: string[] }>("POST", "/friend-categories", { name, color });
+  },
+
+  updateFriendCategory(id: string, data: { name?: string; color?: string }) {
+    return request<void>("PATCH", `/friend-categories/${id}`, data);
+  },
+
+  deleteFriendCategory(id: string) {
+    return request<void>("DELETE", `/friend-categories/${id}`);
+  },
+
+  addToFriendCategory(categoryId: string, userId: string) {
+    return request<void>("PUT", `/friend-categories/${categoryId}/members/${userId}`);
+  },
+
+  removeFromFriendCategory(categoryId: string, userId: string) {
+    return request<void>("DELETE", `/friend-categories/${categoryId}/members/${userId}`);
+  },
+
+  // ---- Scheduled Messages ----
+
+  getScheduledMessages(channelId: string) {
+    return request<{ id: string; channelId: string; content: string; sendAt: string }[]>("GET", `/dm-channels/${channelId}/scheduled`);
+  },
+
+  createScheduledMessage(channelId: string, content: string, sendAt: string) {
+    return request<{ id: string; channelId: string; content: string; sendAt: string }>("POST", `/dm-channels/${channelId}/scheduled`, { content, sendAt });
+  },
+
+  deleteScheduledMessage(id: string) {
+    return request<void>("DELETE", `/dm-scheduled/${id}`);
+  },
+
+  // ---- DM Reminders ----
+
+  getDMReminders() {
+    return request<{ id: string; channelId: string; messageId: string; remindAt: string }[]>("GET", "/dm-reminders");
+  },
+
+  createDMReminder(channelId: string, messageId: string, remindAt: string) {
+    return request<{ id: string; channelId: string; messageId: string; remindAt: string }>("POST", "/dm-reminders", { channelId, messageId, remindAt });
+  },
+
+  deleteDMReminder(id: string) {
+    return request<void>("DELETE", `/dm-reminders/${id}`);
+  },
+
   updateDMChannel(channelId: string, data: { name?: string; iconUrl?: string }) {
     return request<DMChannel>("PATCH", `/dm-channels/${channelId}`, data);
   },

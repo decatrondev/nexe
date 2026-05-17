@@ -67,6 +67,7 @@ func main() {
 	relationshipHandler := handler.NewRelationshipHandler(relationshipRepo, privacyRepo, db, rdb)
 	dmHandler := handler.NewDMHandler(dmRepo, privacyRepo, rdb)
 	privacyHandler := handler.NewPrivacyHandler(privacyRepo)
+	extrasHandler := handler.NewExtrasHandler(db, rdb)
 
 	// Router
 	mux := http.NewServeMux()
@@ -81,6 +82,10 @@ func main() {
 	relationshipHandler.RegisterRoutes(mux)
 	dmHandler.RegisterRoutes(mux)
 	privacyHandler.RegisterRoutes(mux)
+	extrasHandler.RegisterRoutes(mux)
+
+	// Background worker for scheduled messages and reminders
+	go extrasHandler.StartScheduledMessageWorker(context.Background())
 	mux.HandleFunc("GET /guilds/{id}/emotes", emoteHandler.GetEmotes)
 	mux.HandleFunc("POST /guilds/{id}/emotes/validate", emoteHandler.ValidateEmotes)
 
