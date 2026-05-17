@@ -83,13 +83,17 @@ export default function FloatingVoice() {
 
   if (!shouldShow) return null;
 
-  const hasVideo = room && (() => {
+  const hasVideo = room ? (() => {
     for (const [, p] of room.remoteParticipants) {
       if (p.getTrackPublication(Track.Source.ScreenShare)?.track) return true;
       if (p.getTrackPublication(Track.Source.Camera)?.track) return true;
     }
     return false;
-  })();
+  })() : false;
+
+  // Only show floating player when there's active video (like Discord)
+  // Audio-only voice doesn't show a popup
+  if (!hasVideo) return null;
 
   const voiceGuildChannels = voiceGuildId ? channels[voiceGuildId] : [];
   const voiceChannel = voiceGuildChannels?.find((c) => c.id === voiceChannelId);
@@ -98,7 +102,7 @@ export default function FloatingVoice() {
   return (
     <div
       className="fixed z-50 overflow-hidden rounded-xl border border-dark-700 bg-dark-900 shadow-2xl"
-      style={{ left: pos.x, bottom: pos.y, width: hasVideo ? 320 : 240 }}
+      style={{ left: pos.x, bottom: pos.y, width: 320 }}
     >
       {/* Drag handle + channel name */}
       <div
@@ -137,23 +141,14 @@ export default function FloatingVoice() {
         </button>
       </div>
 
-      {/* Video or audio-only indicator */}
-      {hasVideo ? (
-        <video
-          ref={videoRef}
-          autoPlay
-          muted
-          playsInline
-          className="h-44 w-full bg-black object-contain"
-        />
-      ) : (
-        <div className="flex h-16 items-center justify-center gap-2">
-          <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current text-green-500">
-            <path d="M12 3a9 9 0 0 0-9 9v7c0 1.1.9 2 2 2h4v-8H5v-1c0-3.87 3.13-7 7-7s7 3.13 7 7v1h-4v8h4c1.1 0 2-.9 2-2v-7a9 9 0 0 0-9-9z" />
-          </svg>
-          <span className="text-xs text-slate-400">Connected to voice</span>
-        </div>
-      )}
+      {/* Video stream */}
+      <video
+        ref={videoRef}
+        autoPlay
+        muted
+        playsInline
+        className="h-44 w-full bg-black object-contain"
+      />
     </div>
   );
 }
