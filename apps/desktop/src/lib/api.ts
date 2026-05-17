@@ -409,6 +409,40 @@ export interface Relationship {
   updatedAt: string;
 }
 
+export interface DMChannel {
+  id: string;
+  type: "dm" | "group_dm";
+  name?: string;
+  iconUrl?: string;
+  ownerId?: string;
+  participants: DMParticipant[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DMParticipant {
+  channelId: string;
+  userId: string;
+  closed: boolean;
+  joinedAt: string;
+}
+
+export interface DMMessage {
+  id: string;
+  channelId: string;
+  authorId: string;
+  content: string;
+  type: string;
+  replyToId?: string;
+  embeds: unknown[];
+  attachments: unknown[];
+  mentionEveryone: boolean;
+  editedAt?: string;
+  deleted: boolean;
+  pinned: boolean;
+  createdAt: string;
+}
+
 // ---- API client ----
 
 export const api = {
@@ -1036,5 +1070,49 @@ export const api = {
 
   getMutualFriends(userId: string) {
     return request<string[]>("GET", `/relationships/mutual/${userId}`);
+  },
+
+  // ---- DMs ----
+
+  createDM(targetId: string) {
+    return request<DMChannel>("POST", "/dm-channels", { targetId });
+  },
+
+  createGroupDM(name: string, userIds: string[]) {
+    return request<DMChannel>("POST", "/dm-channels", { type: "group_dm", name, userIds });
+  },
+
+  getDMChannels() {
+    return request<DMChannel[]>("GET", "/dm-channels");
+  },
+
+  getDMChannel(channelId: string) {
+    return request<DMChannel>("GET", `/dm-channels/${channelId}`);
+  },
+
+  closeDM(channelId: string) {
+    return request<void>("DELETE", `/dm-channels/${channelId}`);
+  },
+
+  getDMMessages(channelId: string, limit = 50, before?: string) {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (before) params.set("before", before);
+    return request<DMMessage[]>("GET", `/dm-channels/${channelId}/messages?${params}`);
+  },
+
+  sendDMMessage(channelId: string, content: string, replyToId?: string) {
+    return request<DMMessage>("POST", `/dm-channels/${channelId}/messages`, { content, replyToId });
+  },
+
+  editDMMessage(messageId: string, content: string) {
+    return request<DMMessage>("PATCH", `/dm-messages/${messageId}`, { content });
+  },
+
+  deleteDMMessage(messageId: string) {
+    return request<void>("DELETE", `/dm-messages/${messageId}`);
+  },
+
+  dmTyping(channelId: string) {
+    return request<void>("POST", `/dm-channels/${channelId}/typing`);
   },
 };

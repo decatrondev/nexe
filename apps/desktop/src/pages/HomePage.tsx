@@ -8,12 +8,15 @@ import CreateGuildModal from "../components/CreateGuildModal";
 import JoinServerModal from "../components/JoinServerModal";
 import FloatingVoice from "../components/FloatingVoice";
 import FriendsPage from "../components/FriendsPage";
+import DMSidebar from "../components/DMSidebar";
+import DMChat from "../components/DMChat";
 import { useGuildStore } from "../stores/guild";
 import { useAuthStore } from "../stores/auth";
 import { useVoiceStore } from "../stores/voice";
 import { useRelationshipStore } from "../stores/relationships";
+import { useDMStore } from "../stores/dm";
 import { nexeWS } from "../lib/websocket";
-import { api, type Message, type VoiceState, type AppNotification, type Relationship } from "../lib/api";
+import { api, type Message, type VoiceState, type AppNotification, type Relationship, type DMChannel, type DMMessage } from "../lib/api";
 
 function hexToRgb(hex: string): string {
   const h = hex.replace("#", "");
@@ -119,6 +122,7 @@ export default function HomePage() {
   const voiceConnected = useVoiceStore((s) => s.connected);
   const voiceChannelId = useVoiceStore((s) => s.channelId);
   const activeChannelObj = activeGuildId ? allChannels[activeGuildId]?.find((c) => c.id === activeChannelId) : undefined;
+  const activeDMChannelId = useDMStore((s) => s.activeChannelId);
   const isInVoiceView = activeChannelObj?.type === "voice" && voiceConnected && voiceChannelId === activeChannelId;
 
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -176,6 +180,7 @@ export default function HomePage() {
   useEffect(() => {
     loadGuilds();
     useRelationshipStore.getState().fetchRelationships();
+    useDMStore.getState().fetchChannels();
     // Register current user's username in the guild store
     if (user) {
       useGuildStore.setState((s) => ({
@@ -533,6 +538,20 @@ export default function HomePage() {
         });
       });
 
+      // DM events
+      nexeWS.on("DM_CHANNEL_CREATE", (data) => {
+        useDMStore.getState().handleDMChannelCreate(data as DMChannel);
+      });
+      nexeWS.on("DM_MESSAGE_CREATE", (data) => {
+        useDMStore.getState().handleDMMessageCreate(data as DMMessage);
+      });
+      nexeWS.on("DM_MESSAGE_UPDATE", (data) => {
+        useDMStore.getState().handleDMMessageUpdate(data as DMMessage);
+      });
+      nexeWS.on("DM_MESSAGE_DELETE", (data) => {
+        useDMStore.getState().handleDMMessageDelete(data as { id: string; channelId: string });
+      });
+
       // Relationship events (friends)
       nexeWS.on("RELATIONSHIP_CREATE", (data) => {
         useRelationshipStore.getState().handleRelationshipCreate(data as Relationship);
@@ -635,7 +654,10 @@ export default function HomePage() {
       {showWelcome ? (
         <WelcomeScreen onCreateServer={() => setShowCreateModal(true)} />
       ) : !activeGuildId ? (
-        <FriendsPage />
+        <>
+          <DMSidebar />
+          {activeDMChannelId ? <DMChat /> : <FriendsPage />}
+        </>
       ) : (
         <>
           <div className="flex h-full shrink-0" style={{ width: channelWidth }}>

@@ -166,6 +166,8 @@ export const useGuildStore = create<GuildState>((set, get) => ({
 
   async setActiveGuild(guildId: string) {
     set({ activeGuildId: guildId, activeChannelId: null, loading: true, error: null });
+    // Clear DM active channel when switching to a guild
+    try { const { useDMStore } = await import("./dm"); useDMStore.getState().setActive(null); } catch { /* ignore */ }
     try {
       const [channels, members, roleList, categoryList] = await Promise.all([
         api.getChannels(guildId),

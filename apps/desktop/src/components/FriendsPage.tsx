@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useRelationshipStore } from "../stores/relationships";
 import { useAuthStore } from "../stores/auth";
 import { useGuildStore } from "../stores/guild";
+import { useDMStore } from "../stores/dm";
 import { userColor } from "../lib/utils";
 import { toast } from "@nexe/ui";
 import type { Relationship } from "../lib/api";
@@ -432,6 +433,18 @@ export default function FriendsPage() {
                       {/* Online / All tab actions */}
                       {(tab === "online" || tab === "all") && r.type === "friend" && (
                         <>
+                          {/* Message (open DM) */}
+                          <ActionBtn
+                            onClick={() => {
+                              useDMStore.getState().openDM(uid).catch(() => toast.error("Failed to open DM"));
+                            }}
+                            title="Message"
+                          >
+                            <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+                              <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z" />
+                            </svg>
+                          </ActionBtn>
+
                           {/* Favorite toggle */}
                           <ActionBtn
                             onClick={() => handleToggleFavorite(r)}

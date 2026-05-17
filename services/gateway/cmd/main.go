@@ -242,6 +242,17 @@ func main() {
 	mux.Handle("DELETE /relationships/{id}", guildsProxy(gp))
 	mux.Handle("GET /relationships/mutual/{userId}", guildsProxy(gp))
 
+	// DMs
+	mux.Handle("POST /dm-channels", guildsProxy(gp))
+	mux.Handle("GET /dm-channels", guildsProxy(gp))
+	mux.Handle("GET /dm-channels/{id}", guildsProxy(gp))
+	mux.Handle("DELETE /dm-channels/{id}", guildsProxy(gp))
+	mux.Handle("GET /dm-channels/{id}/messages", guildsProxy(gp))
+	mux.Handle("POST /dm-channels/{id}/messages", guildsProxy(gp))
+	mux.Handle("PATCH /dm-messages/{id}", guildsProxy(gp))
+	mux.Handle("DELETE /dm-messages/{id}", guildsProxy(gp))
+	mux.Handle("POST /dm-channels/{id}/typing", guildsProxy(gp))
+
 	mux.Handle("POST /guilds/{id}/twitch/enable", guildsProxy(gp))
 	mux.Handle("POST /guilds/{id}/twitch/disable", guildsProxy(gp))
 	mux.Handle("PUT /guilds/{id}/members/{uid}/auto-roles/{rid}", guildsProxy(gp))
