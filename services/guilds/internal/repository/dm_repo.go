@@ -24,6 +24,7 @@ type DMParticipant struct {
 	ChannelID string    `json:"channelId"`
 	UserID    string    `json:"userId"`
 	Closed    bool      `json:"closed"`
+	IsRequest bool      `json:"isRequest"`
 	JoinedAt  time.Time `json:"joinedAt"`
 }
 
@@ -134,7 +135,7 @@ func (r *DMRepository) GetByID(ctx context.Context, channelID string) (*DMChanne
 
 	// Load participants
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT channel_id, user_id, closed, joined_at FROM dm_participants WHERE channel_id = $1`,
+		`SELECT channel_id, user_id, closed, is_request, joined_at FROM dm_participants WHERE channel_id = $1`,
 		channelID,
 	)
 	if err != nil {
@@ -143,7 +144,7 @@ func (r *DMRepository) GetByID(ctx context.Context, channelID string) (*DMChanne
 	defer rows.Close()
 	for rows.Next() {
 		var p DMParticipant
-		if err := rows.Scan(&p.ChannelID, &p.UserID, &p.Closed, &p.JoinedAt); err != nil {
+		if err := rows.Scan(&p.ChannelID, &p.UserID, &p.Closed, &p.IsRequest, &p.JoinedAt); err != nil {
 			return nil, err
 		}
 		ch.Participants = append(ch.Participants, p)
@@ -177,7 +178,7 @@ func (r *DMRepository) ListForUser(ctx context.Context, userID string) ([]DMChan
 	// Load participants for each channel
 	for i := range channels {
 		pRows, err := r.db.QueryContext(ctx,
-			`SELECT channel_id, user_id, closed, joined_at FROM dm_participants WHERE channel_id = $1`,
+			`SELECT channel_id, user_id, closed, is_request, joined_at FROM dm_participants WHERE channel_id = $1`,
 			channels[i].ID,
 		)
 		if err != nil {
@@ -185,7 +186,7 @@ func (r *DMRepository) ListForUser(ctx context.Context, userID string) ([]DMChan
 		}
 		for pRows.Next() {
 			var p DMParticipant
-			if err := pRows.Scan(&p.ChannelID, &p.UserID, &p.Closed, &p.JoinedAt); err != nil {
+			if err := pRows.Scan(&p.ChannelID, &p.UserID, &p.Closed, &p.IsRequest, &p.JoinedAt); err != nil {
 				continue
 			}
 			channels[i].Participants = append(channels[i].Participants, p)
@@ -253,6 +254,124 @@ func (r *DMRepository) GetParticipantIDs(ctx context.Context, channelID string) 
 		ids = append(ids, id)
 	}
 	return ids, nil
+}
+
+// AreFriendsOrShareGuild checks if two users are friends or share at least one guild.
+func (r *DMRepository) AreFriendsOrShareGuild(ctx context.Context, userA, userB string) (bool, error) {
+	var exists bool
+	// Check friendship
+	err := r.db.QueryRowContext(ctx,
+		`SELECT EXISTS(
+			SELECT 1 FROM relationships WHERE user_id = $1 AND target_id = $2 AND type = 'friend'
+		)`, userA, userB).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	if exists {
+		return true, nil
+	}
+	// Check shared guild
+	err = r.db.QueryRowContext(ctx,
+		`SELECT EXISTS(
+			SELECT 1 FROM guild_members m1
+			JOIN guild_members m2 ON m1.guild_id = m2.guild_id
+			WHERE m1.user_id = $1 AND m2.user_id = $2
+		)`, userA, userB).Scan(&exists)
+	return exists, err
+}
+
+// SetIsRequest marks a DM as a request for a user.
+func (r *DMRepository) SetIsRequest(ctx context.Context, channelID, userID string, isRequest bool) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE dm_participants SET is_request = $3 WHERE channel_id = $1 AND user_id = $2`,
+		channelID, userID, isRequest,
+	)
+	return err
+}
+
+// ListRequestsForUser returns DM channels marked as requests for this user.
+func (r *DMRepository) ListRequestsForUser(ctx context.Context, userID string) ([]DMChannel, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT c.id, c.type, c.name, c.icon_url, c.owner_id, c.created_at, c.updated_at
+		FROM dm_channels c
+		JOIN dm_participants p ON p.channel_id = c.id
+		WHERE p.user_id = $1 AND p.is_request = true AND p.closed = false
+		ORDER BY c.updated_at DESC
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var channels []DMChannel
+	for rows.Next() {
+		var ch DMChannel
+		if err := rows.Scan(&ch.ID, &ch.Type, &ch.Name, &ch.IconURL, &ch.OwnerID, &ch.CreatedAt, &ch.UpdatedAt); err != nil {
+			return nil, err
+		}
+		channels = append(channels, ch)
+	}
+	// Load participants
+	for i := range channels {
+		pRows, _ := r.db.QueryContext(ctx,
+			`SELECT channel_id, user_id, closed, is_request, joined_at FROM dm_participants WHERE channel_id = $1`, channels[i].ID)
+		if pRows != nil {
+			for pRows.Next() {
+				var p DMParticipant
+				if err := pRows.Scan(&p.ChannelID, &p.UserID, &p.Closed, &p.IsRequest, &p.JoinedAt); err == nil {
+					channels[i].Participants = append(channels[i].Participants, p)
+				}
+			}
+			pRows.Close()
+		}
+	}
+	return channels, nil
+}
+
+// AddParticipant adds a user to a group DM.
+func (r *DMRepository) AddParticipant(ctx context.Context, channelID, userID string) error {
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO dm_participants (channel_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+		channelID, userID,
+	)
+	return err
+}
+
+// RemoveParticipant removes a user from a group DM.
+func (r *DMRepository) RemoveParticipant(ctx context.Context, channelID, userID string) error {
+	_, err := r.db.ExecContext(ctx,
+		`DELETE FROM dm_participants WHERE channel_id = $1 AND user_id = $2`,
+		channelID, userID,
+	)
+	return err
+}
+
+// UpdateChannel updates name/icon of a group DM.
+func (r *DMRepository) UpdateChannel(ctx context.Context, channelID string, name *string, iconURL *string) error {
+	if name != nil {
+		_, err := r.db.ExecContext(ctx,
+			`UPDATE dm_channels SET name = $1, updated_at = NOW() WHERE id = $2`, *name, channelID)
+		if err != nil {
+			return err
+		}
+	}
+	if iconURL != nil {
+		_, err := r.db.ExecContext(ctx,
+			`UPDATE dm_channels SET icon_url = $1, updated_at = NOW() WHERE id = $2`, *iconURL, channelID)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ParticipantCount returns the number of participants in a DM channel.
+func (r *DMRepository) ParticipantCount(ctx context.Context, channelID string) (int, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM dm_participants WHERE channel_id = $1`, channelID,
+	).Scan(&count)
+	return count, err
 }
 
 // ---- DM Messages ----

@@ -3,12 +3,17 @@ import { api, type DMChannel, type DMMessage } from "../lib/api";
 
 interface DMState {
   channels: DMChannel[];
+  requests: DMChannel[];
   activeChannelId: string | null;
   messages: Record<string, DMMessage[]>;
   loading: boolean;
 
   fetchChannels: () => Promise<void>;
+  fetchRequests: () => Promise<void>;
+  acceptRequest: (channelId: string) => Promise<void>;
+  rejectRequest: (channelId: string) => Promise<void>;
   openDM: (targetId: string) => Promise<DMChannel>;
+  openGroupDM: (name: string, userIds: string[]) => Promise<DMChannel>;
   closeDM: (channelId: string) => Promise<void>;
   setActive: (channelId: string | null) => void;
 
@@ -26,9 +31,34 @@ interface DMState {
 
 export const useDMStore = create<DMState>((set, get) => ({
   channels: [],
+  requests: [],
   activeChannelId: null,
   messages: {},
   loading: false,
+
+  async fetchRequests() {
+    try {
+      const requests = await api.getDMRequests();
+      set({ requests });
+    } catch {
+      // ignore
+    }
+  },
+
+  async acceptRequest(channelId: string) {
+    const ch = await api.acceptDMRequest(channelId);
+    set((s) => ({
+      requests: s.requests.filter((c) => c.id !== channelId),
+      channels: [ch, ...s.channels],
+    }));
+  },
+
+  async rejectRequest(channelId: string) {
+    await api.rejectDMRequest(channelId);
+    set((s) => ({
+      requests: s.requests.filter((c) => c.id !== channelId),
+    }));
+  },
 
   async fetchChannels() {
     try {
@@ -48,6 +78,15 @@ export const useDMStore = create<DMState>((set, get) => ({
         activeChannelId: ch.id,
       };
     });
+    return ch;
+  },
+
+  async openGroupDM(name: string, userIds: string[]) {
+    const ch = await api.createGroupDM(name, userIds);
+    set((s) => ({
+      channels: [ch, ...s.channels],
+      activeChannelId: ch.id,
+    }));
     return ch;
   },
 

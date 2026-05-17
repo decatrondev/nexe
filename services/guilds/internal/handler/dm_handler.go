@@ -34,7 +34,16 @@ func (h *DMHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /dm-channels", h.CreateDM)
 	mux.HandleFunc("GET /dm-channels", h.ListDMs)
 	mux.HandleFunc("GET /dm-channels/{id}", h.GetDM)
+	mux.HandleFunc("PATCH /dm-channels/{id}", h.UpdateDM)
 	mux.HandleFunc("DELETE /dm-channels/{id}", h.CloseDM)
+	mux.HandleFunc("PUT /dm-channels/{id}/members/{userId}", h.AddParticipant)
+	mux.HandleFunc("DELETE /dm-channels/{id}/members/{userId}", h.RemoveParticipant)
+	mux.HandleFunc("DELETE /dm-channels/{id}/members/@me", h.LeaveGroupDM)
+
+	// DM Requests
+	mux.HandleFunc("GET /dm-requests", h.ListRequests)
+	mux.HandleFunc("POST /dm-requests/{id}/accept", h.AcceptRequest)
+	mux.HandleFunc("POST /dm-requests/{id}/reject", h.RejectRequest)
 
 	// DM Messages
 	mux.HandleFunc("GET /dm-channels/{id}/messages", h.GetMessages)
@@ -143,6 +152,15 @@ func (h *DMHandler) CreateDM(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "dm_error", err.Error())
 		return
+	}
+
+	// Check if they are friends or share a guild
+	related, _ := h.repo.AreFriendsOrShareGuild(r.Context(), userID, body.TargetID)
+	if !related {
+		// Mark the target's participation as a request
+		h.repo.SetIsRequest(r.Context(), ch.ID, body.TargetID, true)
+		// Re-fetch to include updated is_request
+		ch, _ = h.repo.GetByID(r.Context(), ch.ID)
 	}
 
 	writeJSON(w, http.StatusOK, ch)
@@ -389,5 +407,221 @@ func (h *DMHandler) Typing(w http.ResponseWriter, r *http.Request) {
 
 	h.publishToParticipants(r.Context(), channelID, EventDMTypingStart,
 		map[string]string{"channelId": channelID, "userId": userID}, userID)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// UpdateDM updates a group DM's name or icon.
+// PATCH /dm-channels/:id { "name": "...", "iconUrl": "..." }
+func (h *DMHandler) UpdateDM(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	channelID := r.PathValue("id")
+
+	ch, err := h.repo.GetByID(r.Context(), channelID)
+	if err != nil || ch == nil {
+		writeError(w, http.StatusNotFound, "not_found", "channel not found")
+		return
+	}
+	if ch.Type != "group_dm" {
+		writeError(w, http.StatusBadRequest, "not_group", "can only update group DMs")
+		return
+	}
+	if ch.OwnerID == nil || *ch.OwnerID != userID {
+		writeError(w, http.StatusForbidden, "forbidden", "only the owner can update")
+		return
+	}
+
+	var body struct {
+		Name    *string `json:"name"`
+		IconURL *string `json:"iconUrl"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_body", "invalid request body")
+		return
+	}
+
+	if err := h.repo.UpdateChannel(r.Context(), channelID, body.Name, body.IconURL); err != nil {
+		writeError(w, http.StatusInternalServerError, "dm_error", err.Error())
+		return
+	}
+
+	updated, _ := h.repo.GetByID(r.Context(), channelID)
+	h.publishToParticipants(r.Context(), channelID, EventDMChannelCreate, updated, "")
+	writeJSON(w, http.StatusOK, updated)
+}
+
+// AddParticipant adds a user to a group DM.
+// PUT /dm-channels/:id/members/:userId
+func (h *DMHandler) AddParticipant(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	channelID := r.PathValue("id")
+	targetID := r.PathValue("userId")
+
+	ch, err := h.repo.GetByID(r.Context(), channelID)
+	if err != nil || ch == nil {
+		writeError(w, http.StatusNotFound, "not_found", "channel not found")
+		return
+	}
+	if ch.Type != "group_dm" {
+		writeError(w, http.StatusBadRequest, "not_group", "can only add members to group DMs")
+		return
+	}
+	if ch.OwnerID == nil || *ch.OwnerID != userID {
+		writeError(w, http.StatusForbidden, "forbidden", "only the owner can add members")
+		return
+	}
+
+	count, _ := h.repo.ParticipantCount(r.Context(), channelID)
+	if count >= 10 {
+		writeError(w, http.StatusBadRequest, "limit", "group DM max 10 participants")
+		return
+	}
+
+	if err := h.repo.AddParticipant(r.Context(), channelID, targetID); err != nil {
+		writeError(w, http.StatusInternalServerError, "dm_error", err.Error())
+		return
+	}
+
+	updated, _ := h.repo.GetByID(r.Context(), channelID)
+	// Notify all including the new member
+	h.publishToParticipants(r.Context(), channelID, EventDMChannelCreate, updated, "")
+	h.publishToSelf(r.Context(), targetID, EventDMChannelCreate, updated)
+	writeJSON(w, http.StatusOK, updated)
+}
+
+// RemoveParticipant removes a user from a group DM (owner only).
+// DELETE /dm-channels/:id/members/:userId
+func (h *DMHandler) RemoveParticipant(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	channelID := r.PathValue("id")
+	targetID := r.PathValue("userId")
+
+	ch, err := h.repo.GetByID(r.Context(), channelID)
+	if err != nil || ch == nil {
+		writeError(w, http.StatusNotFound, "not_found", "channel not found")
+		return
+	}
+	if ch.Type != "group_dm" {
+		writeError(w, http.StatusBadRequest, "not_group", "can only remove from group DMs")
+		return
+	}
+	if ch.OwnerID == nil || *ch.OwnerID != userID {
+		writeError(w, http.StatusForbidden, "forbidden", "only the owner can remove members")
+		return
+	}
+	if targetID == userID {
+		writeError(w, http.StatusBadRequest, "self_remove", "use leave instead")
+		return
+	}
+
+	if err := h.repo.RemoveParticipant(r.Context(), channelID, targetID); err != nil {
+		writeError(w, http.StatusInternalServerError, "dm_error", err.Error())
+		return
+	}
+
+	updated, _ := h.repo.GetByID(r.Context(), channelID)
+	h.publishToParticipants(r.Context(), channelID, EventDMChannelCreate, updated, "")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// LeaveGroupDM removes yourself from a group DM.
+// DELETE /dm-channels/:id/members/@me
+func (h *DMHandler) LeaveGroupDM(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	channelID := r.PathValue("id")
+
+	ch, err := h.repo.GetByID(r.Context(), channelID)
+	if err != nil || ch == nil {
+		writeError(w, http.StatusNotFound, "not_found", "channel not found")
+		return
+	}
+	if ch.Type != "group_dm" {
+		writeError(w, http.StatusBadRequest, "not_group", "can only leave group DMs")
+		return
+	}
+
+	if err := h.repo.RemoveParticipant(r.Context(), channelID, userID); err != nil {
+		writeError(w, http.StatusInternalServerError, "dm_error", err.Error())
+		return
+	}
+
+	updated, _ := h.repo.GetByID(r.Context(), channelID)
+	h.publishToParticipants(r.Context(), channelID, EventDMChannelCreate, updated, "")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ---- DM Requests ----
+
+// ListRequests returns DMs that are marked as requests for this user.
+// GET /dm-requests
+func (h *DMHandler) ListRequests(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	channels, err := h.repo.ListRequestsForUser(r.Context(), userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "dm_error", err.Error())
+		return
+	}
+	if channels == nil {
+		channels = []repository.DMChannel{}
+	}
+	writeJSON(w, http.StatusOK, channels)
+}
+
+// AcceptRequest accepts a DM request — moves it from requests to regular DMs.
+// POST /dm-requests/:id/accept
+func (h *DMHandler) AcceptRequest(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	channelID := r.PathValue("id")
+
+	isP, _ := h.repo.IsParticipant(r.Context(), channelID, userID)
+	if !isP {
+		writeError(w, http.StatusForbidden, "forbidden", "not a participant")
+		return
+	}
+
+	if err := h.repo.SetIsRequest(r.Context(), channelID, userID, false); err != nil {
+		writeError(w, http.StatusInternalServerError, "dm_error", err.Error())
+		return
+	}
+
+	ch, _ := h.repo.GetByID(r.Context(), channelID)
+	h.publishToSelf(r.Context(), userID, EventDMChannelCreate, ch)
+	writeJSON(w, http.StatusOK, ch)
+}
+
+// RejectRequest rejects a DM request — closes the DM.
+// POST /dm-requests/:id/reject
+func (h *DMHandler) RejectRequest(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	channelID := r.PathValue("id")
+
+	isP, _ := h.repo.IsParticipant(r.Context(), channelID, userID)
+	if !isP {
+		writeError(w, http.StatusForbidden, "forbidden", "not a participant")
+		return
+	}
+
+	h.repo.CloseDM(r.Context(), channelID, userID)
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -424,6 +424,7 @@ export interface DMParticipant {
   channelId: string;
   userId: string;
   closed: boolean;
+  isRequest: boolean;
   joinedAt: string;
 }
 
@@ -1114,5 +1115,33 @@ export const api = {
 
   dmTyping(channelId: string) {
     return request<void>("POST", `/dm-channels/${channelId}/typing`);
+  },
+
+  getDMRequests() {
+    return request<DMChannel[]>("GET", "/dm-requests");
+  },
+
+  acceptDMRequest(channelId: string) {
+    return request<DMChannel>("POST", `/dm-requests/${channelId}/accept`);
+  },
+
+  rejectDMRequest(channelId: string) {
+    return request<void>("POST", `/dm-requests/${channelId}/reject`);
+  },
+
+  updateDMChannel(channelId: string, data: { name?: string; iconUrl?: string }) {
+    return request<DMChannel>("PATCH", `/dm-channels/${channelId}`, data);
+  },
+
+  addDMParticipant(channelId: string, userId: string) {
+    return request<DMChannel>("PUT", `/dm-channels/${channelId}/members/${userId}`);
+  },
+
+  removeDMParticipant(channelId: string, userId: string) {
+    return request<void>("DELETE", `/dm-channels/${channelId}/members/${userId}`);
+  },
+
+  leaveGroupDM(channelId: string) {
+    return request<void>("DELETE", `/dm-channels/${channelId}/members/@me`);
   },
 };

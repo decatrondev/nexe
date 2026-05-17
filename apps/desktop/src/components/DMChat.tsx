@@ -20,8 +20,11 @@ export default function DMChat() {
 
   const messages = activeChannelId ? allMessages[activeChannelId] || [] : [];
   const channel = channels.find((c) => c.id === activeChannelId);
+  const isGroup = channel?.type === "group_dm";
   const otherUser = channel?.participants?.find((p) => p.userId !== myId);
-  const otherName = otherUser ? (usernames[otherUser.userId] || "Unknown") : "Unknown";
+  const channelName = isGroup
+    ? (channel?.name || channel?.participants?.filter((p) => p.userId !== myId).map((p) => usernames[p.userId] || "User").join(", ") || "Group")
+    : (otherUser ? (usernames[otherUser.userId] || "Unknown") : "Unknown");
 
   const [input, setInput] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -90,8 +93,11 @@ export default function DMChat() {
     <div className="flex h-full flex-1 flex-col bg-dark-900">
       {/* Header */}
       <div className="flex h-12 shrink-0 items-center gap-3 border-b border-dark-700 px-4">
-        <span className="text-slate-400">@</span>
-        <span className="font-semibold text-sm text-white">{otherName}</span>
+        <span className="text-slate-400">{isGroup ? "#" : "@"}</span>
+        <span className="font-semibold text-sm text-white">{channelName}</span>
+        {isGroup && (
+          <span className="text-xs text-slate-500">{channel?.participants?.length ?? 0} members</span>
+        )}
       </div>
 
       {/* Messages */}
@@ -102,10 +108,10 @@ export default function DMChat() {
               className="mb-4 flex h-16 w-16 items-center justify-center rounded-full text-2xl font-bold text-white"
               style={{ backgroundColor: otherUser ? userColor(otherUser.userId) : "#4f46e5" }}
             >
-              {otherName.charAt(0).toUpperCase()}
+              {channelName.charAt(0).toUpperCase()}
             </div>
-            <p className="text-lg font-semibold text-white">{otherName}</p>
-            <p className="mt-1 text-sm">This is the beginning of your direct message history with <strong className="text-slate-300">{otherName}</strong>.</p>
+            <p className="text-lg font-semibold text-white">{channelName}</p>
+            <p className="mt-1 text-sm">This is the beginning of your direct message history with <strong className="text-slate-300">{channelName}</strong>.</p>
           </div>
         ) : (
           messages.map((msg, idx) => {
@@ -214,7 +220,7 @@ export default function DMChat() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={`Message @${otherName}`}
+            placeholder={`Message @${channelName}`}
             className="flex-1 resize-none bg-transparent text-sm text-slate-200 outline-none placeholder:text-slate-500"
             rows={1}
             maxLength={2000}
