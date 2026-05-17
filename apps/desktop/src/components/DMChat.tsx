@@ -31,6 +31,8 @@ export default function DMChat() {
   const [input, setInput] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
+  const [showMembers, setShowMembers] = useState(false);
+  const presenceMap = useGuildStore((s) => s.presenceMap);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const typingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -92,18 +94,38 @@ export default function DMChat() {
 
   if (!activeChannelId) return null;
 
+  const STATUS_DOT: Record<string, string> = {
+    online: "bg-green-500", idle: "bg-yellow-500", dnd: "bg-red-500", offline: "bg-slate-500",
+  };
+
   return (
     <div className="flex h-full flex-1 flex-col bg-dark-900">
-      {/* Header */}
+      {/* Header — outside the row so it spans full width */}
       <div className="flex h-12 shrink-0 items-center gap-3 border-b border-dark-700 px-4">
         <span className="text-slate-400">{isGroup ? "#" : "@"}</span>
         <span className="font-semibold text-sm text-white">{channelName}</span>
         {isGroup && (
-          <span className="text-xs text-slate-500">{channel?.participants?.length ?? 0} members</span>
+          <>
+            <span className="text-xs text-slate-500">{channel?.participants?.length ?? 0} members</span>
+            <button
+              onClick={() => setShowMembers(!showMembers)}
+              className={`ml-auto flex h-7 w-7 items-center justify-center rounded transition-colors ${
+                showMembers ? "text-white bg-dark-700" : "text-slate-400 hover:text-slate-200"
+              }`}
+              title="Toggle member list"
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+                <path d="M16.5 13c1.3 0 2.4.4 3.2 1.1A5.5 5.5 0 0 1 22 18.5V20h-4v-1.5a4 4 0 0 0-1.5-3.1zm-9 0C4.6 13 2 14.6 2 18.5V20h12v-1.5C14 14.6 11.4 13 7.5 13zM7.5 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm9-1a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z" />
+              </svg>
+            </button>
+          </>
         )}
       </div>
 
-      {/* Messages */}
+      {/* Content row: messages+input | optional member sidebar */}
+      <div className="flex flex-1 min-h-0">
+      {/* Messages column */}
+      <div className="flex flex-1 flex-col min-w-0">
       <div className="flex-1 overflow-y-auto px-4 py-4">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-slate-500">
@@ -239,6 +261,48 @@ export default function DMChat() {
           />
         </div>
       </form>
+      </div>{/* end messages column */}
+
+      {/* Group DM Member Sidebar */}
+      {isGroup && showMembers && channel?.participants && (
+        <div className="w-52 shrink-0 border-l border-dark-700 overflow-y-auto p-3">
+          <h4 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+            Members — {channel.participants.length}
+          </h4>
+          <div className="space-y-0.5">
+            {channel.participants.map((p) => {
+              const name = usernames[p.userId] || "User";
+              const avatar = avatarMap[p.userId];
+              const status = presenceMap[p.userId] || "offline";
+              const color = userColor(p.userId);
+              const isOwner = channel.ownerId === p.userId;
+              return (
+                <div key={p.userId} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-dark-800/50">
+                  <div className="relative shrink-0">
+                    {avatar ? (
+                      <img src={avatar} alt={name} className="h-7 w-7 rounded-full object-cover" />
+                    ) : (
+                      <div className="flex h-7 w-7 items-center justify-center rounded-full text-[10px] font-semibold text-white" style={{ backgroundColor: color }}>
+                        {name.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-dark-900 ${STATUS_DOT[status] || STATUS_DOT.offline}`} />
+                  </div>
+                  <span className="flex-1 truncate text-xs text-slate-300">{name}</span>
+                  {isOwner && (
+                    <span title="Owner">
+                      <svg viewBox="0 0 24 24" className="h-3 w-3 shrink-0 fill-yellow-500">
+                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                      </svg>
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      </div>{/* end content row */}
     </div>
   );
 }
