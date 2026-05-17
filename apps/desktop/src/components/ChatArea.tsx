@@ -1173,9 +1173,16 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
           )}
 
           {/* Typing indicator */}
-          <div className="h-5 shrink-0 px-4">
+          <div className="h-6 shrink-0 px-4">
             {typingText && (
-              <p className="text-xs text-slate-400 animate-fade-in animate-pulse-subtle">{typingText}</p>
+              <div className="flex items-center gap-1.5 animate-fade-in">
+                <div className="flex gap-0.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:0ms]" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:150ms]" />
+                  <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:300ms]" />
+                </div>
+                <span className="text-xs text-slate-400">{typingText}</span>
+              </div>
             )}
           </div>
 
@@ -1281,7 +1288,7 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
                   )}
                 </div>
               )}
-              <div className={`bg-dark-800 px-4 transition-colors ${replyTo || pendingFile ? "rounded-b-lg" : "rounded-lg"}`}>
+              <div className={`bg-dark-800 px-4 ring-1 ring-dark-700 transition-all focus-within:ring-nexe-500/30 ${replyTo || pendingFile ? "rounded-b-xl" : "rounded-xl"}`}>
                 <div className="flex items-end">
                 {/* Hidden file input */}
                 <input

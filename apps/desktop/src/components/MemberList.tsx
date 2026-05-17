@@ -130,7 +130,7 @@ export default function MemberList() {
 
   if (!activeGuildId) {
     return (
-      <div className="flex h-full min-w-0 flex-1 flex-col bg-dark-850 border-l border-dark-900">
+      <div className="flex h-full min-w-0 flex-1 flex-col bg-dark-800 border-l border-dark-900">
         <div className="flex-1 overflow-y-auto px-2 py-4">
           <p className="px-2 text-center text-sm text-slate-500">
             No server selected
@@ -141,7 +141,7 @@ export default function MemberList() {
   }
 
   return (
-    <div className="flex h-full min-w-0 flex-1 flex-col bg-dark-850 border-l border-dark-900">
+    <div className="flex h-full min-w-0 flex-1 flex-col bg-dark-800 border-l border-dark-900">
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-2 py-4 accent-scrollbar">
         {members.length === 0 ? (
           <p className="mt-4 px-2 text-center text-sm text-slate-500">
@@ -207,14 +207,14 @@ export default function MemberList() {
                         </div>
                       )}
                       {!isOffline && (
-                        <div className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-dark-850 transition-colors duration-300 ${
+                        <div className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-dark-800 transition-colors duration-300 ${
                           status === "idle" ? "bg-yellow-500" :
                           status === "dnd" ? "bg-red-500" :
                           "bg-green-500"
                         }`} />
                       )}
                       {isOffline && (
-                        <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-dark-850 bg-slate-600" />
+                        <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-dark-800 bg-slate-600" />
                       )}
                     </div>
                     <div className="min-w-0 flex-1 text-left">
