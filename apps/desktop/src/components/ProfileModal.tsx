@@ -69,6 +69,7 @@ function formatUptime(startedAt: string): string {
 export default function ProfileModal({ userId, streamStatus, onClose }: Props) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [badges, setBadges] = useState<UserBadge[]>([]);
+  const [mutualFriendIds, setMutualFriendIds] = useState<string[]>([]);
   const [activity, setActivity] = useState<{ id: string; type: string; data: Record<string, unknown>; createdAt: string }[]>([]);
   const [clips, setClips] = useState<{ title: string; thumbnail_url: string; url: string; view_count: number; creator_name: string; video_url?: string }[]>([]);
   const [loading, setLoading] = useState(true);
@@ -106,6 +107,9 @@ export default function ProfileModal({ userId, streamStatus, onClose }: Props) {
     }).catch(() => { if (!cancel) setLoading(false); });
     api.getBadges(userId).then((b) => { if (!cancel) setBadges(b ?? []); }).catch(() => {});
     api.getActivity(userId, 10).then((a) => { if (!cancel) setActivity(a ?? []); }).catch(() => {});
+    if (currentUser?.id !== userId) {
+      api.getMutualFriends(userId).then((ids) => { if (!cancel) setMutualFriendIds(ids ?? []); }).catch(() => {});
+    }
     return () => { cancel = true; };
   }, [userId]);
 
@@ -332,6 +336,32 @@ export default function ProfileModal({ userId, streamStatus, onClose }: Props) {
                         </span>
                       </Tooltip>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Mutual Friends */}
+              {currentUser?.id !== userId && mutualFriendIds.length > 0 && (
+                <div>
+                  <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                    Mutual Friends — {mutualFriendIds.length}
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {mutualFriendIds.slice(0, 10).map((fid) => {
+                      const fname = useGuildStore.getState().usernames[fid] || "User";
+                      const favatar = useGuildStore.getState().avatarMap[fid];
+                      return (
+                        <Tooltip key={fid} content={fname} side="top">
+                          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-dark-700 text-xs font-semibold text-slate-300">
+                            {favatar ? (
+                              <img src={favatar} alt={fname} className="h-8 w-8 rounded-full object-cover" />
+                            ) : (
+                              fname.charAt(0).toUpperCase()
+                            )}
+                          </span>
+                        </Tooltip>
+                      );
+                    })}
                   </div>
                 </div>
               )}

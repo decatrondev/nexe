@@ -6,10 +6,16 @@ interface DMState {
   requests: DMChannel[];
   activeChannelId: string | null;
   messages: Record<string, DMMessage[]>;
+  unreads: Record<string, number>; // channelId → unread count
+  typing: Record<string, { userId: string; timeout: ReturnType<typeof setTimeout> }>; // channelId → typing user
   loading: boolean;
 
   fetchChannels: () => Promise<void>;
   fetchRequests: () => Promise<void>;
+  fetchUnreads: () => Promise<void>;
+  ackChannel: (channelId: string) => Promise<void>;
+  pinDM: (channelId: string) => Promise<void>;
+  unpinDM: (channelId: string) => Promise<void>;
   acceptRequest: (channelId: string) => Promise<void>;
   rejectRequest: (channelId: string) => Promise<void>;
   openDM: (targetId: string) => Promise<DMChannel>;
@@ -27,6 +33,7 @@ interface DMState {
   handleDMMessageCreate: (msg: DMMessage) => void;
   handleDMMessageUpdate: (msg: DMMessage) => void;
   handleDMMessageDelete: (data: { id: string; channelId: string }) => void;
+  handleDMTyping: (data: { channelId: string; userId: string }) => void;
 }
 
 export const useDMStore = create<DMState>((set, get) => ({
@@ -34,7 +41,44 @@ export const useDMStore = create<DMState>((set, get) => ({
   requests: [],
   activeChannelId: null,
   messages: {},
+  unreads: {},
+  typing: {},
   loading: false,
+
+  async fetchUnreads() {
+    try {
+      const data = await api.getDMUnreads();
+      const unreads: Record<string, number> = {};
+      for (const u of data) {
+        unreads[u.channelId] = u.unreadCount;
+      }
+      set({ unreads });
+    } catch { /* ignore */ }
+  },
+
+  async ackChannel(channelId: string) {
+    const msgs = get().messages[channelId];
+    if (!msgs || msgs.length === 0) return;
+    const lastMsg = msgs[msgs.length - 1];
+    try {
+      await api.ackDM(channelId, lastMsg.id);
+      set((s) => {
+        const unreads = { ...s.unreads };
+        delete unreads[channelId];
+        return { unreads };
+      });
+    } catch { /* ignore */ }
+  },
+
+  async pinDM(channelId: string) {
+    await api.pinDM(channelId);
+    await get().fetchChannels();
+  },
+
+  async unpinDM(channelId: string) {
+    await api.unpinDM(channelId);
+    await get().fetchChannels();
+  },
 
   async fetchRequests() {
     try {
@@ -171,10 +215,8 @@ export const useDMStore = create<DMState>((set, get) => ({
   handleDMMessageCreate(msg: DMMessage) {
     set((s) => {
       const existing = s.messages[msg.channelId] || [];
-      // Avoid duplicates
       if (existing.some((m) => m.id === msg.id)) return s;
 
-      // Move channel to top of list
       const channels = [...s.channels];
       const idx = channels.findIndex((c) => c.id === msg.channelId);
       if (idx > 0) {
@@ -182,13 +224,24 @@ export const useDMStore = create<DMState>((set, get) => ({
         channels.unshift(ch);
       }
 
-      // Reopen channel if it was closed (it's now in the list from backend)
+      // Increment unread if not the active channel
+      const unreads = { ...s.unreads };
+      if (s.activeChannelId !== msg.channelId) {
+        unreads[msg.channelId] = (unreads[msg.channelId] || 0) + 1;
+      }
+
+      // Clear typing indicator for this user
+      const typing = { ...s.typing };
+      if (typing[msg.channelId]) {
+        clearTimeout(typing[msg.channelId].timeout);
+        delete typing[msg.channelId];
+      }
+
       return {
         channels,
-        messages: {
-          ...s.messages,
-          [msg.channelId]: [...existing, msg],
-        },
+        unreads,
+        typing,
+        messages: { ...s.messages, [msg.channelId]: [...existing, msg] },
       };
     });
   },
@@ -211,5 +264,27 @@ export const useDMStore = create<DMState>((set, get) => ({
         [data.channelId]: (s.messages[data.channelId] || []).filter((m) => m.id !== data.id),
       },
     }));
+  },
+
+  handleDMTyping(data: { channelId: string; userId: string }) {
+    set((s) => {
+      const typing = { ...s.typing };
+      // Clear existing timeout
+      if (typing[data.channelId]) {
+        clearTimeout(typing[data.channelId].timeout);
+      }
+      // Set new typing with 5s timeout
+      typing[data.channelId] = {
+        userId: data.userId,
+        timeout: setTimeout(() => {
+          set((s2) => {
+            const t = { ...s2.typing };
+            delete t[data.channelId];
+            return { typing: t };
+          });
+        }, 5000),
+      };
+      return { typing };
+    });
   },
 }));

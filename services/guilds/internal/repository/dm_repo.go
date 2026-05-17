@@ -25,6 +25,7 @@ type DMParticipant struct {
 	UserID    string    `json:"userId"`
 	Closed    bool      `json:"closed"`
 	IsRequest bool      `json:"isRequest"`
+	Pinned    bool      `json:"pinned"`
 	JoinedAt  time.Time `json:"joinedAt"`
 }
 
@@ -135,7 +136,7 @@ func (r *DMRepository) GetByID(ctx context.Context, channelID string) (*DMChanne
 
 	// Load participants
 	rows, err := r.db.QueryContext(ctx,
-		`SELECT channel_id, user_id, closed, is_request, joined_at FROM dm_participants WHERE channel_id = $1`,
+		`SELECT channel_id, user_id, closed, is_request, pinned, joined_at FROM dm_participants WHERE channel_id = $1`,
 		channelID,
 	)
 	if err != nil {
@@ -144,7 +145,7 @@ func (r *DMRepository) GetByID(ctx context.Context, channelID string) (*DMChanne
 	defer rows.Close()
 	for rows.Next() {
 		var p DMParticipant
-		if err := rows.Scan(&p.ChannelID, &p.UserID, &p.Closed, &p.IsRequest, &p.JoinedAt); err != nil {
+		if err := rows.Scan(&p.ChannelID, &p.UserID, &p.Closed, &p.IsRequest, &p.Pinned, &p.JoinedAt); err != nil {
 			return nil, err
 		}
 		ch.Participants = append(ch.Participants, p)
@@ -178,7 +179,7 @@ func (r *DMRepository) ListForUser(ctx context.Context, userID string) ([]DMChan
 	// Load participants for each channel
 	for i := range channels {
 		pRows, err := r.db.QueryContext(ctx,
-			`SELECT channel_id, user_id, closed, is_request, joined_at FROM dm_participants WHERE channel_id = $1`,
+			`SELECT channel_id, user_id, closed, is_request, pinned, joined_at FROM dm_participants WHERE channel_id = $1`,
 			channels[i].ID,
 		)
 		if err != nil {
@@ -186,7 +187,7 @@ func (r *DMRepository) ListForUser(ctx context.Context, userID string) ([]DMChan
 		}
 		for pRows.Next() {
 			var p DMParticipant
-			if err := pRows.Scan(&p.ChannelID, &p.UserID, &p.Closed, &p.IsRequest, &p.JoinedAt); err != nil {
+			if err := pRows.Scan(&p.ChannelID, &p.UserID, &p.Closed, &p.IsRequest, &p.Pinned, &p.JoinedAt); err != nil {
 				continue
 			}
 			channels[i].Participants = append(channels[i].Participants, p)
@@ -314,11 +315,11 @@ func (r *DMRepository) ListRequestsForUser(ctx context.Context, userID string) (
 	// Load participants
 	for i := range channels {
 		pRows, _ := r.db.QueryContext(ctx,
-			`SELECT channel_id, user_id, closed, is_request, joined_at FROM dm_participants WHERE channel_id = $1`, channels[i].ID)
+			`SELECT channel_id, user_id, closed, is_request, pinned, joined_at FROM dm_participants WHERE channel_id = $1`, channels[i].ID)
 		if pRows != nil {
 			for pRows.Next() {
 				var p DMParticipant
-				if err := pRows.Scan(&p.ChannelID, &p.UserID, &p.Closed, &p.IsRequest, &p.JoinedAt); err == nil {
+				if err := pRows.Scan(&p.ChannelID, &p.UserID, &p.Closed, &p.IsRequest, &p.Pinned, &p.JoinedAt); err == nil {
 					channels[i].Participants = append(channels[i].Participants, p)
 				}
 			}
@@ -372,6 +373,69 @@ func (r *DMRepository) ParticipantCount(ctx context.Context, channelID string) (
 		`SELECT COUNT(*) FROM dm_participants WHERE channel_id = $1`, channelID,
 	).Scan(&count)
 	return count, err
+}
+
+// ---- Read States ----
+
+// AckDM marks a DM channel as read up to a specific message.
+func (r *DMRepository) AckDM(ctx context.Context, userID, channelID, messageID string) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO dm_read_states (user_id, channel_id, last_read_message_id, last_read_at)
+		VALUES ($1, $2, $3, NOW())
+		ON CONFLICT (user_id, channel_id)
+		DO UPDATE SET last_read_message_id = $3, last_read_at = NOW()`,
+		userID, channelID, messageID,
+	)
+	return err
+}
+
+// DMUnreadCount returns the count of unread DM messages per channel for a user.
+type DMUnread struct {
+	ChannelID   string `json:"channelId"`
+	UnreadCount int    `json:"unreadCount"`
+	LastReadID  string `json:"lastReadId"`
+}
+
+func (r *DMRepository) GetUnreads(ctx context.Context, userID string) ([]DMUnread, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT p.channel_id,
+			COALESCE(rs.last_read_message_id::text, ''),
+			COUNT(m.id)
+		FROM dm_participants p
+		LEFT JOIN dm_read_states rs ON rs.user_id = p.user_id AND rs.channel_id = p.channel_id
+		LEFT JOIN dm_messages m ON m.channel_id = p.channel_id
+			AND m.deleted = false
+			AND m.author_id != $1
+			AND (rs.last_read_message_id IS NULL OR m.created_at > (SELECT created_at FROM dm_messages WHERE id = rs.last_read_message_id))
+		WHERE p.user_id = $1 AND p.closed = false AND p.is_request = false
+		GROUP BY p.channel_id, rs.last_read_message_id
+	`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var unreads []DMUnread
+	for rows.Next() {
+		var u DMUnread
+		if err := rows.Scan(&u.ChannelID, &u.LastReadID, &u.UnreadCount); err != nil {
+			continue
+		}
+		if u.UnreadCount > 0 {
+			unreads = append(unreads, u)
+		}
+	}
+	return unreads, nil
+}
+
+// ---- Pinned DMs ----
+
+func (r *DMRepository) SetPinned(ctx context.Context, channelID, userID string, pinned bool) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE dm_participants SET pinned = $3 WHERE channel_id = $1 AND user_id = $2`,
+		channelID, userID, pinned,
+	)
+	return err
 }
 
 // ---- DM Messages ----

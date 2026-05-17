@@ -14,6 +14,8 @@ export default function DMChat() {
   const sendMessage = useDMStore((s) => s.sendMessage);
   const editMessage = useDMStore((s) => s.editMessage);
   const deleteMessage = useDMStore((s) => s.deleteMessage);
+  const ackChannel = useDMStore((s) => s.ackChannel);
+  const typingState = useDMStore((s) => activeChannelId ? s.typing[activeChannelId] : undefined);
   const myId = useAuthStore((s) => s.user?.id) ?? "";
   const usernames = useGuildStore((s) => s.usernames);
   const avatarMap = useGuildStore((s) => s.avatarMap);
@@ -38,10 +40,11 @@ export default function DMChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
-  // Focus input when channel changes
+  // Focus input and ack when channel changes
   useEffect(() => {
     inputRef.current?.focus();
-  }, [activeChannelId]);
+    if (activeChannelId) ackChannel(activeChannelId);
+  }, [activeChannelId, ackChannel]);
 
   const handleSend = useCallback(async (e: FormEvent) => {
     e.preventDefault();
@@ -213,6 +216,15 @@ export default function DMChat() {
       </div>
 
       {/* Input */}
+      {/* Typing indicator */}
+      {typingState && (
+        <div className="shrink-0 px-6 pb-1">
+          <span className="text-xs text-slate-500">
+            <strong className="text-slate-400">{usernames[typingState.userId] || "Someone"}</strong> is typing...
+          </span>
+        </div>
+      )}
+
       <form onSubmit={handleSend} className="shrink-0 px-4 pb-4">
         <div className="flex items-end rounded-lg bg-dark-800 px-4 py-2.5">
           <textarea

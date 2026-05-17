@@ -425,6 +425,7 @@ export interface DMParticipant {
   userId: string;
   closed: boolean;
   isRequest: boolean;
+  pinned: boolean;
   joinedAt: string;
 }
 
@@ -1115,6 +1116,22 @@ export const api = {
 
   dmTyping(channelId: string) {
     return request<void>("POST", `/dm-channels/${channelId}/typing`);
+  },
+
+  ackDM(channelId: string, messageId: string) {
+    return request<void>("POST", `/dm-channels/${channelId}/ack`, { messageId });
+  },
+
+  getDMUnreads() {
+    return request<{ channelId: string; unreadCount: number; lastReadId: string }[]>("GET", "/dm-unreads");
+  },
+
+  pinDM(channelId: string) {
+    return request<void>("PUT", `/dm-channels/${channelId}/pin`);
+  },
+
+  unpinDM(channelId: string) {
+    return request<void>("DELETE", `/dm-channels/${channelId}/pin`);
   },
 
   // ---- Privacy ----

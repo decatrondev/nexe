@@ -41,6 +41,12 @@ func (h *DMHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /dm-channels/{id}/members/{userId}", h.RemoveParticipant)
 	mux.HandleFunc("DELETE /dm-channels/{id}/members/@me", h.LeaveGroupDM)
 
+	// DM Read States & Pins
+	mux.HandleFunc("POST /dm-channels/{id}/ack", h.AckDM)
+	mux.HandleFunc("GET /dm-unreads", h.GetUnreads)
+	mux.HandleFunc("PUT /dm-channels/{id}/pin", h.PinDM)
+	mux.HandleFunc("DELETE /dm-channels/{id}/pin", h.UnpinDM)
+
 	// DM Requests
 	mux.HandleFunc("GET /dm-requests", h.ListRequests)
 	mux.HandleFunc("POST /dm-requests/{id}/accept", h.AcceptRequest)
@@ -228,6 +234,77 @@ func (h *DMHandler) CloseDM(w http.ResponseWriter, r *http.Request) {
 	channelID := r.PathValue("id")
 
 	if err := h.repo.CloseDM(r.Context(), channelID, userID); err != nil {
+		writeError(w, http.StatusInternalServerError, "dm_error", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// AckDM marks a DM channel as read.
+// POST /dm-channels/:id/ack { "messageId": "..." }
+func (h *DMHandler) AckDM(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	channelID := r.PathValue("id")
+
+	var body struct {
+		MessageID string `json:"messageId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.MessageID == "" {
+		writeError(w, http.StatusBadRequest, "invalid_body", "messageId required")
+		return
+	}
+
+	if err := h.repo.AckDM(r.Context(), userID, channelID, body.MessageID); err != nil {
+		writeError(w, http.StatusInternalServerError, "dm_error", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetUnreads returns unread DM counts.
+// GET /dm-unreads
+func (h *DMHandler) GetUnreads(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+
+	unreads, err := h.repo.GetUnreads(r.Context(), userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "dm_error", err.Error())
+		return
+	}
+	if unreads == nil {
+		unreads = []repository.DMUnread{}
+	}
+	writeJSON(w, http.StatusOK, unreads)
+}
+
+// PinDM pins a DM for this user.
+// PUT /dm-channels/:id/pin
+func (h *DMHandler) PinDM(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	if err := h.repo.SetPinned(r.Context(), r.PathValue("id"), userID, true); err != nil {
+		writeError(w, http.StatusInternalServerError, "dm_error", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// UnpinDM unpins a DM for this user.
+// DELETE /dm-channels/:id/pin
+func (h *DMHandler) UnpinDM(w http.ResponseWriter, r *http.Request) {
+	userID, ok := requireUser(w, r)
+	if !ok {
+		return
+	}
+	if err := h.repo.SetPinned(r.Context(), r.PathValue("id"), userID, false); err != nil {
 		writeError(w, http.StatusInternalServerError, "dm_error", err.Error())
 		return
 	}

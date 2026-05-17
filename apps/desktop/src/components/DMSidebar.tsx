@@ -12,9 +12,11 @@ export default function DMSidebar() {
   const myId = useAuthStore((s) => s.user?.id) ?? "";
   const channels = useDMStore((s) => s.channels);
   const requests = useDMStore((s) => s.requests);
+  const unreads = useDMStore((s) => s.unreads);
   const activeChannelId = useDMStore((s) => s.activeChannelId);
   const setActive = useDMStore((s) => s.setActive);
   const closeDM = useDMStore((s) => s.closeDM);
+  const ackChannel = useDMStore((s) => s.ackChannel);
   const usernames = useGuildStore((s) => s.usernames);
   const avatarMap = useGuildStore((s) => s.avatarMap);
   const presenceMap = useGuildStore((s) => s.presenceMap);
@@ -113,13 +115,21 @@ export default function DMSidebar() {
             No direct messages yet
           </p>
         ) : (
-          channels.map((ch) => {
+          [...channels].sort((a, b) => {
+            // Pinned first
+            const aPinned = a.participants?.some((p) => p.userId === myId && p.pinned) ?? false;
+            const bPinned = b.participants?.some((p) => p.userId === myId && p.pinned) ?? false;
+            if (aPinned !== bPinned) return aPinned ? -1 : 1;
+            return 0; // keep server order (already sorted by updated_at)
+          }).map((ch) => {
             const otherId = getOtherUser(ch);
             const name = getChannelName(ch);
             const status = presenceMap[otherId] || "offline";
             const avatarUrl = avatarMap[otherId];
             const color = userColor(otherId);
             const isActive = activeChannelId === ch.id;
+            const unreadCount = unreads[ch.id] || 0;
+            const isPinned = ch.participants?.some((p) => p.userId === myId && p.pinned) ?? false;
 
             return (
               <div
@@ -127,9 +137,11 @@ export default function DMSidebar() {
                 className={`group flex items-center gap-2.5 rounded-md px-2 py-1.5 cursor-pointer transition-colors ${
                   isActive
                     ? "bg-dark-700/70 text-white"
-                    : "text-slate-400 hover:bg-dark-800 hover:text-slate-200"
+                    : unreadCount > 0
+                      ? "text-white hover:bg-dark-800"
+                      : "text-slate-400 hover:bg-dark-800 hover:text-slate-200"
                 }`}
-                onClick={() => setActive(ch.id)}
+                onClick={() => { setActive(ch.id); if (unreadCount > 0) ackChannel(ch.id); }}
               >
                 {/* Avatar */}
                 <div className="relative shrink-0">
@@ -155,11 +167,23 @@ export default function DMSidebar() {
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <span className="block truncate text-sm">{name}</span>
+                  <div className="flex items-center gap-1">
+                    {isPinned && (
+                      <svg viewBox="0 0 24 24" className="h-3 w-3 shrink-0 fill-slate-500">
+                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                      </svg>
+                    )}
+                    <span className={`block truncate text-sm ${unreadCount > 0 ? "font-semibold" : ""}`}>{name}</span>
+                  </div>
                   {ch.type === "group_dm" && (
                     <span className="text-[10px] text-slate-500">{ch.participants?.length ?? 0} members</span>
                   )}
                 </div>
+                {unreadCount > 0 && !isActive && (
+                  <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
+                    {unreadCount > 99 ? "99+" : unreadCount}
+                  </span>
+                )}
 
                 {/* Close button */}
                 <button

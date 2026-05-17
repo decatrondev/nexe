@@ -183,6 +183,7 @@ export default function HomePage() {
     useRelationshipStore.getState().fetchRelationships();
     useDMStore.getState().fetchChannels();
     useDMStore.getState().fetchRequests();
+    useDMStore.getState().fetchUnreads();
     // Register current user's username in the guild store
     if (user) {
       useGuildStore.setState((s) => ({
@@ -552,6 +553,9 @@ export default function HomePage() {
       });
       nexeWS.on("DM_MESSAGE_DELETE", (data) => {
         useDMStore.getState().handleDMMessageDelete(data as { id: string; channelId: string });
+      });
+      nexeWS.on("DM_TYPING_START", (data) => {
+        useDMStore.getState().handleDMTyping(data as { channelId: string; userId: string });
       });
 
       // Relationship events (friends)
