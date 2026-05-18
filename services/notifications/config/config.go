@@ -6,14 +6,17 @@ import (
 )
 
 type Config struct {
-	Env          string
-	Port         string
-	DBUrl        string
-	RedisUrl     string
-	MessagingURL string
-	GuildsURL    string
-	ResendAPIKey string
-	EmailFrom    string
+	Env            string
+	Port           string
+	DBUrl          string
+	RedisUrl       string
+	MessagingURL   string
+	GuildsURL      string
+	ResendAPIKey   string
+	EmailFrom      string
+	VAPIDPublicKey string
+	VAPIDPrivateKey string
+	VAPIDEmail     string
 }
 
 func Load() *Config {
@@ -24,8 +27,11 @@ func Load() *Config {
 		RedisUrl:     getEnv("NEXE_REDIS_URL", "redis://localhost:6379/3"),
 		MessagingURL: getEnv("NEXE_MESSAGING_URL", "http://localhost:8083"),
 		GuildsURL:    getEnv("NEXE_GUILDS_URL", "http://localhost:8082"),
-		ResendAPIKey: getEnv("RESEND_API_KEY", ""),
-		EmailFrom:    getEnv("NEXE_EMAIL_FROM", "Nexe <nexe@decatron.net>"),
+		ResendAPIKey:    getEnv("RESEND_API_KEY", ""),
+		EmailFrom:       getEnv("NEXE_EMAIL_FROM", "Nexe <nexe@decatron.net>"),
+		VAPIDPublicKey:  getEnv("NEXE_VAPID_PUBLIC_KEY", ""),
+		VAPIDPrivateKey: getEnv("NEXE_VAPID_PRIVATE_KEY", ""),
+		VAPIDEmail:      getEnv("NEXE_VAPID_EMAIL", "mailto:nexe@decatron.net"),
 	}
 }
 

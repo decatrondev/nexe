@@ -1158,6 +1158,20 @@ export const api = {
     return request<{ allowDms: boolean }>("PUT", `/guilds/${guildId}/dm-toggle`, { allowDms });
   },
 
+  // ---- Web Push ----
+
+  getVAPIDKey() {
+    return request<{ publicKey: string }>("GET", "/push/vapid-key");
+  },
+
+  pushSubscribe(endpoint: string, p256dh: string, auth: string) {
+    return request<void>("POST", "/push/subscribe", { endpoint, p256dh, auth });
+  },
+
+  pushUnsubscribe(endpoint: string) {
+    return request<void>("POST", "/push/unsubscribe", { endpoint });
+  },
+
   // ---- Privacy ----
 
   getPrivacySettings() {

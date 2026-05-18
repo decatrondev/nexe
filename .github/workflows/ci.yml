@@ -28,6 +28,9 @@ jobs:
       - name: Vet
         working-directory: services/${{ matrix.service }}
         run: go vet ./...
+      - name: Test
+        working-directory: services/${{ matrix.service }}
+        run: go test ./... -v -count=1
 
   frontend:
     name: Frontend

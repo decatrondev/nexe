@@ -9,11 +9,12 @@ import (
 )
 
 type NotificationHandler struct {
-	svc *service.NotificationService
+	svc  *service.NotificationService
+	push *service.PushService
 }
 
-func NewNotificationHandler(svc *service.NotificationService) *NotificationHandler {
-	return &NotificationHandler{svc: svc}
+func NewNotificationHandler(svc *service.NotificationService, push *service.PushService) *NotificationHandler {
+	return &NotificationHandler{svc: svc, push: push}
 }
 
 func (h *NotificationHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -25,6 +26,11 @@ func (h *NotificationHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /notifications/{id}", h.Delete)
 	mux.HandleFunc("GET /notifications/preferences/{guildId}", h.GetPreference)
 	mux.HandleFunc("PUT /notifications/preferences/{guildId}", h.SetPreference)
+
+	// Web Push
+	mux.HandleFunc("GET /push/vapid-key", h.GetVAPIDKey)
+	mux.HandleFunc("POST /push/subscribe", h.PushSubscribe)
+	mux.HandleFunc("POST /push/unsubscribe", h.PushUnsubscribe)
 }
 
 func (h *NotificationHandler) List(w http.ResponseWriter, r *http.Request) {
@@ -167,6 +173,70 @@ func (h *NotificationHandler) SendDigest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"status": "ok", "sent": sent})
+}
+
+// ---- Web Push ----
+
+func (h *NotificationHandler) GetVAPIDKey(w http.ResponseWriter, r *http.Request) {
+	key := ""
+	if h.push != nil {
+		key = h.push.GetVAPIDPublicKey()
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"publicKey": key})
+}
+
+func (h *NotificationHandler) PushSubscribe(w http.ResponseWriter, r *http.Request) {
+	userID := r.Header.Get("X-User-ID")
+	if userID == "" {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "missing user ID")
+		return
+	}
+	if h.push == nil {
+		writeError(w, http.StatusServiceUnavailable, "push_disabled", "web push not configured")
+		return
+	}
+
+	var body struct {
+		Endpoint string `json:"endpoint"`
+		P256dh   string `json:"p256dh"`
+		Auth     string `json:"auth"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Endpoint == "" {
+		writeError(w, http.StatusBadRequest, "invalid_body", "endpoint, p256dh, auth required")
+		return
+	}
+
+	if err := h.push.Subscribe(r.Context(), userID, body.Endpoint, body.P256dh, body.Auth); err != nil {
+		writeError(w, http.StatusInternalServerError, "push_error", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *NotificationHandler) PushUnsubscribe(w http.ResponseWriter, r *http.Request) {
+	userID := r.Header.Get("X-User-ID")
+	if userID == "" {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "missing user ID")
+		return
+	}
+	if h.push == nil {
+		writeError(w, http.StatusServiceUnavailable, "push_disabled", "web push not configured")
+		return
+	}
+
+	var body struct {
+		Endpoint string `json:"endpoint"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Endpoint == "" {
+		writeError(w, http.StatusBadRequest, "invalid_body", "endpoint required")
+		return
+	}
+
+	if err := h.push.Unsubscribe(r.Context(), userID, body.Endpoint); err != nil {
+		writeError(w, http.StatusInternalServerError, "push_error", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

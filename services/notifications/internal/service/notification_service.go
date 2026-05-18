@@ -44,6 +44,13 @@ func NewNotificationService(
 	}
 }
 
+// push is optional — set via SetPushService
+var pushSvc *PushService
+
+func (s *NotificationService) SetPushService(ps *PushService) {
+	pushSvc = ps
+}
+
 // GetNotifications returns a user's notifications.
 func (s *NotificationService) GetNotifications(ctx context.Context, userID string, limit int, unreadOnly bool) ([]model.Notification, error) {
 	if limit <= 0 || limit > 100 {
@@ -185,6 +192,23 @@ func (s *NotificationService) ProcessMentionEvent(ctx context.Context, event *mo
 
 		// Publish real-time notification event to the user
 		s.events.PublishToUser(ctx, userID, notif)
+
+		// Send web push notification
+		if pushSvc != nil {
+			title := "New notification"
+			if notifType == model.TypeMention {
+				title = "You were mentioned"
+			} else if notifType == model.TypeReply {
+				title = "New reply"
+			} else if notifType == model.TypeEveryone {
+				title = "@everyone"
+			}
+			pushSvc.SendToUser(ctx, userID, PushPayload{
+				Title: title,
+				Body:  preview,
+				Tag:   "notif-" + notif.ID,
+			})
+		}
 	}
 }
 

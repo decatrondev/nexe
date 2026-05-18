@@ -342,6 +342,9 @@ func main() {
 	mux.Handle("DELETE /notifications/{id}", guildsProxy(np))
 	mux.Handle("GET /notifications/preferences/{guildId}", guildsProxy(np))
 	mux.Handle("PUT /notifications/preferences/{guildId}", guildsProxy(np))
+	mux.Handle("GET /push/vapid-key", guildsProxy(np))
+	mux.Handle("POST /push/subscribe", guildsProxy(np))
+	mux.Handle("POST /push/unsubscribe", guildsProxy(np))
 
 	// Proxy to voice service (authenticated)
 	vp := http.HandlerFunc(proxyHandler.ProxyVoice)

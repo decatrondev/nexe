@@ -45,14 +45,25 @@ func main() {
 	// Email service
 	emailService := service.NewEmailService(cfg.ResendAPIKey, cfg.EmailFrom)
 
+	// Push repository & service
+	pushRepo := repository.NewPushRepository(db)
+	var pushService *service.PushService
+	if cfg.VAPIDPublicKey != "" && cfg.VAPIDPrivateKey != "" {
+		pushService = service.NewPushService(pushRepo, cfg.VAPIDPublicKey, cfg.VAPIDPrivateKey, cfg.VAPIDEmail)
+		slog.Info("web push enabled")
+	} else {
+		slog.Info("web push disabled — VAPID keys not configured")
+	}
+
 	// Service
 	notifService := service.NewNotificationService(notifRepo, prefRepo, eventPublisher, rdb, emailService, cfg.MessagingURL, cfg.GuildsURL)
+	notifService.SetPushService(pushService)
 
 	// Start Redis event subscriber (listens for MESSAGE_CREATE to detect mentions)
 	go notifService.StartEventSubscriber(context.Background())
 
 	// Handler
-	notifHandler := handler.NewNotificationHandler(notifService)
+	notifHandler := handler.NewNotificationHandler(notifService, pushService)
 
 	// Router
 	mux := http.NewServeMux()
