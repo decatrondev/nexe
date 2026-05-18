@@ -6,32 +6,34 @@ import (
 )
 
 type Config struct {
-	Env            string
-	Port           string
-	DBUrl          string
-	RedisUrl       string
-	MessagingURL   string
-	GuildsURL      string
-	ResendAPIKey   string
-	EmailFrom      string
-	VAPIDPublicKey string
+	Env             string
+	Port            string
+	DBUrl           string
+	RedisUrl        string
+	MessagingURL    string
+	GuildsURL       string
+	ResendAPIKey    string
+	EmailFrom       string
+	VAPIDPublicKey  string
 	VAPIDPrivateKey string
-	VAPIDEmail     string
+	VAPIDEmail      string
+	SentryDSN       string
 }
 
 func Load() *Config {
 	return &Config{
-		Env:          getEnv("NEXE_ENV", "development"),
-		Port:         getEnv("NEXE_NOTIFICATIONS_PORT", "8086"),
-		DBUrl:        getEnv("NEXE_DB_URL", "postgresql://decatron_user:lfIEcCZ11kIEM573mA0PA@localhost:5432/nexe_dev?sslmode=disable"),
-		RedisUrl:     getEnv("NEXE_REDIS_URL", "redis://localhost:6379/3"),
-		MessagingURL: getEnv("NEXE_MESSAGING_URL", "http://localhost:8083"),
-		GuildsURL:    getEnv("NEXE_GUILDS_URL", "http://localhost:8082"),
+		Env:             getEnv("NEXE_ENV", "development"),
+		Port:            getEnv("NEXE_NOTIFICATIONS_PORT", "8086"),
+		DBUrl:           getEnv("NEXE_DB_URL", "postgresql://decatron_user:lfIEcCZ11kIEM573mA0PA@localhost:5432/nexe_dev?sslmode=disable"),
+		RedisUrl:        getEnv("NEXE_REDIS_URL", "redis://localhost:6379/3"),
+		MessagingURL:    getEnv("NEXE_MESSAGING_URL", "http://localhost:8083"),
+		GuildsURL:       getEnv("NEXE_GUILDS_URL", "http://localhost:8082"),
 		ResendAPIKey:    getEnv("RESEND_API_KEY", ""),
 		EmailFrom:       getEnv("NEXE_EMAIL_FROM", "Nexe <nexe@decatron.net>"),
 		VAPIDPublicKey:  getEnv("NEXE_VAPID_PUBLIC_KEY", ""),
 		VAPIDPrivateKey: getEnv("NEXE_VAPID_PRIVATE_KEY", ""),
 		VAPIDEmail:      getEnv("NEXE_VAPID_EMAIL", "mailto:nexe@decatron.net"),
+		SentryDSN:       getEnv("NEXE_SENTRY_DSN", ""),
 	}
 }
 

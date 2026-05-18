@@ -11,6 +11,8 @@ import (
 	"github.com/decatrondev/nexe/services/notifications/internal/handler"
 	"github.com/decatrondev/nexe/services/notifications/internal/repository"
 	"github.com/decatrondev/nexe/services/notifications/internal/service"
+	"github.com/getsentry/sentry-go"
+	"time"
 )
 
 func main() {
@@ -21,12 +23,30 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
+	if cfg.SentryDSN != "" {
+		if err := sentry.Init(sentry.ClientOptions{
+			Dsn: cfg.SentryDSN,
+			Environment: cfg.Env,
+			Release: "nexe-notifications@0.4.3",
+		}); err != nil {
+			slog.Error("sentry init failed", "error", err)
+		} else {
+			slog.Info("sentry enabled")
+			defer sentry.Flush(2 * time.Second)
+		}
+	}
+
 	db, err := database.NewPostgres(cfg.DBUrl)
 	if err != nil {
 		slog.Error("failed to connect to postgres", "error", err)
 		os.Exit(1)
 	}
 	defer db.Close()
+
+	if err := database.AutoMigrate(db); err != nil {
+		slog.Error("migration failed", "error", err)
+		os.Exit(1)
+	}
 
 	rdb, err := database.NewRedis(cfg.RedisUrl)
 	if err != nil {

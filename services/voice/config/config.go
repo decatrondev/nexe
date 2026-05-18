@@ -14,6 +14,7 @@ type Config struct {
 	LiveKitAPIKey   string
 	LiveKitSecret   string
 	GuildsURL       string
+	SentryDSN    string
 }
 
 func Load() *Config {
@@ -26,6 +27,7 @@ func Load() *Config {
 		LiveKitAPIKey:    getEnv("NEXE_LIVEKIT_API_KEY", ""),
 		LiveKitSecret:    getEnv("NEXE_LIVEKIT_API_SECRET", ""),
 		GuildsURL:     getEnv("NEXE_GUILDS_URL", "http://localhost:8082"),
+		SentryDSN:  getEnv("NEXE_SENTRY_DSN", ""),
 	}
 }
 

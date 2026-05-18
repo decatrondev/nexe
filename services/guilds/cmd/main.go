@@ -12,6 +12,7 @@ import (
 	"github.com/decatrondev/nexe/services/guilds/internal/handler"
 	"github.com/decatrondev/nexe/services/guilds/internal/repository"
 	"github.com/decatrondev/nexe/services/guilds/internal/service"
+	"github.com/getsentry/sentry-go"
 )
 
 func main() {
@@ -22,6 +23,19 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
+	if cfg.SentryDSN != "" {
+		if err := sentry.Init(sentry.ClientOptions{
+			Dsn: cfg.SentryDSN,
+			Environment: cfg.Env,
+			Release: "nexe-guilds@0.4.3",
+		}); err != nil {
+			slog.Error("sentry init failed", "error", err)
+		} else {
+			slog.Info("sentry enabled")
+			defer sentry.Flush(2 * time.Second)
+		}
+	}
+
 	// Database connections
 	db, err := database.NewPostgres(cfg.DBUrl)
 	if err != nil {
@@ -29,6 +43,11 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
+
+	if err := database.AutoMigrate(db); err != nil {
+		slog.Error("migration failed", "error", err)
+		os.Exit(1)
+	}
 
 	rdb, err := database.NewRedis(cfg.RedisUrl)
 	if err != nil {

@@ -62,3 +62,4 @@ services/gateway/gateway
 uploads/
 services/guilds/guilds
 services/messaging/messaging
+infra/pgbouncer/userlist.txt

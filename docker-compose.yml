@@ -1,0 +1,196 @@
+# Nexe — Full Stack Docker Compose
+# Usage: cp .env.docker .env && docker compose up -d
+#
+# Services: gateway, guilds, messaging, presence, voice, notifications
+# Dependencies: PostgreSQL, Redis
+# Optional: LiveKit (for voice/video)
+
+x-common: &common
+  restart: unless-stopped
+  networks:
+    - nexe
+
+x-go-service: &go-service
+  <<: *common
+  build:
+    context: .
+    dockerfile: Dockerfile.service
+
+services:
+  # ---- Infrastructure ----
+
+  postgres:
+    <<: *common
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: nexe
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexe_dev_pass}
+      POSTGRES_DB: nexe
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexe"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    <<: *common
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ---- Go Services ----
+
+  gateway:
+    <<: *go-service
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE: gateway
+    ports:
+      - "${GATEWAY_PORT:-8090}:8090"
+    environment:
+      NEXE_ENV: ${NEXE_ENV:-development}
+      NEXE_GATEWAY_PORT: "8090"
+      NEXE_DB_URL: postgresql://nexe:${POSTGRES_PASSWORD:-nexe_dev_pass}@postgres:5432/nexe?sslmode=disable
+      NEXE_REDIS_URL: redis://redis:6379/3
+      NEXE_JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      NEXE_GUILDS_URL: http://guilds:8082
+      NEXE_MESSAGING_URL: http://messaging:8083
+      NEXE_PRESENCE_URL: http://presence:8084
+      NEXE_VOICE_URL: http://voice:8085
+      NEXE_NOTIFICATIONS_URL: http://notifications:8086
+      NEXE_BASE_URL: ${BASE_URL:-http://localhost:8090}
+      NEXE_FRONTEND_URL: ${FRONTEND_URL:-http://localhost:1420}
+      NEXE_TWITCH_CLIENT_ID: ${TWITCH_CLIENT_ID:-}
+      NEXE_TWITCH_CLIENT_SECRET: ${TWITCH_CLIENT_SECRET:-}
+      NEXE_TWITCH_REDIRECT_URI: ${TWITCH_REDIRECT_URI:-}
+      NEXE_TWITCH_EVENTSUB_SECRET: ${TWITCH_EVENTSUB_SECRET:-}
+      NEXE_R2_ENDPOINT: ${R2_ENDPOINT:-}
+      NEXE_R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      NEXE_R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      NEXE_R2_BUCKET: ${R2_BUCKET:-}
+      NEXE_R2_PUBLIC_URL: ${R2_PUBLIC_URL:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  guilds:
+    <<: *go-service
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE: guilds
+    environment:
+      NEXE_ENV: ${NEXE_ENV:-development}
+      NEXE_GUILDS_PORT: "8082"
+      NEXE_DB_URL: postgresql://nexe:${POSTGRES_PASSWORD:-nexe_dev_pass}@postgres:5432/nexe?sslmode=disable
+      NEXE_REDIS_URL: redis://redis:6379/3
+      NEXE_MESSAGING_URL: http://messaging:8083
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  messaging:
+    <<: *go-service
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE: messaging
+    environment:
+      NEXE_ENV: ${NEXE_ENV:-development}
+      NEXE_MESSAGING_PORT: "8083"
+      NEXE_DB_URL: postgresql://nexe:${POSTGRES_PASSWORD:-nexe_dev_pass}@postgres:5432/nexe?sslmode=disable
+      NEXE_REDIS_URL: redis://redis:6379/3
+      NEXE_GUILDS_URL: http://guilds:8082
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  presence:
+    <<: *go-service
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE: presence
+    environment:
+      NEXE_ENV: ${NEXE_ENV:-development}
+      NEXE_PRESENCE_PORT: "8084"
+      NEXE_REDIS_URL: redis://redis:6379/3
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  voice:
+    <<: *go-service
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE: voice
+    environment:
+      NEXE_ENV: ${NEXE_ENV:-development}
+      NEXE_VOICE_PORT: "8085"
+      NEXE_REDIS_URL: redis://redis:6379/3
+      NEXE_GUILDS_URL: http://guilds:8082
+      NEXE_LIVEKIT_HOST: ${LIVEKIT_HOST:-http://livekit:7880}
+      NEXE_LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-ws://localhost:7880}
+      NEXE_LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
+      NEXE_LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-devsecret}
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  notifications:
+    <<: *go-service
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE: notifications
+    environment:
+      NEXE_ENV: ${NEXE_ENV:-development}
+      NEXE_NOTIFICATIONS_PORT: "8086"
+      NEXE_DB_URL: postgresql://nexe:${POSTGRES_PASSWORD:-nexe_dev_pass}@postgres:5432/nexe?sslmode=disable
+      NEXE_REDIS_URL: redis://redis:6379/3
+      NEXE_MESSAGING_URL: http://messaging:8083
+      NEXE_GUILDS_URL: http://guilds:8082
+      NEXE_VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      NEXE_VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      NEXE_VAPID_EMAIL: ${VAPID_EMAIL:-mailto:nexe@localhost}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  redisdata:
+
+networks:
+  nexe:
+    driver: bridge

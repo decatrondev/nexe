@@ -9,6 +9,8 @@ import (
 	"github.com/decatrondev/nexe/services/presence/internal/database"
 	"github.com/decatrondev/nexe/services/presence/internal/handler"
 	"github.com/decatrondev/nexe/services/presence/internal/service"
+	"github.com/getsentry/sentry-go"
+	"time"
 )
 
 func main() {
@@ -18,6 +20,19 @@ func main() {
 		Level: cfg.LogLevel(),
 	}))
 	slog.SetDefault(logger)
+
+	if cfg.SentryDSN != "" {
+		if err := sentry.Init(sentry.ClientOptions{
+			Dsn: cfg.SentryDSN,
+			Environment: cfg.Env,
+			Release: "nexe-presence@0.4.3",
+		}); err != nil {
+			slog.Error("sentry init failed", "error", err)
+		} else {
+			slog.Info("sentry enabled")
+			defer sentry.Flush(2 * time.Second)
+		}
+	}
 
 	rdb, err := database.NewRedis(cfg.RedisUrl)
 	if err != nil {

@@ -5,16 +5,23 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/decatrondev/nexe/services/gateway/internal/cache"
 	"github.com/decatrondev/nexe/services/gateway/internal/model"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type UserRepository struct {
-	db *sql.DB
+	db    *sql.DB
+	cache *cache.RedisCache
 }
 
 func NewUserRepository(db *sql.DB) *UserRepository {
 	return &UserRepository{db: db}
+}
+
+// SetCache enables Redis caching for frequently accessed queries.
+func (r *UserRepository) SetCache(c *cache.RedisCache) {
+	r.cache = c
 }
 
 func (r *UserRepository) Create(ctx context.Context, user *model.User) error {
@@ -43,7 +50,15 @@ func (r *UserRepository) Delete(ctx context.Context, id string) error {
 }
 
 func (r *UserRepository) GetByID(ctx context.Context, id string) (*model.User, error) {
-	return r.scanUser(r.db.QueryRowContext(ctx, `
+	// Try cache first
+	if r.cache != nil {
+		var user model.User
+		if r.cache.Get(ctx, cache.UserKey(id), &user) {
+			return &user, nil
+		}
+	}
+
+	u, err := r.scanUser(r.db.QueryRowContext(ctx, `
 		SELECT u.id, u.username, u.email, u.email_verified, u.password_hash,
 		       u.twitch_id, u.twitch_login, u.twitch_display_name,
 		       u.twitch_access_token, u.twitch_refresh_token, u.twitch_token_expires_at,
@@ -52,6 +67,20 @@ func (r *UserRepository) GetByID(ctx context.Context, id string) (*model.User, e
 		FROM users u
 		LEFT JOIN user_tiers ut ON ut.user_id = u.id
 		WHERE u.id = $1 AND u.disabled = false`, id))
+	if err != nil {
+		return nil, err
+	}
+	if u != nil && r.cache != nil {
+		r.cache.Set(ctx, cache.UserKey(id), u)
+	}
+	return u, nil
+}
+
+// InvalidateUser clears a user from cache (call after profile/status updates).
+func (r *UserRepository) InvalidateUser(ctx context.Context, id string) {
+	if r.cache != nil {
+		r.cache.Del(ctx, cache.UserKey(id))
+	}
 }
 
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*model.User, error) {

@@ -8,7 +8,11 @@ import (
 	"os"
 	"time"
 
+	"github.com/getsentry/sentry-go"
+	sentryhttp "github.com/getsentry/sentry-go/http"
+
 	"github.com/decatrondev/nexe/services/gateway/config"
+	"github.com/decatrondev/nexe/services/gateway/internal/cache"
 	"github.com/decatrondev/nexe/services/gateway/internal/database"
 	"github.com/decatrondev/nexe/services/gateway/internal/handler"
 	"github.com/decatrondev/nexe/services/gateway/internal/middleware"
@@ -24,6 +28,21 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
+	// Sentry error tracking
+	if cfg.SentryDSN != "" {
+		if err := sentry.Init(sentry.ClientOptions{
+			Dsn:              cfg.SentryDSN,
+			Environment:      cfg.Env,
+			Release:          "nexe-gateway@0.4.3",
+			TracesSampleRate: 0.1,
+		}); err != nil {
+			slog.Error("sentry init failed", "error", err)
+		} else {
+			slog.Info("sentry enabled")
+			defer sentry.Flush(2 * time.Second)
+		}
+	}
+
 	// Database connections
 	db, err := database.NewPostgres(cfg.DBUrl)
 	if err != nil {
@@ -32,6 +51,12 @@ func main() {
 	}
 	defer db.Close()
 
+	// Auto-run pending migrations
+	if err := database.AutoMigrate(db); err != nil {
+		slog.Error("migration failed", "error", err)
+		os.Exit(1)
+	}
+
 	rdb, err := database.NewRedis(cfg.RedisUrl)
 	if err != nil {
 		slog.Error("failed to connect to Redis", "error", err)
@@ -39,8 +64,12 @@ func main() {
 	}
 	defer rdb.Close()
 
+	// Cache layer
+	redisCache := cache.New(rdb, 5*time.Minute)
+
 	// Repositories
 	userRepo := repository.NewUserRepository(db)
+	userRepo.SetCache(redisCache)
 	sessionRepo := repository.NewSessionRepository(db)
 	verificationRepo := repository.NewVerificationRepository(db)
 	profileRepo := repository.NewProfileRepository(db)
@@ -370,10 +399,14 @@ func main() {
 	// CORS middleware
 	corsHandler := corsMiddleware(mux, cfg.FrontendURL)
 
+	// Wrap with Sentry panic recovery
+	sentryHandler := sentryhttp.New(sentryhttp.Options{Repanic: true})
+	finalHandler := sentryHandler.Handle(corsHandler)
+
 	addr := ":" + cfg.Port
 	slog.Info("gateway starting", "addr", addr, "env", cfg.Env)
 
-	if err := http.ListenAndServe(addr, corsHandler); err != nil {
+	if err := http.ListenAndServe(addr, finalHandler); err != nil {
 		slog.Error("server failed", "error", err)
 		os.Exit(1)
 	}

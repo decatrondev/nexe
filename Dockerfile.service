@@ -1,0 +1,18 @@
+# Multi-stage Dockerfile for all Nexe Go services
+# Usage: docker build --build-arg SERVICE=gateway -f Dockerfile.service .
+ARG SERVICE=gateway
+
+FROM golang:1.22-alpine AS builder
+ARG SERVICE
+WORKDIR /build
+COPY services/${SERVICE}/go.mod services/${SERVICE}/go.sum ./
+RUN go mod download
+COPY services/${SERVICE}/ ./
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /app ./cmd/main.go
+
+FROM alpine:3.20
+RUN apk --no-cache add ca-certificates tzdata
+WORKDIR /app
+COPY --from=builder /app .
+EXPOSE 8080
+ENTRYPOINT ["./app"]

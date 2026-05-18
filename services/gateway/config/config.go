@@ -32,6 +32,7 @@ type Config struct {
 	R2SecretAccessKey    string
 	R2Bucket             string
 	R2PublicURL          string
+	SentryDSN            string
 }
 
 func Load() *Config {
@@ -61,6 +62,7 @@ func Load() *Config {
 		R2SecretAccessKey:    getEnv("NEXE_R2_SECRET_ACCESS_KEY", ""),
 		R2Bucket:             getEnv("NEXE_R2_BUCKET", "nexe-uploads"),
 		R2PublicURL:          getEnv("NEXE_R2_PUBLIC_URL", ""),
+		SentryDSN:            getEnv("NEXE_SENTRY_DSN", ""),
 	}
 	return cfg
 }

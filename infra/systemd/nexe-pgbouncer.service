@@ -1,0 +1,15 @@
+[Unit]
+Description=Nexe PgBouncer Connection Pooler
+After=postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=postgres
+ExecStart=/usr/sbin/pgbouncer /var/www/html/nexe/infra/pgbouncer/pgbouncer.ini
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

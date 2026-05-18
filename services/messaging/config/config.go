@@ -11,6 +11,7 @@ type Config struct {
 	DBUrl     string
 	RedisUrl  string
 	GuildsURL string
+	SentryDSN    string
 }
 
 func Load() *Config {
@@ -20,6 +21,7 @@ func Load() *Config {
 		DBUrl:    getEnv("NEXE_DB_URL", "postgresql://decatron_user:lfIEcCZ11kIEM573mA0PA@localhost:5432/nexe_dev?sslmode=disable"),
 		RedisUrl:  getEnv("NEXE_REDIS_URL", "redis://localhost:6379/3"),
 		GuildsURL: getEnv("NEXE_GUILDS_URL", "http://localhost:8082"),
+		SentryDSN:  getEnv("NEXE_SENTRY_DSN", ""),
 	}
 }
 
