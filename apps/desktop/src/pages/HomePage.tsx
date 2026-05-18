@@ -453,6 +453,7 @@ export default function HomePage() {
 
       nexeWS.on("PRESENCE_UPDATE", (data) => {
         const d = data as { userId: string; status: string };
+        const prevStatus = useGuildStore.getState().presenceMap[d.userId];
         useGuildStore.setState((s) => ({
           presenceMap: { ...s.presenceMap, [d.userId]: d.status },
         }));
@@ -462,6 +463,17 @@ export default function HomePage() {
           useAuthStore.setState((s) => ({
             user: s.user ? { ...s.user, status: d.status as "online" | "idle" | "dnd" | "offline" } : null,
           }));
+        }
+        // Friend online notification: notify when a friend goes from offline/undefined to online
+        if (d.status === "online" && (!prevStatus || prevStatus === "offline") && me && d.userId !== me.id) {
+          const rels = useRelationshipStore.getState().relationships;
+          const isFriend = rels.some((r) => r.type === "friend" && (r.userId === d.userId || r.targetId === d.userId));
+          if (isFriend) {
+            const friendName = useGuildStore.getState().usernames[d.userId] || "A friend";
+            try {
+              new Notification(`${friendName} is now online`, { silent: true });
+            } catch { /* permission not granted */ }
+          }
         }
       });
 
