@@ -8,8 +8,10 @@ import (
 	"github.com/decatrondev/nexe/services/presence/config"
 	"github.com/decatrondev/nexe/services/presence/internal/database"
 	"github.com/decatrondev/nexe/services/presence/internal/handler"
+	"github.com/decatrondev/nexe/services/presence/internal/middleware"
 	"github.com/decatrondev/nexe/services/presence/internal/service"
 	"github.com/getsentry/sentry-go"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"time"
 )
 
@@ -51,13 +53,14 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok","service":"presence"}`))
 	})
+	mux.Handle("GET /metrics", promhttp.Handler())
 
 	presenceHandler.RegisterRoutes(mux)
 
 	addr := ":" + cfg.Port
 	slog.Info("presence starting", "addr", addr, "env", cfg.Env)
 
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.ListenAndServe(addr, middleware.Metrics(mux)); err != nil {
 		slog.Error("server failed", "error", err)
 		os.Exit(1)
 	}

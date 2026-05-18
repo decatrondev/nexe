@@ -8,8 +8,10 @@ import (
 	"github.com/decatrondev/nexe/services/voice/config"
 	"github.com/decatrondev/nexe/services/voice/internal/database"
 	"github.com/decatrondev/nexe/services/voice/internal/handler"
+	"github.com/decatrondev/nexe/services/voice/internal/middleware"
 	"github.com/decatrondev/nexe/services/voice/internal/service"
 	"github.com/getsentry/sentry-go"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"time"
 )
 
@@ -52,13 +54,14 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok","service":"voice"}`))
 	})
+	mux.Handle("GET /metrics", promhttp.Handler())
 
 	voiceHandler.RegisterRoutes(mux)
 
 	addr := ":" + cfg.Port
 	slog.Info("voice starting", "addr", addr, "env", cfg.Env)
 
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.ListenAndServe(addr, middleware.Metrics(mux)); err != nil {
 		slog.Error("server failed", "error", err)
 		os.Exit(1)
 	}

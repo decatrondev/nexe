@@ -9,9 +9,11 @@ import (
 	"github.com/decatrondev/nexe/services/notifications/config"
 	"github.com/decatrondev/nexe/services/notifications/internal/database"
 	"github.com/decatrondev/nexe/services/notifications/internal/handler"
+	"github.com/decatrondev/nexe/services/notifications/internal/middleware"
 	"github.com/decatrondev/nexe/services/notifications/internal/repository"
 	"github.com/decatrondev/nexe/services/notifications/internal/service"
 	"github.com/getsentry/sentry-go"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"time"
 )
 
@@ -93,13 +95,14 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok","service":"notifications"}`))
 	})
+	mux.Handle("GET /metrics", promhttp.Handler())
 
 	notifHandler.RegisterRoutes(mux)
 
 	addr := ":" + cfg.Port
 	slog.Info("notifications starting", "addr", addr, "env", cfg.Env)
 
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.ListenAndServe(addr, middleware.Metrics(mux)); err != nil {
 		slog.Error("server failed", "error", err)
 		os.Exit(1)
 	}

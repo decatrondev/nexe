@@ -10,9 +10,11 @@ import (
 	"github.com/decatrondev/nexe/services/guilds/config"
 	"github.com/decatrondev/nexe/services/guilds/internal/database"
 	"github.com/decatrondev/nexe/services/guilds/internal/handler"
+	"github.com/decatrondev/nexe/services/guilds/internal/middleware"
 	"github.com/decatrondev/nexe/services/guilds/internal/repository"
 	"github.com/decatrondev/nexe/services/guilds/internal/service"
 	"github.com/getsentry/sentry-go"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -96,6 +98,7 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok","service":"guilds"}`))
 	})
+	mux.Handle("GET /metrics", promhttp.Handler())
 
 	guildHandler.RegisterRoutes(mux)
 	relationshipHandler.RegisterRoutes(mux)
@@ -126,7 +129,7 @@ func main() {
 	addr := ":" + cfg.Port
 	slog.Info("guilds starting", "addr", addr, "env", cfg.Env)
 
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.ListenAndServe(addr, middleware.Metrics(mux)); err != nil {
 		slog.Error("server failed", "error", err)
 		os.Exit(1)
 	}

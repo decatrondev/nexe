@@ -10,6 +10,7 @@ import (
 
 	"github.com/getsentry/sentry-go"
 	sentryhttp "github.com/getsentry/sentry-go/http"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/decatrondev/nexe/services/gateway/config"
 	"github.com/decatrondev/nexe/services/gateway/internal/cache"
@@ -118,12 +119,13 @@ func main() {
 	// Routes
 	mux := http.NewServeMux()
 
-	// Health
+	// Health + Metrics
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status":"ok","service":"gateway"}`))
 	})
+	mux.Handle("GET /metrics", promhttp.Handler())
 
 	// Desktop app update check (public, rate limited)
 	updateHandler := handler.NewUpdateHandler(rdb, "decatrondev", "nexe")
@@ -399,9 +401,10 @@ func main() {
 	// CORS middleware
 	corsHandler := corsMiddleware(mux, cfg.FrontendURL)
 
-	// Wrap with Sentry panic recovery
+	// Wrap with metrics + Sentry panic recovery
+	metricsHandler := middleware.Metrics(corsHandler)
 	sentryHandler := sentryhttp.New(sentryhttp.Options{Repanic: true})
-	finalHandler := sentryHandler.Handle(corsHandler)
+	finalHandler := sentryHandler.Handle(metricsHandler)
 
 	addr := ":" + cfg.Port
 	slog.Info("gateway starting", "addr", addr, "env", cfg.Env)
