@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package nexe.messaging;
+
+option go_package = "github.com/decatrondev/nexe/proto/messagingpb";
+
+// MessagingInternal — internal RPC endpoints exposed by the messaging service
+// Used by: notifications (author lookup), guilds (system messages)
+service MessagingInternal {
+  // GetMessageAuthor returns the author ID for a message.
+  // Called by notifications service for reply mention resolution.
+  rpc GetMessageAuthor(MessageAuthorRequest) returns (MessageAuthorResponse);
+
+  // SendSystemMessage sends a system message to a channel.
+  // Called by guilds service for join notifications.
+  rpc SendSystemMessage(SystemMessageRequest) returns (SystemMessageResponse);
+}
+
+message MessageAuthorRequest {
+  string message_id = 1;
+}
+
+message MessageAuthorResponse {
+  string author_id = 1;
+}
+
+message SystemMessageRequest {
+  string channel_id = 1;
+  string content = 2;
+  string author_name = 3;
+}
+
+message SystemMessageResponse {
+  string message_id = 1;
+}

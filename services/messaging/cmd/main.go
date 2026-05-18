@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 
+	pb "github.com/decatrondev/nexe/proto/guildspb"
 	"github.com/decatrondev/nexe/services/messaging/config"
 	"github.com/decatrondev/nexe/services/messaging/internal/database"
 	"github.com/decatrondev/nexe/services/messaging/internal/handler"
@@ -13,6 +14,8 @@ import (
 	"github.com/decatrondev/nexe/services/messaging/internal/service"
 	"github.com/getsentry/sentry-go"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"time"
 )
 
@@ -66,6 +69,17 @@ func main() {
 
 	// Service
 	messageSvc := service.NewMessageService(messageRepo, reactionRepo, eventPublisher, cfg.GuildsURL)
+
+	// Connect to guilds gRPC (port 9082)
+	guildsGRPCAddr := "localhost:9082"
+	grpcConn, err := grpc.NewClient(guildsGRPCAddr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		slog.Warn("gRPC connection to guilds failed, falling back to HTTP", "error", err)
+	} else {
+		defer grpcConn.Close()
+		messageSvc.SetGuildsGRPC(pb.NewGuildsInternalClient(grpcConn))
+		slog.Info("gRPC connected to guilds", "addr", guildsGRPCAddr)
+	}
 
 	// Handler
 	messageHandler := handler.NewMessageHandler(messageSvc)

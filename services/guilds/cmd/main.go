@@ -3,18 +3,22 @@ package main
 import (
 	"context"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"time"
 
+	pb "github.com/decatrondev/nexe/proto/guildspb"
 	"github.com/decatrondev/nexe/services/guilds/config"
 	"github.com/decatrondev/nexe/services/guilds/internal/database"
+	"github.com/decatrondev/nexe/services/guilds/internal/grpcserver"
 	"github.com/decatrondev/nexe/services/guilds/internal/handler"
 	"github.com/decatrondev/nexe/services/guilds/internal/middleware"
 	"github.com/decatrondev/nexe/services/guilds/internal/repository"
 	"github.com/decatrondev/nexe/services/guilds/internal/service"
 	"github.com/getsentry/sentry-go"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"google.golang.org/grpc"
 )
 
 func main() {
@@ -123,6 +127,22 @@ func main() {
 			} else if n > 0 {
 				slog.Info("cleaned up expired invites", "count", n)
 			}
+		}
+	}()
+
+	// Start gRPC server on port+1 (e.g., 8082 HTTP → 9082 gRPC)
+	grpcAddr := ":9082"
+	go func() {
+		lis, err := net.Listen("tcp", grpcAddr)
+		if err != nil {
+			slog.Error("gRPC listen failed", "error", err)
+			return
+		}
+		grpcSrv := grpc.NewServer()
+		pb.RegisterGuildsInternalServer(grpcSrv, grpcserver.New(db))
+		slog.Info("gRPC server starting", "addr", grpcAddr)
+		if err := grpcSrv.Serve(lis); err != nil {
+			slog.Error("gRPC server failed", "error", err)
 		}
 	}()
 

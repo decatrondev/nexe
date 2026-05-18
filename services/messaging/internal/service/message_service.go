@@ -9,24 +9,31 @@ import (
 	"net/http"
 	"strings"
 
+	pb "github.com/decatrondev/nexe/proto/guildspb"
 	"github.com/decatrondev/nexe/services/messaging/internal/model"
 	"github.com/decatrondev/nexe/services/messaging/internal/repository"
 )
 
 type MessageService struct {
-	messages  *repository.MessageRepository
-	reactions *repository.ReactionRepository
-	events    *EventPublisher
-	guildsURL string
+	messages    *repository.MessageRepository
+	reactions   *repository.ReactionRepository
+	events      *EventPublisher
+	guildsURL   string
+	guildsGRPC  pb.GuildsInternalClient // optional gRPC client
 }
 
 func NewMessageService(messages *repository.MessageRepository, reactions *repository.ReactionRepository, events *EventPublisher, guildsURL string) *MessageService {
 	return &MessageService{
 		messages:  messages,
-		reactions:  reactions,
+		reactions: reactions,
 		guildsURL: guildsURL,
 		events:    events,
 	}
+}
+
+// SetGuildsGRPC enables gRPC for inter-service calls to guilds (replaces HTTP).
+func (s *MessageService) SetGuildsGRPC(client pb.GuildsInternalClient) {
+	s.guildsGRPC = client
 }
 
 type ChannelAccess struct {
@@ -39,6 +46,26 @@ type ChannelAccess struct {
 }
 
 func (s *MessageService) checkChannelAccess(ctx context.Context, channelID, userID string) (*ChannelAccess, error) {
+	// Use gRPC if available (faster inter-service communication)
+	if s.guildsGRPC != nil {
+		resp, err := s.guildsGRPC.CheckChannelAccess(ctx, &pb.ChannelAccessRequest{
+			ChannelId: channelID,
+			UserId:    userID,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("gRPC access check: %w", err)
+		}
+		return &ChannelAccess{
+			GuildID:        resp.GuildId,
+			IsMember:       resp.IsMember,
+			ManageMessages: resp.ManageMessages,
+			ManageChannels: resp.ManageChannels,
+			ManageGuild:    resp.ManageGuild,
+			Administrator:  resp.Administrator,
+		}, nil
+	}
+
+	// Fallback to HTTP
 	if s.guildsURL == "" {
 		return &ChannelAccess{IsMember: true}, nil
 	}

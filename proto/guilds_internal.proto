@@ -1,0 +1,128 @@
+syntax = "proto3";
+
+package nexe.guilds;
+
+option go_package = "github.com/decatrondev/nexe/proto/guildspb";
+
+// GuildsInternal — internal RPC endpoints exposed by the guilds service
+// Used by: messaging (per-message), notifications, voice, gateway
+service GuildsInternal {
+  // CheckChannelAccess verifies a user has access to a channel and returns permissions.
+  // Called by messaging service on every message send/delete.
+  rpc CheckChannelAccess(ChannelAccessRequest) returns (ChannelAccessResponse);
+
+  // CheckAutomod runs automod rules against message content.
+  // Called by messaging service on every message send.
+  rpc CheckAutomod(AutomodRequest) returns (AutomodResponse);
+
+  // ValidateEmotes checks emote tier restrictions in message content.
+  // Called by messaging service on every message send.
+  rpc ValidateEmotes(EmoteValidateRequest) returns (EmoteValidateResponse);
+
+  // GetGuildMembers returns member user IDs for a guild.
+  // Called by notifications service for @everyone mentions.
+  rpc GetGuildMembers(GuildMembersRequest) returns (GuildMembersResponse);
+
+  // GetGuildChannels returns channels for a guild.
+  // Called by voice service to verify voice channel exists.
+  rpc GetGuildChannels(GuildChannelsRequest) returns (GuildChannelsResponse);
+
+  // GetUserGuilds returns guild IDs a user belongs to.
+  // Called by gateway on WebSocket connect.
+  rpc GetUserGuilds(UserGuildsRequest) returns (UserGuildsResponse);
+
+  // SendSystemMessage sends a system message to a channel (join notifications, etc.).
+  // Called by guilds service internally but also useful cross-service.
+  rpc AssignAutoRole(AutoRoleRequest) returns (AutoRoleResponse);
+
+  // RemoveAutoRole removes an auto-assigned role.
+  rpc RemoveAutoRole(AutoRoleRequest) returns (AutoRoleResponse);
+}
+
+// ---- Messages ----
+
+message ChannelAccessRequest {
+  string channel_id = 1;
+  string user_id = 2;
+}
+
+message ChannelAccessResponse {
+  string guild_id = 1;
+  bool is_member = 2;
+  bool manage_messages = 3;
+  bool manage_channels = 4;
+  bool manage_guild = 5;
+  bool administrator = 6;
+}
+
+message AutomodRequest {
+  string guild_id = 1;
+  string content = 2;
+  string user_id = 3;
+}
+
+message AutomodResponse {
+  bool blocked = 1;
+  string reason = 2;
+}
+
+message EmoteValidateRequest {
+  string guild_id = 1;
+  string content = 2;
+  string user_id = 3;
+}
+
+message EmoteValidateResponse {
+  string content = 1;
+  bool modified = 2;
+  bool blocked = 3;
+  string reason = 4;
+}
+
+message GuildMembersRequest {
+  string guild_id = 1;
+  int32 limit = 2;
+}
+
+message GuildMembersResponse {
+  repeated string user_ids = 1;
+}
+
+message GuildChannelsRequest {
+  string guild_id = 1;
+}
+
+message GuildChannel {
+  string id = 1;
+  string name = 2;
+  string type = 3;
+}
+
+message GuildChannelsResponse {
+  repeated GuildChannel channels = 1;
+}
+
+message UserGuildsRequest {
+  string user_id = 1;
+}
+
+message UserGuild {
+  string id = 1;
+  string name = 2;
+  string icon_url = 3;
+  string owner_id = 4;
+}
+
+message UserGuildsResponse {
+  repeated UserGuild guilds = 1;
+}
+
+message AutoRoleRequest {
+  string guild_id = 1;
+  string user_id = 2;
+  string role_id = 3;
+}
+
+message AutoRoleResponse {
+  bool success = 1;
+}

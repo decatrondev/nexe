@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package nexe.presence;
+
+option go_package = "github.com/decatrondev/nexe/proto/presencepb";
+
+// PresenceInternal — internal RPC endpoints exposed by the presence service
+// Used by: gateway (track user, stream status)
+service PresenceInternal {
+  // TrackUser registers a user as online in a guild.
+  // Called by gateway when WebSocket connects.
+  rpc TrackUser(TrackUserRequest) returns (TrackUserResponse);
+
+  // UpdateStreamStatus updates a user's streaming status.
+  // Called by gateway on Twitch EventSub stream events.
+  rpc UpdateStreamStatus(StreamStatusRequest) returns (StreamStatusResponse);
+}
+
+message TrackUserRequest {
+  string guild_id = 1;
+  string user_id = 2;
+}
+
+message TrackUserResponse {
+  bool success = 1;
+}
+
+message StreamStatusRequest {
+  string user_id = 1;
+  bool live = 2;
+  string title = 3;
+  string game = 4;
+  int32 viewers = 5;
+  string started_at = 6;
+  string thumbnail = 7;
+}
+
+message StreamStatusResponse {
+  bool success = 1;
+}
