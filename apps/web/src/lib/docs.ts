@@ -10,6 +10,10 @@ export interface DocMeta {
   preview: string;
   lastModified: Date;
   category?: string;
+  /** Percentage extracted from roadmap files (0-100) */
+  progress?: number;
+  /** Status label: "CERRADO", "deferred", etc. */
+  statusLabel?: string;
 }
 
 export interface Doc extends DocMeta {
@@ -66,6 +70,17 @@ export function getDocList(): DocMeta[] {
           ? firstLines.substring(0, 160) + "..."
           : firstLines;
 
+      // Extract progress percentage from roadmap files
+      let progress: number | undefined;
+      let statusLabel: string | undefined;
+      const basename = path.basename(relativePath).toUpperCase();
+      if (basename.startsWith("ROADMAP")) {
+        const pctMatch = content.match(/(\d{1,3})%/);
+        if (pctMatch) progress = parseInt(pctMatch[1]);
+        if (content.includes("CERRADO")) statusLabel = "CERRADO";
+        else if (content.includes("deferred") || content.includes("Deferred")) statusLabel = "deferred";
+      }
+
       return {
         slug: slugFromFilename(relativePath),
         name: relativePath,
@@ -73,6 +88,8 @@ export function getDocList(): DocMeta[] {
         preview,
         lastModified: stat.mtime,
         category: categoryFromPath(relativePath),
+        progress,
+        statusLabel,
       };
     })
     .sort((a, b) => a.title.localeCompare(b.title));
@@ -94,7 +111,7 @@ export function getCategorizedDocs(): CategorizedDocs {
     const upper = doc.name.toUpperCase();
     if (upper.startsWith("AUDIT/")) {
       audit.push(doc);
-    } else if (path.basename(upper).startsWith("ROADMAP-")) {
+    } else if (upper.startsWith("ROADMAPS/") || path.basename(upper).startsWith("ROADMAP-") || path.basename(upper) === "ROADMAP.MD") {
       roadmap.push(doc);
     } else {
       documentation.push(doc);

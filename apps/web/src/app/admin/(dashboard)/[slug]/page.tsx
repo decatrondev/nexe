@@ -17,29 +17,33 @@ export default async function DocPage({
     notFound();
   }
 
+  // Determine breadcrumb category
+  const upper = doc.name.toUpperCase();
+  const category = upper.startsWith("AUDIT/")
+    ? { label: "Audit", color: "text-red-400" }
+    : upper.startsWith("ROADMAPS/") || upper.startsWith("ROADMAP")
+    ? { label: "Roadmap", color: "text-nexe-400" }
+    : { label: "Docs", color: "text-slate-400" };
+
   return (
     <div className="mx-auto max-w-4xl">
-      <div className="mb-8 flex items-center gap-4">
-        <Link
-          href="/admin"
-          className="inline-flex items-center gap-1 rounded-lg border border-slate-800 bg-dark-800 px-3 py-1.5 text-sm text-slate-400 transition-colors hover:border-slate-700 hover:text-white"
-        >
-          &larr; Back
-        </Link>
-        <div>
-          <h1 className="text-xl font-bold text-white">{doc.title}</h1>
-          <p className="text-xs text-slate-500">
-            {doc.name} — last modified{" "}
-            {doc.lastModified.toLocaleDateString("en-US", {
-              year: "numeric",
-              month: "long",
-              day: "numeric",
-            })}
-          </p>
+      {/* Breadcrumb + Meta */}
+      <div className="mb-6">
+        <div className="mb-3 flex items-center gap-2 text-[13px]">
+          <Link href="/admin/dashboard" className="text-slate-500 hover:text-slate-300 transition-colors">Admin</Link>
+          <span className="text-slate-600">/</span>
+          <span className={category.color}>{category.label}</span>
+          <span className="text-slate-600">/</span>
+          <span className="text-slate-300">{doc.title}</span>
         </div>
+        <h1 className="text-2xl font-bold tracking-tight text-white">{doc.title}</h1>
+        <p className="mt-1 text-xs text-slate-500">
+          {doc.name} &middot; Modified {doc.lastModified.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
+        </p>
       </div>
 
-      <div className="rounded-xl border border-slate-800 bg-dark-800 p-8">
+      {/* Content */}
+      <div className="rounded-xl border border-white/[0.06] bg-[#12141a] p-8">
         <div className="prose-nexe">
           <MarkdownRenderer content={doc.content} />
         </div>
