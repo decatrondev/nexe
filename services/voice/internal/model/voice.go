@@ -22,7 +22,28 @@ type JoinRequest struct {
 
 // JoinResponse returns the LiveKit token to connect.
 type JoinResponse struct {
-	Token     string       `json:"token"`
-	URL       string       `json:"url"`
+	Token        string       `json:"token"`
+	URL          string       `json:"url"`
 	Participants []VoiceState `json:"participants"`
+}
+
+// DM Call models
+
+type DMCallRequest struct {
+	ChannelID string `json:"channelId"`
+	Video     bool   `json:"video"`
+}
+
+type DMCallResponse struct {
+	CallID string `json:"callId"`
+	Token  string `json:"token"`
+	URL    string `json:"url"`
+}
+
+type DMCallSignal struct {
+	Type      string `json:"type"`      // "ring", "accept", "reject", "end"
+	CallID    string `json:"callId"`
+	ChannelID string `json:"channelId"`
+	CallerID  string `json:"callerId"`
+	Video     bool   `json:"video"`
 }

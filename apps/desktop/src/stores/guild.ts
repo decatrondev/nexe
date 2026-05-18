@@ -43,7 +43,7 @@ interface GuildState {
     description: string,
     isStreamerServer: boolean,
   ) => Promise<void>;
-  updateGuild: (guildId: string, data: { name?: string; description?: string; systemChannelId?: string | null; accentColor?: string | null }) => Promise<void>;
+  updateGuild: (guildId: string, data: { name?: string; description?: string; systemChannelId?: string | null; accentColor?: string | null; discoverable?: boolean; category?: string | null; tags?: string[]; vanityUrl?: string | null }) => Promise<void>;
   deleteGuild: (guildId: string) => Promise<void>;
   leaveGuild: (guildId: string) => Promise<void>;
   createChannel: (name: string, type: string, categoryId?: string) => Promise<void>;
@@ -330,7 +330,7 @@ export const useGuildStore = create<GuildState>((set, get) => ({
     await get().setActiveGuild(guild.id);
   },
 
-  async updateGuild(guildId: string, data: { name?: string; description?: string; systemChannelId?: string | null; accentColor?: string | null }) {
+  async updateGuild(guildId: string, data: { name?: string; description?: string; systemChannelId?: string | null; accentColor?: string | null; discoverable?: boolean; category?: string | null; tags?: string[]; vanityUrl?: string | null }) {
     const updated = await api.updateGuild(guildId, data);
     set((s) => ({
       guilds: s.guilds.map((g) => (g.id === guildId ? { ...g, ...updated } : g)),

@@ -33,6 +33,10 @@ type Config struct {
 	R2Bucket             string
 	R2PublicURL          string
 	SentryDSN            string
+	GiphyAPIKey          string
+	KickClientID         string
+	KickClientSecret     string
+	KickRedirectURI      string
 }
 
 func Load() *Config {
@@ -63,6 +67,10 @@ func Load() *Config {
 		R2Bucket:             getEnv("NEXE_R2_BUCKET", "nexe-uploads"),
 		R2PublicURL:          getEnv("NEXE_R2_PUBLIC_URL", ""),
 		SentryDSN:            getEnv("NEXE_SENTRY_DSN", ""),
+		GiphyAPIKey:          getEnv("NEXE_GIPHY_API_KEY", ""),
+		KickClientID:         getEnv("NEXE_KICK_CLIENT_ID", ""),
+		KickClientSecret:     getEnv("NEXE_KICK_CLIENT_SECRET", ""),
+		KickRedirectURI:      getEnv("NEXE_KICK_REDIRECT_URI", "https://nexeapp.decatron.net/auth/kick/callback"),
 	}
 	return cfg
 }

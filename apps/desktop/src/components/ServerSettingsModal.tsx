@@ -111,6 +111,10 @@ function OverviewTab({ guildId }: { guildId: string }) {
   const [description, setDescription] = useState(guild?.description ?? "");
   const [systemChannelId, setSystemChannelId] = useState(guild?.systemChannelId ?? "");
   const [accentColor, setAccentColor] = useState(guild?.accentColor ?? "");
+  const [discoverable, setDiscoverable] = useState(guild?.discoverable ?? false);
+  const [discoverCategory, setDiscoverCategory] = useState(guild?.category ?? "");
+  const [discoverTags, setDiscoverTags] = useState(guild?.tags?.join(", ") ?? "");
+  const [vanityUrl, setVanityUrl] = useState(guild?.vanityUrl ?? "");
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [allowDms, setAllowDms] = useState(true);
@@ -129,7 +133,7 @@ function OverviewTab({ guildId }: { guildId: string }) {
     }
   }
 
-  const hasChanges = name !== (guild?.name ?? "") || description !== (guild?.description ?? "") || systemChannelId !== (guild?.systemChannelId ?? "") || accentColor !== (guild?.accentColor ?? "");
+  const hasChanges = name !== (guild?.name ?? "") || description !== (guild?.description ?? "") || systemChannelId !== (guild?.systemChannelId ?? "") || accentColor !== (guild?.accentColor ?? "") || discoverable !== (guild?.discoverable ?? false) || discoverCategory !== (guild?.category ?? "") || discoverTags !== (guild?.tags?.join(", ") ?? "") || vanityUrl !== (guild?.vanityUrl ?? "");
 
   async function handleSave(e: FormEvent) {
     e.preventDefault();
@@ -137,11 +141,16 @@ function OverviewTab({ guildId }: { guildId: string }) {
     setLoading(true);
     setFeedback(null);
     try {
+      const tags = discoverTags.split(",").map((t) => t.trim().toLowerCase()).filter(Boolean).slice(0, 10);
       await updateGuild(guildId, {
         name: name.trim(),
         description: description.trim(),
         systemChannelId: systemChannelId || null,
         accentColor: accentColor || null,
+        discoverable,
+        category: discoverCategory || null,
+        tags,
+        vanityUrl: vanityUrl.trim() || null,
       });
       setFeedback({ type: "success", message: "Server settings saved!" });
     } catch (err) {
@@ -257,6 +266,86 @@ function OverviewTab({ guildId }: { guildId: string }) {
           </label>
         </div>
       )}
+
+      {/* Server Discovery */}
+      <div className="mt-8 border-t border-dark-700 pt-6">
+        <h3 className="mb-1 text-sm font-semibold text-slate-200">Server Discovery</h3>
+        <p className="mb-3 text-xs text-slate-500">
+          Make your server visible in the public server directory so anyone can find and join it.
+        </p>
+        <label className="flex items-center gap-3 cursor-pointer mb-4">
+          <div
+            onClick={() => setDiscoverable(!discoverable)}
+            className={`relative h-6 w-11 rounded-full transition-colors ${discoverable ? "bg-nexe-500" : "bg-dark-600"}`}
+          >
+            <div className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform ${discoverable ? "translate-x-[22px]" : "translate-x-0.5"}`} />
+          </div>
+          <span className="text-sm text-slate-300">
+            {discoverable ? "Listed in Discovery" : "Hidden from Discovery"}
+          </span>
+        </label>
+
+        {discoverable && (
+          <div className="space-y-4 rounded-lg border border-dark-700 bg-dark-900/50 p-4">
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-300">
+                Category
+              </label>
+              <select
+                value={discoverCategory}
+                onChange={(e) => setDiscoverCategory(e.target.value)}
+                className="w-full rounded-lg border border-dark-700 bg-dark-900 px-4 py-2.5 text-sm text-slate-200 outline-none transition-colors focus:border-nexe-500"
+              >
+                <option value="">Select a category</option>
+                <option value="gaming">Gaming</option>
+                <option value="streaming">Streaming</option>
+                <option value="music">Music</option>
+                <option value="art">Art & Design</option>
+                <option value="tech">Technology</option>
+                <option value="education">Education</option>
+                <option value="community">Community</option>
+                <option value="anime">Anime & Manga</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-300">
+                Tags
+              </label>
+              <p className="mb-2 text-xs text-slate-500">
+                Comma-separated tags to help people find your server (max 10).
+              </p>
+              <input
+                type="text"
+                value={discoverTags}
+                onChange={(e) => setDiscoverTags(e.target.value)}
+                placeholder="e.g. valorant, fps, competitive"
+                className="w-full rounded-lg border border-dark-700 bg-dark-900 px-4 py-2.5 text-sm text-slate-200 outline-none transition-colors placeholder:text-slate-500 focus:border-nexe-500"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-300">
+                Vanity URL
+              </label>
+              <p className="mb-2 text-xs text-slate-500">
+                Custom URL slug for your server (e.g. nexe.gg/yourserver).
+              </p>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-slate-500">nexe.gg/</span>
+                <input
+                  type="text"
+                  value={vanityUrl}
+                  onChange={(e) => setVanityUrl(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""))}
+                  placeholder="your-server"
+                  maxLength={32}
+                  className="flex-1 rounded-lg border border-dark-700 bg-dark-900 px-4 py-2.5 text-sm text-slate-200 outline-none transition-colors placeholder:text-slate-500 focus:border-nexe-500"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </>
   );
 }

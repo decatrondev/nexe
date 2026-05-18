@@ -14,6 +14,10 @@ type Guild struct {
 	BridgeChannelID  *string  `json:"bridgeChannelId,omitempty"`
 	SystemChannelID  *string  `json:"systemChannelId,omitempty"`
 	AccentColor      *string  `json:"accentColor,omitempty"`
+	Discoverable     bool     `json:"discoverable"`
+	Category         string   `json:"category"`
+	Tags             []string `json:"tags"`
+	VanityUrl        *string  `json:"vanityUrl,omitempty"`
 	MemberCount      int      `json:"memberCount"`
 	Features         []string `json:"features"`
 	CreatedAt        time.Time `json:"createdAt"`

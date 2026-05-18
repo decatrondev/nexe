@@ -251,8 +251,37 @@ export interface Guild {
   bridgeChannelId?: string;
   systemChannelId?: string;
   accentColor?: string;
+  discoverable?: boolean;
+  category?: string;
+  tags?: string[];
+  vanityUrl?: string;
   memberCount: number;
   createdAt: string;
+}
+
+export interface GiphyGif {
+  id: string;
+  title: string;
+  images: {
+    original: { url: string; width: string; height: string };
+    fixed_height: { url: string; width: string; height: string };
+    fixed_height_small: { url: string; width: string; height: string };
+    fixed_width: { url: string; width: string; height: string };
+    preview_gif: { url: string; width: string; height: string };
+  };
+  url: string;
+}
+
+export interface GiphyResponse {
+  data: GiphyGif[];
+  pagination: { total_count: number; count: number; offset: number };
+}
+
+export interface DiscoverResponse {
+  guilds: Guild[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export interface Channel {
@@ -716,7 +745,7 @@ export const api = {
     return request<void>("POST", `/invites/${code}/use`);
   },
 
-  updateGuild(id: string, data: { name?: string; description?: string; systemChannelId?: string | null; accentColor?: string | null }) {
+  updateGuild(id: string, data: { name?: string; description?: string; systemChannelId?: string | null; accentColor?: string | null; discoverable?: boolean; category?: string | null; tags?: string[]; vanityUrl?: string | null }) {
     return request<Guild>("PATCH", `/guilds/${id}`, data);
   },
 
@@ -1262,5 +1291,95 @@ export const api = {
 
   leaveGroupDM(channelId: string) {
     return request<void>("DELETE", `/dm-channels/${channelId}/members/@me`);
+  },
+
+  // Server Discovery
+  discoverServers(params: { q?: string; category?: string; tag?: string; sort?: string; limit?: number; offset?: number }) {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set("q", params.q);
+    if (params.category) qs.set("category", params.category);
+    if (params.tag) qs.set("tag", params.tag);
+    if (params.sort) qs.set("sort", params.sort);
+    if (params.limit) qs.set("limit", String(params.limit));
+    if (params.offset) qs.set("offset", String(params.offset));
+    return request<DiscoverResponse>("GET", `/discover?${qs.toString()}`);
+  },
+
+  discoverCategories() {
+    return request<string[]>("GET", "/discover/categories");
+  },
+
+  discoverTags(limit?: number) {
+    return request<string[]>("GET", `/discover/tags${limit ? `?limit=${limit}` : ""}`);
+  },
+
+  discoverByVanity(vanity: string) {
+    return request<Guild>("GET", `/discover/vanity/${vanity}`);
+  },
+
+  // GIF search (Giphy) — note: request() auto-unwraps .data, so we get GiphyGif[] directly
+  searchGifs(q: string, limit?: number, offset?: number) {
+    const qs = new URLSearchParams({ q });
+    if (limit) qs.set("limit", String(limit));
+    if (offset) qs.set("offset", String(offset));
+    return request<GiphyGif[]>("GET", `/gifs/search?${qs.toString()}`);
+  },
+
+  trendingGifs(limit?: number, offset?: number) {
+    const qs = new URLSearchParams();
+    if (limit) qs.set("limit", String(limit));
+    if (offset) qs.set("offset", String(offset));
+    return request<GiphyGif[]>("GET", `/gifs/trending?${qs.toString()}`);
+  },
+
+  // DM Voice/Video Calls
+  startDMCall(channelId: string, video: boolean) {
+    return request<{ callId: string; token: string; url: string }>("POST", "/voice/dm/call", { channelId, video });
+  },
+
+  acceptDMCall(callId: string) {
+    return request<{ callId: string; token: string; url: string }>("POST", "/voice/dm/accept", { callId });
+  },
+
+  rejectDMCall(callId: string) {
+    return request<void>("POST", "/voice/dm/reject", { callId });
+  },
+
+  endDMCall(callId: string) {
+    return request<void>("POST", "/voice/dm/end", { callId });
+  },
+
+  // Kick integration
+  getKickChannel(slug: string) {
+    return request<{ id: number; slug: string; username: string; isLive: boolean; profilePicture: string; followersCount: number; streamTitle: string; streamCategory: string; viewerCount: number; thumbnailUrl: string }>("GET", `/kick/channel/${slug}`);
+  },
+
+  getKickLiveStatus(slug: string) {
+    return request<{ live: boolean; slug: string; title: string; viewers: number }>("GET", `/kick/live/${slug}`);
+  },
+
+  // Stickers
+  getStickerPacks(guildId: string) {
+    return request<{ id: string; guildId: string; name: string; description: string; count: number; createdAt: string }[]>("GET", `/guilds/${guildId}/sticker-packs`);
+  },
+
+  createStickerPack(guildId: string, name: string, description?: string) {
+    return request<{ id: string }>("POST", `/guilds/${guildId}/sticker-packs`, { name, description });
+  },
+
+  deleteStickerPack(packId: string) {
+    return request<void>("DELETE", `/sticker-packs/${packId}`);
+  },
+
+  getStickers(guildId: string) {
+    return request<{ id: string; packId: string; name: string; url: string; tags: string[] }[]>("GET", `/guilds/${guildId}/stickers`);
+  },
+
+  addSticker(packId: string, name: string, url: string, tags?: string[]) {
+    return request<{ id: string }>("POST", `/sticker-packs/${packId}/stickers`, { name, url, tags });
+  },
+
+  deleteSticker(stickerId: string) {
+    return request<void>("DELETE", `/stickers/${stickerId}`);
   },
 };

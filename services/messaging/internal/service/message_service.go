@@ -36,6 +36,16 @@ func (s *MessageService) SetGuildsGRPC(client pb.GuildsInternalClient) {
 	s.guildsGRPC = client
 }
 
+// PublishChannelEvent publishes an event on a channel (looks up guildID).
+func (s *MessageService) PublishChannelEvent(ctx context.Context, channelID, eventType string, data interface{}) {
+	access, err := s.checkChannelAccess(ctx, channelID, "")
+	guildID := ""
+	if err == nil && access != nil {
+		guildID = access.GuildID
+	}
+	s.events.Publish(ctx, guildID, channelID, eventType, "", data)
+}
+
 type ChannelAccess struct {
 	GuildID        string `json:"guildId"`
 	IsMember       bool   `json:"isMember"`

@@ -81,8 +81,12 @@ func main() {
 		slog.Info("gRPC connected to guilds", "addr", guildsGRPCAddr)
 	}
 
+	// Repositories (polls)
+	pollRepo := repository.NewPollRepository(db)
+
 	// Handler
 	messageHandler := handler.NewMessageHandler(messageSvc)
+	pollHandler := handler.NewPollHandler(pollRepo, messageSvc)
 
 	// Router
 	mux := http.NewServeMux()
@@ -95,6 +99,7 @@ func main() {
 	mux.Handle("GET /metrics", promhttp.Handler())
 
 	messageHandler.RegisterRoutes(mux)
+	pollHandler.RegisterRoutes(mux)
 
 	addr := ":" + cfg.Port
 	slog.Info("messaging starting", "addr", addr, "env", cfg.Env)

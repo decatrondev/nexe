@@ -138,6 +138,24 @@ export default function ServerSidebar() {
           </SidebarIcon>
         ))}
 
+        {/* Explore public servers */}
+        <SidebarIcon
+          isActive={activeGuildId === "__discover__"}
+          onClick={() => useGuildStore.setState({ activeGuildId: "__discover__", activeChannelId: null })}
+          title="Explore Public Servers"
+          activeClass="rounded-xl bg-emerald-600 text-white"
+          inactiveClass="rounded-2xl bg-dark-800 text-emerald-400 hover:rounded-xl hover:bg-emerald-600 hover:text-white"
+        >
+          <svg viewBox="0 0 24 24" className="h-6 w-6 fill-none stroke-current" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="2" y1="12" x2="22" y2="12" />
+            <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+          </svg>
+        </SidebarIcon>
+
+        {/* Divider */}
+        <div className="mx-auto h-0.5 w-8 rounded-full bg-dark-800" />
+
         {/* Add server button */}
         <SidebarIcon
           onClick={() => setShowCreateModal(true)}

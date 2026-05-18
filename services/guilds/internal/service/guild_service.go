@@ -58,6 +58,10 @@ func NewGuildService(
 	}
 }
 
+func (s *GuildService) GuildRepo() *repository.GuildRepository {
+	return s.guilds
+}
+
 // ---------------------------------------------------------------------------
 // Permission helper
 // ---------------------------------------------------------------------------

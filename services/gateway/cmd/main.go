@@ -107,6 +107,8 @@ func main() {
 	twitchHandler := handler.NewTwitchHandler(twitchSvc, userRepo, authSvc, jwtSvc, rdb, cfg.TwitchEventSubSecret, cfg.BaseURL, cfg.FrontendURL, cfg.MessagingURL, cfg.GuildsURL, cfg.PresenceURL)
 	botHandler := handler.NewBotHandler(botRepo, jwtSvc)
 	proxyHandler := handler.NewProxyHandler(cfg.GuildsURL, cfg.MessagingURL, cfg.PresenceURL, cfg.VoiceURL, cfg.NotificationsURL)
+	gifHandler := handler.NewGifHandler(cfg.GiphyAPIKey)
+	kickHandler := handler.NewKickHandler(cfg.KickClientID, cfg.KickClientSecret, cfg.KickRedirectURI)
 
 	// Reconcile any active streams on startup
 	go twitchHandler.ReconcileStreamStatuses(context.Background())
@@ -221,6 +223,31 @@ func main() {
 	// Proxy to guilds service (authenticated)
 	guildsProxy := func(h http.Handler) http.Handler { return authMiddleware(h) }
 	gp := http.HandlerFunc(proxyHandler.ProxyGuilds)
+
+	// GIF search (Tenor proxy, authenticated)
+	mux.Handle("GET /gifs/search", authMiddleware(http.HandlerFunc(gifHandler.SearchGifs)))
+	mux.Handle("GET /gifs/trending", authMiddleware(http.HandlerFunc(gifHandler.TrendingGifs)))
+	mux.Handle("GET /gifs/categories", authMiddleware(http.HandlerFunc(gifHandler.GifCategories)))
+
+	// Kick integration (OAuth + API + EventSub)
+	mux.Handle("GET /kick/auth", authMiddleware(http.HandlerFunc(kickHandler.GetKickAuthURL)))
+	mux.Handle("POST /kick/token", authMiddleware(http.HandlerFunc(kickHandler.KickOAuthCallback)))
+	mux.Handle("POST /kick/refresh", authMiddleware(http.HandlerFunc(kickHandler.RefreshKickToken)))
+	mux.Handle("GET /kick/channel/{slug}", authMiddleware(http.HandlerFunc(kickHandler.GetKickChannel)))
+	mux.Handle("GET /kick/live/{slug}", authMiddleware(http.HandlerFunc(kickHandler.GetKickLiveStatus)))
+	mux.Handle("GET /kick/user", authMiddleware(http.HandlerFunc(kickHandler.GetKickUser)))
+	mux.Handle("POST /kick/chat", authMiddleware(http.HandlerFunc(kickHandler.SendKickChatMessage)))
+	mux.Handle("POST /kick/events/subscribe", authMiddleware(http.HandlerFunc(kickHandler.SubscribeKickEvents)))
+	mux.Handle("GET /kick/events/subscriptions", authMiddleware(http.HandlerFunc(kickHandler.ListKickSubscriptions)))
+	mux.Handle("DELETE /kick/events/subscriptions", authMiddleware(http.HandlerFunc(kickHandler.DeleteKickSubscriptions)))
+	mux.HandleFunc("POST /kick/webhook", kickHandler.VerifyKickWebhook) // no auth — Kick sends webhooks
+
+	// Server Discovery (public, auth optional for join)
+	mux.Handle("GET /discover", gp)
+	mux.Handle("GET /discover/categories", gp)
+	mux.Handle("GET /discover/tags", gp)
+	mux.Handle("GET /discover/vanity/{vanity}", gp)
+
 	mux.Handle("GET /guilds/me", guildsProxy(gp))
 	mux.Handle("POST /guilds", guildsProxy(gp))
 	mux.Handle("GET /guilds/{id}", guildsProxy(gp))
@@ -265,6 +292,32 @@ func main() {
 	mux.Handle("POST /guilds/{id}/automod/check", guildsProxy(gp))
 	mux.Handle("GET /guilds/{id}/emotes", guildsProxy(gp))
 	mux.Handle("POST /guilds/{id}/emotes/validate", guildsProxy(gp))
+
+	// Scheduled Events
+	mux.Handle("GET /guilds/{id}/events", guildsProxy(gp))
+	mux.Handle("POST /guilds/{id}/events", guildsProxy(gp))
+	mux.Handle("GET /events/{id}", guildsProxy(gp))
+	mux.Handle("PATCH /events/{id}", guildsProxy(gp))
+	mux.Handle("DELETE /events/{id}", guildsProxy(gp))
+	mux.Handle("PUT /events/{id}/rsvp", guildsProxy(gp))
+	mux.Handle("DELETE /events/{id}/rsvp", guildsProxy(gp))
+	mux.Handle("GET /events/{id}/rsvps", guildsProxy(gp))
+
+	// Webhooks (management = authenticated, execution = token-based)
+	mux.Handle("GET /guilds/{id}/webhooks", guildsProxy(gp))
+	mux.Handle("POST /guilds/{id}/webhooks", guildsProxy(gp))
+	mux.Handle("PATCH /webhooks/{id}", guildsProxy(gp))
+	mux.Handle("DELETE /webhooks/{id}", guildsProxy(gp))
+	mux.Handle("POST /webhooks/{id}/{token}", gp) // no auth — token-based
+
+	// Stickers
+	mux.Handle("GET /guilds/{id}/sticker-packs", guildsProxy(gp))
+	mux.Handle("POST /guilds/{id}/sticker-packs", guildsProxy(gp))
+	mux.Handle("DELETE /sticker-packs/{id}", guildsProxy(gp))
+	mux.Handle("GET /guilds/{id}/stickers", guildsProxy(gp))
+	mux.Handle("GET /sticker-packs/{id}/stickers", guildsProxy(gp))
+	mux.Handle("POST /sticker-packs/{id}/stickers", guildsProxy(gp))
+	mux.Handle("DELETE /stickers/{id}", guildsProxy(gp))
 
 	// Relationships (friends)
 	mux.Handle("GET /relationships", guildsProxy(gp))
@@ -350,6 +403,13 @@ func main() {
 	mux.Handle("POST /channels/{id}/ack", guildsProxy(mp))
 	mux.Handle("GET /users/@me/unread", guildsProxy(mp))
 
+	// Polls (messaging service)
+	mux.Handle("POST /channels/{channelId}/polls", guildsProxy(mp))
+	mux.Handle("GET /polls/{id}", guildsProxy(mp))
+	mux.Handle("PUT /polls/{id}/vote/{optionId}", guildsProxy(mp))
+	mux.Handle("DELETE /polls/{id}/vote/{optionId}", guildsProxy(mp))
+	mux.Handle("POST /polls/{id}/close", guildsProxy(mp))
+
 	// Proxy to presence service (authenticated)
 	pp := http.HandlerFunc(proxyHandler.ProxyPresence)
 	mux.Handle("GET /users/{id}/presence", guildsProxy(pp))
@@ -388,6 +448,12 @@ func main() {
 	mux.Handle("GET /voice/state/@me", guildsProxy(vp))
 	mux.Handle("GET /voice/channel/{channelId}/participants", guildsProxy(vp))
 	mux.Handle("GET /voice/guild/{guildId}/states", guildsProxy(vp))
+
+	// DM Voice/Video Calls
+	mux.Handle("POST /voice/dm/call", guildsProxy(vp))
+	mux.Handle("POST /voice/dm/accept", guildsProxy(vp))
+	mux.Handle("POST /voice/dm/reject", guildsProxy(vp))
+	mux.Handle("POST /voice/dm/end", guildsProxy(vp))
 
 	// WebSocket
 	mux.HandleFunc("GET /ws", wsHandler.HandleWS)

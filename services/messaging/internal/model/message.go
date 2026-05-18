@@ -22,6 +22,7 @@ type Message struct {
 	Attachments     []Attachment    `json:"attachments,omitempty"`
 	Reactions       []ReactionGroup `json:"reactions,omitempty"`
 	Thread          *ThreadInfo     `json:"thread,omitempty"`
+	Poll            *Poll           `json:"poll,omitempty"`
 	CreatedAt       time.Time       `json:"createdAt"`
 }
 
@@ -60,4 +61,28 @@ type MessageEdit struct {
 	MessageID  string    `json:"messageId"`
 	OldContent string    `json:"oldContent"`
 	EditedAt   time.Time `json:"editedAt"`
+}
+
+// Polls
+
+type Poll struct {
+	ID            string       `json:"id"`
+	ChannelID     string       `json:"channelId"`
+	MessageID     string       `json:"messageId"`
+	Question      string       `json:"question"`
+	AllowMultiple bool         `json:"allowMultiple"`
+	Anonymous     bool         `json:"anonymous"`
+	ExpiresAt     *time.Time   `json:"expiresAt,omitempty"`
+	Closed        bool         `json:"closed"`
+	Options       []PollOption `json:"options"`
+	TotalVotes    int          `json:"totalVotes"`
+	CreatedAt     time.Time    `json:"createdAt"`
+}
+
+type PollOption struct {
+	ID       string   `json:"id"`
+	Text     string   `json:"text"`
+	Position int      `json:"position"`
+	Votes    int      `json:"votes"`
+	Voters   []string `json:"voters,omitempty"` // hidden if anonymous
 }

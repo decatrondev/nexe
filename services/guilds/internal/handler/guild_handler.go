@@ -91,6 +91,12 @@ func (h *GuildHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /guilds/{id}/bridge", h.SetBridgeChannel)
 	mux.HandleFunc("DELETE /guilds/{id}/bridge", h.ClearBridgeChannel)
 
+	// Server Discovery
+	mux.HandleFunc("GET /discover", h.DiscoverServers)
+	mux.HandleFunc("GET /discover/categories", h.ListDiscoverCategories)
+	mux.HandleFunc("GET /discover/tags", h.ListDiscoverTags)
+	mux.HandleFunc("GET /discover/vanity/{vanity}", h.GetByVanityUrl)
+
 	// Internal (service-to-service)
 	mux.HandleFunc("GET /internal/channels/{id}/access/{uid}", h.CheckChannelAccess)
 	mux.HandleFunc("GET /internal/guilds/by-streamer/{twitchId}", h.ListGuildsByStreamer)
@@ -190,12 +196,16 @@ func (h *GuildHandler) UpdateGuild(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Name            *string `json:"name"`
-		Description     *string `json:"description"`
-		IconUrl         *string `json:"iconUrl"`
-		BannerUrl       *string `json:"bannerUrl"`
-		SystemChannelID *string `json:"systemChannelId"`
-		AccentColor     *string `json:"accentColor"`
+		Name            *string  `json:"name"`
+		Description     *string  `json:"description"`
+		IconUrl         *string  `json:"iconUrl"`
+		BannerUrl       *string  `json:"bannerUrl"`
+		SystemChannelID *string  `json:"systemChannelId"`
+		AccentColor     *string  `json:"accentColor"`
+		Discoverable    *bool    `json:"discoverable"`
+		Category        *string  `json:"category"`
+		Tags            []string `json:"tags"`
+		VanityUrl       *string  `json:"vanityUrl"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid request body")
@@ -218,6 +228,22 @@ func (h *GuildHandler) UpdateGuild(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.AccentColor != nil {
 		guild.AccentColor = body.AccentColor
+	}
+	if body.Discoverable != nil {
+		guild.Discoverable = *body.Discoverable
+	}
+	if body.Category != nil {
+		guild.Category = *body.Category
+	}
+	if body.Tags != nil {
+		if len(body.Tags) > 10 {
+			writeError(w, http.StatusBadRequest, "BAD_REQUEST", "maximum 10 tags")
+			return
+		}
+		guild.Tags = body.Tags
+	}
+	if body.VanityUrl != nil {
+		guild.VanityUrl = body.VanityUrl
 	}
 
 	if err := h.svc.UpdateGuild(r.Context(), guild, userID); err != nil {
@@ -1374,4 +1400,81 @@ func (h *GuildHandler) CheckChannelAccess(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, access)
+}
+
+// ---------------------------------------------------------------------------
+// Server Discovery
+// ---------------------------------------------------------------------------
+
+func (h *GuildHandler) DiscoverServers(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	offset, _ := strconv.Atoi(q.Get("offset"))
+	if limit <= 0 || limit > 50 {
+		limit = 24
+	}
+
+	params := repository.DiscoverParams{
+		Query:    q.Get("q"),
+		Category: q.Get("category"),
+		Tag:      q.Get("tag"),
+		Sort:     q.Get("sort"),
+		Limit:    limit,
+		Offset:   offset,
+	}
+
+	guilds, total, err := h.svc.GuildRepo().Discover(r.Context(), params)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	if guilds == nil {
+		guilds = []model.Guild{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"guilds": guilds,
+		"total":  total,
+		"limit":  params.Limit,
+		"offset": params.Offset,
+	})
+}
+
+func (h *GuildHandler) ListDiscoverCategories(w http.ResponseWriter, r *http.Request) {
+	cats, err := h.svc.GuildRepo().ListCategories(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	if cats == nil {
+		cats = []string{}
+	}
+	writeJSON(w, http.StatusOK, cats)
+}
+
+func (h *GuildHandler) ListDiscoverTags(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	tags, err := h.svc.GuildRepo().ListPopularTags(r.Context(), limit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	if tags == nil {
+		tags = []string{}
+	}
+	writeJSON(w, http.StatusOK, tags)
+}
+
+func (h *GuildHandler) GetByVanityUrl(w http.ResponseWriter, r *http.Request) {
+	vanity := r.PathValue("vanity")
+	guild, err := h.svc.GuildRepo().GetByVanityUrl(r.Context(), vanity)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "INTERNAL", err.Error())
+		return
+	}
+	if guild == nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "server not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, guild)
 }

@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"bufio"
+	"net"
 	"net/http"
 	"strconv"
 	"time"
@@ -37,11 +39,19 @@ func (w *statusWriter) WriteHeader(code int) {
 	w.ResponseWriter.WriteHeader(code)
 }
 
+// Hijack implements http.Hijacker for WebSocket support.
+func (w *statusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hj, ok := w.ResponseWriter.(http.Hijacker); ok {
+		return hj.Hijack()
+	}
+	return nil, nil, http.ErrNotSupported
+}
+
 // Metrics wraps an http.Handler with Prometheus metrics collection.
 func Metrics(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Skip metrics endpoint itself
-		if r.URL.Path == "/metrics" {
+		// Skip metrics and WebSocket endpoints (WS hijacks the connection)
+		if r.URL.Path == "/metrics" || r.URL.Path == "/ws" {
 			next.ServeHTTP(w, r)
 			return
 		}

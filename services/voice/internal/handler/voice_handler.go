@@ -27,6 +27,12 @@ func (h *VoiceHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /voice/server-mute/{userId}", h.ServerMute)
 	mux.HandleFunc("POST /voice/move/{userId}", h.MoveUser)
 	mux.HandleFunc("PATCH /voice/streaming", h.UpdateStreaming)
+
+	// DM Calls
+	mux.HandleFunc("POST /voice/dm/call", h.StartDMCall)
+	mux.HandleFunc("POST /voice/dm/accept", h.AcceptDMCall)
+	mux.HandleFunc("POST /voice/dm/reject", h.RejectDMCall)
+	mux.HandleFunc("POST /voice/dm/end", h.EndDMCall)
 }
 
 // Join handles joining a voice channel.
@@ -226,6 +232,95 @@ func (h *VoiceHandler) UpdateStreaming(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, state)
+}
+
+// ---------------------------------------------------------------------------
+// DM Calls
+// ---------------------------------------------------------------------------
+
+func (h *VoiceHandler) StartDMCall(w http.ResponseWriter, r *http.Request) {
+	userID := r.Header.Get("X-User-ID")
+	username := r.Header.Get("X-Username")
+	if userID == "" {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "missing user ID")
+		return
+	}
+
+	var body model.DMCallRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ChannelID == "" {
+		writeError(w, http.StatusBadRequest, "bad_request", "channelId required")
+		return
+	}
+
+	resp, err := h.svc.StartDMCall(r.Context(), userID, username, body.ChannelID, body.Video)
+	if err != nil {
+		slog.Error("start dm call failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *VoiceHandler) AcceptDMCall(w http.ResponseWriter, r *http.Request) {
+	userID := r.Header.Get("X-User-ID")
+	username := r.Header.Get("X-Username")
+	if userID == "" {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "missing user ID")
+		return
+	}
+
+	var body struct {
+		CallID string `json:"callId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.CallID == "" {
+		writeError(w, http.StatusBadRequest, "bad_request", "callId required")
+		return
+	}
+
+	resp, err := h.svc.AcceptDMCall(r.Context(), userID, username, body.CallID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "call_error", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *VoiceHandler) RejectDMCall(w http.ResponseWriter, r *http.Request) {
+	userID := r.Header.Get("X-User-ID")
+	if userID == "" {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "missing user ID")
+		return
+	}
+
+	var body struct {
+		CallID string `json:"callId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.CallID == "" {
+		writeError(w, http.StatusBadRequest, "bad_request", "callId required")
+		return
+	}
+
+	h.svc.RejectDMCall(r.Context(), userID, body.CallID)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "rejected"})
+}
+
+func (h *VoiceHandler) EndDMCall(w http.ResponseWriter, r *http.Request) {
+	userID := r.Header.Get("X-User-ID")
+	if userID == "" {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "missing user ID")
+		return
+	}
+
+	var body struct {
+		CallID string `json:"callId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.CallID == "" {
+		writeError(w, http.StatusBadRequest, "bad_request", "callId required")
+		return
+	}
+
+	h.svc.EndDMCall(r.Context(), userID, body.CallID)
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ended"})
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

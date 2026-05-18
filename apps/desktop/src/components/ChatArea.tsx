@@ -10,6 +10,7 @@ import ThreadPanel from "./ThreadPanel";
 import MiniProfilePopover from "./MiniProfilePopover";
 import ProfileModal from "./ProfileModal";
 import EmotePicker, { emoteLookup } from "./EmotePicker";
+import GifPicker from "./GifPicker";
 import MessageContent from "./MessageContent";
 import MessageActions from "./MessageActions";
 import EditHistoryModal from "./EditHistoryModal";
@@ -126,6 +127,8 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
   const [emojiPicker, setEmojiPicker] = useState<{ messageId: string; x: number; y: number } | null>(null);
   // Emoji picker for message input
   const [inputEmojiPicker, setInputEmojiPicker] = useState<{ x: number; y: number } | null>(null);
+  // GIF picker for message input
+  const [gifPickerPos, setGifPickerPos] = useState<{ x: number; y: number } | null>(null);
 
   // Pins panel
   const [pinsOpen, setPinsOpen] = useState(false);
@@ -1385,9 +1388,29 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (gifPickerPos) {
+                      setGifPickerPos(null);
+                    } else {
+                      setInputEmojiPicker(null);
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setGifPickerPos({ x: rect.right, y: rect.top - 4 });
+                    }
+                  }}
+                  className="ml-1 rounded p-1.5 text-slate-400 transition-colors hover:bg-dark-700 hover:text-white"
+                  title="GIF"
+                >
+                  <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M11.5 9H13v6h-1.5zM9 9H6c-.6 0-1 .5-1 1v4c0 .5.4 1 1 1h3c.6 0 1-.5 1-1V9zm-.5 4.5h-2v-3h2zm8.5-3c-.3 0-.5.2-.5.5v3c0 .3.2.5.5.5h2c.3 0 .5-.2.5-.5v-1h-1v.5h-1v-2h1v.5h1v-1c0-.6-.5-1-1-1zM2 5v14c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2zm18 14H4V5h16z"/>
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
                     if (inputEmojiPicker) {
                       setInputEmojiPicker(null);
                     } else {
+                      setGifPickerPos(null);
                       const rect = e.currentTarget.getBoundingClientRect();
                       setInputEmojiPicker({ x: rect.right, y: rect.top - 4 });
                     }
@@ -1584,6 +1607,19 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
             inputRef.current?.focus();
           }}
           onClose={() => setInputEmojiPicker(null)}
+        />
+      )}
+      {gifPickerPos && (
+        <GifPicker
+          x={gifPickerPos.x}
+          y={gifPickerPos.y}
+          onSelect={(gif) => {
+            const url = gif.images.original?.url || gif.images.fixed_height?.url;
+            if (url) {
+              sendMessage(url);
+            }
+          }}
+          onClose={() => setGifPickerPos(null)}
         />
       )}
 

@@ -8,6 +8,7 @@ import { toast } from "@nexe/ui";
 import MessageContent from "./MessageContent";
 import DMUserPanel from "./DMUserPanel";
 import EmotePicker from "./EmotePicker";
+import GifPicker from "./GifPicker";
 
 export default function DMChat() {
   const activeChannelId = useDMStore((s) => s.activeChannelId);
@@ -38,6 +39,7 @@ export default function DMChat() {
   const [replyTo, setReplyTo] = useState<DMMessage | null>(null);
   const [messageReactions, setMessageReactions] = useState<Record<string, ReactionGroup[]>>({});
   const [emojiPicker, setEmojiPicker] = useState<{ messageId: string; x: number; y: number } | null>(null);
+  const [dmGifPicker, setDmGifPicker] = useState<{ x: number; y: number } | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [pendingPreview, setPendingPreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -637,6 +639,22 @@ export default function DMChat() {
                   el.style.height = Math.min(el.scrollHeight, 144) + "px";
                 }}
               />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (dmGifPicker) { setDmGifPicker(null); } else {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setDmGifPicker({ x: rect.right, y: rect.top - 4 });
+                  }
+                }}
+                className="ml-1 rounded p-1.5 text-slate-400 transition-colors hover:bg-dark-700 hover:text-white"
+                title="GIF"
+              >
+                <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M11.5 9H13v6h-1.5zM9 9H6c-.6 0-1 .5-1 1v4c0 .5.4 1 1 1h3c.6 0 1-.5 1-1V9zm-.5 4.5h-2v-3h2zm8.5-3c-.3 0-.5.2-.5.5v3c0 .3.2.5.5.5h2c.3 0 .5-.2.5-.5v-1h-1v.5h-1v-2h1v.5h1v-1c0-.6-.5-1-1-1zM2 5v14c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2zm18 14H4V5h16z"/>
+                </svg>
+              </button>
             </div>
           </div>
           {input.length > 1800 && (
@@ -704,6 +722,19 @@ export default function DMChat() {
             setEmojiPicker(null);
           }}
           onClose={() => setEmojiPicker(null)}
+        />
+      )}
+      {dmGifPicker && (
+        <GifPicker
+          x={dmGifPicker.x}
+          y={dmGifPicker.y}
+          onSelect={(gif) => {
+            const url = gif.images.original?.url || gif.images.fixed_height?.url;
+            if (url && activeChannelId) {
+              sendMessage(activeChannelId, url);
+            }
+          }}
+          onClose={() => setDmGifPicker(null)}
         />
       )}
     </div>

@@ -12,6 +12,7 @@ import DMSidebar from "../components/DMSidebar";
 import DMChat from "../components/DMChat";
 import DMRequestsPage from "../components/DMRequestsPage";
 import ActiveNowPanel from "../components/ActiveNowPanel";
+import DiscoveryPage from "../components/DiscoveryPage";
 import { useGuildStore } from "../stores/guild";
 import { useAuthStore } from "../stores/auth";
 import { useVoiceStore } from "../stores/voice";
@@ -695,6 +696,8 @@ export default function HomePage() {
 
       {showWelcome ? (
         <WelcomeScreen onCreateServer={() => setShowCreateModal(true)} />
+      ) : activeGuildId === "__discover__" ? (
+        <DiscoveryPage onClose={() => useGuildStore.setState({ activeGuildId: null, activeChannelId: null })} />
       ) : !activeGuildId ? (
         <>
           <DMSidebar />

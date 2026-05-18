@@ -93,6 +93,9 @@ func main() {
 	dmHandler := handler.NewDMHandler(dmRepo, privacyRepo, rdb)
 	privacyHandler := handler.NewPrivacyHandler(privacyRepo)
 	extrasHandler := handler.NewExtrasHandler(db, rdb)
+	eventHandler := handler.NewEventHandler(db, rdb)
+	webhookHandler := handler.NewWebhookHandler(db, rdb, cfg.MessagingURL)
+	stickerHandler := handler.NewStickerHandler(db, rdb)
 
 	// Router
 	mux := http.NewServeMux()
@@ -109,6 +112,9 @@ func main() {
 	dmHandler.RegisterRoutes(mux)
 	privacyHandler.RegisterRoutes(mux)
 	extrasHandler.RegisterRoutes(mux)
+	eventHandler.RegisterRoutes(mux)
+	webhookHandler.RegisterRoutes(mux)
+	stickerHandler.RegisterRoutes(mux)
 
 	// Background worker for scheduled messages and reminders
 	go extrasHandler.StartScheduledMessageWorker(context.Background())

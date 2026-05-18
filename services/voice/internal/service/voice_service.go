@@ -385,3 +385,163 @@ func (s *VoiceService) verifyVoiceChannel(guildID, channelID string) error {
 
 	return fmt.Errorf("channel not found in guild")
 }
+
+// ---------------------------------------------------------------------------
+// DM Voice/Video Calls
+// ---------------------------------------------------------------------------
+
+func dmCallKey(callID string) string {
+	return fmt.Sprintf("nexe:dm-call:%s", callID)
+}
+
+// StartDMCall creates a LiveKit room for a DM call and signals the recipient.
+func (s *VoiceService) StartDMCall(ctx context.Context, callerID, username, channelID string, video bool) (*model.DMCallResponse, error) {
+	// Leave any existing voice channel
+	existing, err := s.GetUserVoiceState(ctx, callerID)
+	if err == nil && existing != nil {
+		s.LeaveChannel(ctx, callerID)
+	}
+
+	callID := fmt.Sprintf("dm-%s-%d", channelID, time.Now().UnixMilli())
+	roomName := callID
+
+	// Create LiveKit room (small, short-lived)
+	_, err = s.roomClient.CreateRoom(ctx, &livekit.CreateRoomRequest{
+		Name:            roomName,
+		EmptyTimeout:    60, // 1 minute empty = destroy
+		MaxParticipants: 10, // group DMs
+	})
+	if err != nil {
+		slog.Warn("dm call room create error", "error", err)
+	}
+
+	// Generate token for caller
+	at := auth.NewAccessToken(s.livekitKey, s.livekitSecret)
+	grant := &auth.VideoGrant{
+		RoomJoin: true,
+		Room:     roomName,
+	}
+	at.AddGrant(grant).
+		SetIdentity(callerID).
+		SetName(username).
+		SetValidFor(2 * time.Hour)
+
+	token, err := at.ToJWT()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate dm call token: %w", err)
+	}
+
+	// Store call state in Redis
+	callData, _ := json.Marshal(model.DMCallSignal{
+		Type:      "ring",
+		CallID:    callID,
+		ChannelID: channelID,
+		CallerID:  callerID,
+		Video:     video,
+	})
+	s.rdb.Set(ctx, dmCallKey(callID), callData, 2*time.Minute) // ring expires in 2 min
+
+	// Publish ring event to the DM channel
+	s.events.Publish(ctx, "", channelID, "DM_CALL_RING", callerID, model.DMCallSignal{
+		Type:      "ring",
+		CallID:    callID,
+		ChannelID: channelID,
+		CallerID:  callerID,
+		Video:     video,
+	})
+
+	return &model.DMCallResponse{
+		CallID: callID,
+		Token:  token,
+		URL:    s.livekitPublicURL,
+	}, nil
+}
+
+// AcceptDMCall generates a token for the callee to join the DM call.
+func (s *VoiceService) AcceptDMCall(ctx context.Context, userID, username, callID string) (*model.DMCallResponse, error) {
+	// Verify call exists
+	data, err := s.rdb.Get(ctx, dmCallKey(callID)).Result()
+	if err != nil {
+		return nil, fmt.Errorf("call not found or expired")
+	}
+
+	var signal model.DMCallSignal
+	json.Unmarshal([]byte(data), &signal)
+
+	// Generate token
+	at := auth.NewAccessToken(s.livekitKey, s.livekitSecret)
+	grant := &auth.VideoGrant{
+		RoomJoin: true,
+		Room:     callID,
+	}
+	at.AddGrant(grant).
+		SetIdentity(userID).
+		SetName(username).
+		SetValidFor(2 * time.Hour)
+
+	token, err := at.ToJWT()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate accept token: %w", err)
+	}
+
+	// Publish accept event
+	s.events.Publish(ctx, "", signal.ChannelID, "DM_CALL_ACCEPT", userID, model.DMCallSignal{
+		Type:      "accept",
+		CallID:    callID,
+		ChannelID: signal.ChannelID,
+		CallerID:  signal.CallerID,
+	})
+
+	// Extend call TTL
+	s.rdb.Expire(ctx, dmCallKey(callID), 2*time.Hour)
+
+	return &model.DMCallResponse{
+		CallID: callID,
+		Token:  token,
+		URL:    s.livekitPublicURL,
+	}, nil
+}
+
+// RejectDMCall signals the caller that the call was rejected.
+func (s *VoiceService) RejectDMCall(ctx context.Context, userID, callID string) error {
+	data, err := s.rdb.Get(ctx, dmCallKey(callID)).Result()
+	if err != nil {
+		return nil
+	}
+
+	var signal model.DMCallSignal
+	json.Unmarshal([]byte(data), &signal)
+
+	s.events.Publish(ctx, "", signal.ChannelID, "DM_CALL_REJECT", userID, model.DMCallSignal{
+		Type:      "reject",
+		CallID:    callID,
+		ChannelID: signal.ChannelID,
+		CallerID:  signal.CallerID,
+	})
+
+	s.rdb.Del(ctx, dmCallKey(callID))
+	return nil
+}
+
+// EndDMCall terminates the call for all participants.
+func (s *VoiceService) EndDMCall(ctx context.Context, userID, callID string) error {
+	data, err := s.rdb.Get(ctx, dmCallKey(callID)).Result()
+	if err != nil {
+		return nil
+	}
+
+	var signal model.DMCallSignal
+	json.Unmarshal([]byte(data), &signal)
+
+	s.events.Publish(ctx, "", signal.ChannelID, "DM_CALL_END", userID, model.DMCallSignal{
+		Type:      "end",
+		CallID:    callID,
+		ChannelID: signal.ChannelID,
+		CallerID:  signal.CallerID,
+	})
+
+	// Destroy LiveKit room
+	s.roomClient.DeleteRoom(ctx, &livekit.DeleteRoomRequest{Room: callID})
+	s.rdb.Del(ctx, dmCallKey(callID))
+	return nil
+}
