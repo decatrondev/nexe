@@ -21,7 +21,7 @@ tauri-build = { version = "2.6.1", features = [] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
-tauri = { version = "2.11.1", features = ["devtools"] }
+tauri = { version = "2.11.1", features = ["devtools", "tray-icon", "image-png"] }
 tauri-plugin-log = "2"
 tauri-plugin-process = "2"
 tauri-plugin-single-instance = "2"
@@ -30,3 +30,4 @@ zip = "2"
 tokio = { version = "1", features = ["fs", "io-util"] }
 futures-util = "0.3"
 sha2 = "0.10"
+tauri-plugin-autostart = "2"

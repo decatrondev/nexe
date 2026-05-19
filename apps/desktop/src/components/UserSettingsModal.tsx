@@ -931,6 +931,28 @@ function PrivacyTab() {
 }
 
 function AppearanceTab() {
+  const [autoStart, setAutoStart] = useState(false);
+  const [autoStartLoaded, setAutoStartLoaded] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { isEnabled } = await import("@tauri-apps/plugin-autostart");
+        setAutoStart(await isEnabled());
+      } catch { /* not in Tauri */ }
+      setAutoStartLoaded(true);
+    })();
+  }, []);
+
+  async function toggleAutoStart(enabled: boolean) {
+    setAutoStart(enabled);
+    try {
+      const { enable, disable } = await import("@tauri-apps/plugin-autostart");
+      if (enabled) await enable();
+      else await disable();
+    } catch { setAutoStart(!enabled); }
+  }
+
   const [chatFontSize, setChatFontSize] = useState(() =>
     Number(localStorage.getItem("nexe:chatFontSize") || "14")
   );
@@ -956,6 +978,17 @@ function AppearanceTab() {
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-bold text-slate-100">Appearance</h2>
+
+      {/* Auto-start */}
+      {autoStartLoaded && (
+        <div className="flex items-center justify-between rounded-lg border border-dark-700 bg-dark-800 px-4 py-3">
+          <div>
+            <p className="text-sm font-medium text-slate-200">Open Nexe on startup</p>
+            <p className="text-xs text-slate-500">Automatically start Nexe when you log in to your computer</p>
+          </div>
+          <Toggle checked={autoStart} onChange={toggleAutoStart} />
+        </div>
+      )}
 
       {/* Chat Font Size */}
       <div>
