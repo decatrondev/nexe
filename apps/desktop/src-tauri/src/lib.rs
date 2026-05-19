@@ -4,6 +4,7 @@ use tauri::{
     tray::TrayIconBuilder,
     image::Image,
 };
+use tauri_plugin_autostart::ManagerExt;
 
 mod installer;
 mod updater;
@@ -58,6 +59,14 @@ pub fn run() {
             }
 
             updater::cleanup_old_files();
+
+            // Enable autostart by default (like Discord)
+            {
+                let autostart = app.autolaunch();
+                if !autostart.is_enabled().unwrap_or(true) {
+                    let _ = autostart.enable();
+                }
+            }
 
             // System tray
             let show = MenuItemBuilder::with_id("show", "Open Nexe").build(app)?;
