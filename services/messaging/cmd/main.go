@@ -101,6 +101,24 @@ func main() {
 	messageHandler.RegisterRoutes(mux)
 	pollHandler.RegisterRoutes(mux)
 
+	// Internal: GDPR anonymize user messages
+	mux.HandleFunc("POST /internal/anonymize/{userId}", func(w http.ResponseWriter, r *http.Request) {
+		uid := r.PathValue("userId")
+		_, err := db.ExecContext(r.Context(),
+			`UPDATE messages SET author_id = '00000000-0000-0000-0000-000000000000' WHERE author_id = $1`, uid)
+		if err != nil {
+			slog.Error("gdpr: anonymize messages failed", "userId", uid, "error", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		// Remove reactions by user
+		db.ExecContext(r.Context(), `DELETE FROM reactions WHERE user_id = $1`, uid)
+		// Remove read states
+		db.ExecContext(r.Context(), `DELETE FROM read_states WHERE user_id = $1`, uid)
+		slog.Info("gdpr: messages anonymized", "userId", uid)
+		w.WriteHeader(http.StatusOK)
+	})
+
 	addr := ":" + cfg.Port
 	slog.Info("messaging starting", "addr", addr, "env", cfg.Env)
 

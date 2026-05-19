@@ -1382,4 +1382,13 @@ export const api = {
   deleteSticker(stickerId: string) {
     return request<void>("DELETE", `/stickers/${stickerId}`);
   },
+
+  // GDPR
+  deleteAccount() {
+    return request<{ status: string; deleteAfter: string }>("DELETE", "/users/@me/account");
+  },
+
+  restoreAccount(email: string, password: string) {
+    return request<{ status: string }>("POST", "/users/restore", { email, password });
+  },
 };

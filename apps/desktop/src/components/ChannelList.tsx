@@ -5,14 +5,13 @@ import { useVoiceStore } from "../stores/voice";
 import { hasPermission, computePermissions, Permissions } from "../lib/permissions";
 import { type Channel, type Category, type VoiceState, api } from "../lib/api";
 import { FREE_TIER_LIMITS } from "../lib/limits";
-import { statusColors } from "../lib/utils";
 import { DndContext, closestCenter, type DragEndEvent, PointerSensor, useSensor, useSensors, useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import CreateChannelModal from "./CreateChannelModal";
 import ServerSettingsModal from "./ServerSettingsModal";
 import InviteModal from "./InviteModal";
-import UserSettingsModal from "./UserSettingsModal";
+import UserBar from "./UserBar";
 import VoicePanel from "./VoicePanel";
 import NotificationBell from "./NotificationBell";
 
@@ -610,21 +609,17 @@ export default function ChannelList() {
   const [createChannelCategoryId, setCreateChannelCategoryId] = useState<string | undefined>(undefined);
   const [showSettings, setShowSettings] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
-  const [showUserSettings, setShowUserSettings] = useState(false);
-  const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [showCreateCategory, setShowCreateCategory] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; category: Category } | null>(null);
   const [channelCtx, setChannelCtx] = useState<{ x: number; y: number; channel: Channel } | null>(null);
   const [channelNotifLevel, setChannelNotifLevel] = useState<string | null>(null);
-  const statusMenuRef = useRef<HTMLDivElement>(null);
 
   const allRoles = useGuildStore((s) => s.roles);
   const memberRolesMap = useGuildStore((s) => s.memberRoles);
 
   const activeGuild = guilds.find((g) => g.id === activeGuildId);
   const serverName = activeGuild?.name || "Nexe";
-  const userStatus = user?.status || "online";
 
   // Permission computation
   const guildRoles = (activeGuildId ? allRoles[activeGuildId] : undefined) ?? [];
@@ -1001,64 +996,7 @@ export default function ChannelList() {
         <VoicePanel />
 
         {/* User info bar */}
-        <div className="flex shrink-0 items-center gap-2 border-t border-dark-950 bg-dark-950/50 px-2 py-2 transition-colors">
-          <div className="relative" ref={statusMenuRef}>
-            {user?.avatarUrl ? (
-              <img src={user.avatarUrl} alt="Avatar" className="h-8 w-8 rounded-full object-cover" />
-            ) : (
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-nexe-600 text-xs font-semibold text-white">
-                {(user?.username || "U").charAt(0).toUpperCase()}
-              </div>
-            )}
-            <button
-              onClick={() => setShowStatusMenu((v) => !v)}
-              className={`absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full border-2 border-dark-950 cursor-pointer transition-transform hover:scale-125 ${statusColors[userStatus] || statusColors.online}`}
-              title="Change status"
-            />
-            {showStatusMenu && (
-              <StatusMenu
-                current={userStatus}
-                onSelect={async (status, clearAfter) => {
-                  setShowStatusMenu(false);
-                  try {
-                    await api.updatePresence(status, clearAfter);
-                    const typedStatus = status as "online" | "idle" | "dnd" | "offline" | "invisible";
-                    useAuthStore.setState((s) => ({
-                      user: s.user ? { ...s.user, status: typedStatus } : null,
-                    }));
-                    const userId = useAuthStore.getState().user?.id;
-                    if (userId) {
-                      useGuildStore.setState((s) => ({
-                        presenceMap: { ...s.presenceMap, [userId]: status },
-                      }));
-                    }
-                  } catch (err) {
-                    console.error("Failed to update status:", err);
-                  }
-                }}
-                onClose={() => setShowStatusMenu(false)}
-                anchorRef={statusMenuRef}
-              />
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-slate-200">
-              {user?.displayName || user?.username || "User"}
-            </p>
-            <p className="truncate text-xs capitalize text-slate-500">
-              {userStatus === "dnd" ? "Do Not Disturb" : userStatus === "invisible" ? "Invisible" : userStatus}
-            </p>
-          </div>
-          <button
-            onClick={() => setShowUserSettings(true)}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-slate-400 transition-colors hover:bg-dark-800 hover:text-slate-200"
-            title="User settings"
-          >
-            <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
-              <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84a.48.48 0 0 0-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87a.48.48 0 0 0 .12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.26.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z" />
-            </svg>
-          </button>
-        </div>
+        <UserBar />
       </div>
 
       {showCreateChannel && (
@@ -1092,9 +1030,6 @@ export default function ChannelList() {
         )
       )}
 
-      {showUserSettings && (
-        <UserSettingsModal onClose={() => setShowUserSettings(false)} />
-      )}
 
       {showCreateCategory && activeGuildId && (
         <CreateCategoryModal guildId={activeGuildId} onClose={() => setShowCreateCategory(false)} />
@@ -1161,118 +1096,5 @@ export default function ChannelList() {
         />
       )}
     </>
-  );
-}
-
-// ── Status Selector Dropdown ──
-
-const STATUS_OPTIONS = [
-  { value: "online", label: "Online", color: "bg-green-500", hasDuration: false },
-  { value: "idle", label: "Idle", color: "bg-yellow-500", hasDuration: false },
-  { value: "dnd", label: "Do Not Disturb", color: "bg-red-500", hasDuration: true },
-  { value: "invisible", label: "Invisible", color: "bg-slate-500", hasDuration: true },
-] as const;
-
-const DURATION_OPTIONS = [
-  { label: "Don't clear", value: 0 },
-  { label: "30 minutes", value: 30 },
-  { label: "1 hour", value: 60 },
-  { label: "4 hours", value: 240 },
-  { label: "8 hours", value: 480 },
-  { label: "24 hours", value: 1440 },
-] as const;
-
-function StatusMenu({
-  current,
-  onSelect,
-  onClose,
-  anchorRef,
-}: {
-  current: string;
-  onSelect: (status: string, clearAfter?: number) => void;
-  onClose: () => void;
-  anchorRef: React.RefObject<HTMLDivElement | null>;
-}) {
-  const menuRef = useRef<HTMLDivElement>(null);
-  const [durationFor, setDurationFor] = useState<string | null>(null);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (
-        menuRef.current && !menuRef.current.contains(e.target as Node) &&
-        anchorRef.current && !anchorRef.current.contains(e.target as Node)
-      ) {
-        onClose();
-      }
-    };
-    const t = setTimeout(() => document.addEventListener("mousedown", handler), 10);
-    return () => { clearTimeout(t); document.removeEventListener("mousedown", handler); };
-  }, [onClose, anchorRef]);
-
-  return (
-    <div
-      ref={menuRef}
-      className="absolute bottom-full left-0 mb-2 w-52 overflow-hidden rounded-lg border border-dark-700 bg-dark-800 py-1 shadow-xl animate-slide-up"
-      style={{ zIndex: 100 }}
-    >
-      {durationFor ? (
-        <>
-          <button
-            onClick={() => setDurationFor(null)}
-            className="flex w-full items-center gap-2 px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500 hover:text-slate-300"
-          >
-            <svg viewBox="0 0 24 24" className="h-3 w-3 fill-current">
-              <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
-            </svg>
-            Clear after
-          </button>
-          {DURATION_OPTIONS.map((dur) => (
-            <button
-              key={dur.value}
-              onClick={() => onSelect(durationFor, dur.value || undefined)}
-              className="flex w-full items-center gap-2.5 px-3 py-1.5 text-sm text-slate-300 transition-colors hover:bg-dark-700 hover:text-white"
-            >
-              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current text-slate-500">
-                <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
-              </svg>
-              <span>{dur.label}</span>
-            </button>
-          ))}
-        </>
-      ) : (
-        <>
-          <p className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-500">
-            Set Status
-          </p>
-          {STATUS_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => {
-                if (opt.hasDuration) {
-                  setDurationFor(opt.value);
-                } else {
-                  onSelect(opt.value);
-                }
-              }}
-              className={`flex w-full items-center gap-2.5 px-3 py-1.5 text-sm transition-colors hover:bg-dark-700 ${
-                current === opt.value ? "text-white" : "text-slate-300"
-              }`}
-            >
-              <div className={`h-2.5 w-2.5 rounded-full ${opt.color}`} />
-              <span>{opt.label}</span>
-              {current === opt.value ? (
-                <svg className="ml-auto h-3.5 w-3.5 text-nexe-400" viewBox="0 0 20 20" fill="currentColor">
-                  <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                </svg>
-              ) : opt.hasDuration ? (
-                <svg className="ml-auto h-3.5 w-3.5 text-slate-600" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />
-                </svg>
-              ) : null}
-            </button>
-          ))}
-        </>
-      )}
-    </div>
   );
 }

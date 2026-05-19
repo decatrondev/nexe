@@ -11,6 +11,7 @@ const settingsTabs: TabItem[] = [
   { id: "profile", label: "Profiles" },
   { id: "security", label: "Security" },
   { id: "privacy", label: "Privacy" },
+  { id: "data", label: "Data & Privacy", color: "text-slate-400 hover:text-slate-200" },
   { id: "notifications", label: "Notifications" },
   { id: "voice", label: "Voice & Video" },
   { id: "appearance", label: "Appearance" },
@@ -63,6 +64,7 @@ export default function UserSettingsModal({ onClose }: Props) {
               <TabPanel id="profile"><ProfileTab /></TabPanel>
               <TabPanel id="security"><SecurityTab /></TabPanel>
               <TabPanel id="privacy"><PrivacyTab /></TabPanel>
+              <TabPanel id="data"><DataPrivacyTab onClose={onClose} /></TabPanel>
               <TabPanel id="notifications"><NotificationsTab /></TabPanel>
               <TabPanel id="voice"><VoiceVideoTab /></TabPanel>
               <TabPanel id="appearance"><AppearanceTab /></TabPanel>
@@ -1240,6 +1242,146 @@ function VoiceVideoTab() {
             ))}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Data & Privacy (GDPR) ──
+
+function DataPrivacyTab({ onClose }: { onClose: () => void }) {
+  const [exporting, setExporting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+  const logout = useAuthStore((s) => s.logout);
+
+  async function handleExport() {
+    setExporting(true);
+    try {
+      const res = await fetch("https://nexeapi.decatron.net/users/@me/export", {
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+      });
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `nexe-data-export.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      alert("Failed to export data. Try again later.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function handleDelete() {
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await api.deleteAccount();
+      logout();
+      onClose();
+    } catch (err: unknown) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete account");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  return (
+    <div className="mx-auto max-w-2xl space-y-8 p-8">
+      <div>
+        <h2 className="text-xl font-bold text-white">Data & Privacy</h2>
+        <p className="mt-1 text-sm text-slate-500">Manage your personal data and account</p>
+      </div>
+
+      {/* Data Export */}
+      <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-5">
+        <div className="flex items-start gap-4">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-nexe-500/10 text-nexe-400">
+            <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" /></svg>
+          </div>
+          <div className="flex-1">
+            <h3 className="text-sm font-semibold text-white">Request Your Data</h3>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">
+              Download a copy of your Nexe data including your profile, messages, servers, friends, and DMs. The export is a JSON file.
+            </p>
+            <button
+              onClick={handleExport}
+              disabled={exporting}
+              className="mt-3 rounded-lg bg-white/[0.06] px-4 py-2 text-xs font-semibold text-slate-200 ring-1 ring-white/[0.08] transition-all hover:bg-white/[0.1] hover:text-white disabled:opacity-50"
+            >
+              {exporting ? "Preparing export..." : "Download My Data"}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Account Deletion */}
+      <div className="rounded-xl border border-red-500/20 bg-red-500/[0.03] p-5">
+        <div className="flex items-start gap-4">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-500/10 text-red-400">
+            <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" /></svg>
+          </div>
+          <div className="flex-1">
+            <h3 className="text-sm font-semibold text-red-400">Delete Account</h3>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">
+              Permanently delete your account and all associated data. Your messages will be anonymized (shown as "Deleted User"). You have <span className="font-semibold text-slate-300">14 days</span> to restore your account after requesting deletion.
+            </p>
+
+            {!showDeleteConfirm ? (
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="mt-3 rounded-lg bg-red-500/10 px-4 py-2 text-xs font-semibold text-red-400 ring-1 ring-red-500/20 transition-all hover:bg-red-500/20"
+              >
+                Delete My Account
+              </button>
+            ) : (
+              <div className="mt-4 space-y-3 rounded-lg border border-red-500/20 bg-dark-900 p-4">
+                <p className="text-xs font-medium text-red-400">
+                  Are you sure? This action is irreversible after 14 days.
+                </p>
+                <ul className="space-y-1 text-[11px] text-slate-500">
+                  <li>- Your account will be disabled immediately</li>
+                  <li>- All sessions will be terminated</li>
+                  <li>- Your messages will be anonymized</li>
+                  <li>- You must transfer server ownership before deleting</li>
+                  <li>- You have 14 days to restore by logging in</li>
+                </ul>
+
+                {deleteError && (
+                  <p className="rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-400">{deleteError}</p>
+                )}
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleDelete}
+                    disabled={deleting}
+                    className="rounded-lg bg-red-500 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-red-500/20 transition-all hover:bg-red-600 disabled:opacity-50"
+                  >
+                    {deleting ? "Deleting..." : "Yes, Delete My Account"}
+                  </button>
+                  <button
+                    onClick={() => { setShowDeleteConfirm(false); setDeleteError(""); }}
+                    className="rounded-lg bg-white/[0.06] px-4 py-2 text-xs font-medium text-slate-400 transition-colors hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Info */}
+      <div className="rounded-xl border border-white/[0.04] bg-white/[0.01] p-4">
+        <p className="text-[11px] leading-relaxed text-slate-600">
+          Nexe complies with GDPR and data protection regulations. Your data belongs to you. If you have questions about your data, contact us at <span className="text-slate-400">privacy@nexe.gg</span>
+        </p>
       </div>
     </div>
   );

@@ -109,6 +109,10 @@ func main() {
 	proxyHandler := handler.NewProxyHandler(cfg.GuildsURL, cfg.MessagingURL, cfg.PresenceURL, cfg.VoiceURL, cfg.NotificationsURL)
 	gifHandler := handler.NewGifHandler(cfg.GiphyAPIKey)
 	kickHandler := handler.NewKickHandler(cfg.KickClientID, cfg.KickClientSecret, cfg.KickRedirectURI)
+	gdprHandler := handler.NewGDPRHandler(db, userRepo, cfg.GuildsURL, cfg.MessagingURL)
+
+	// Start GDPR background worker
+	go gdprHandler.ProcessScheduledDeletions()
 
 	// Reconcile any active streams on startup
 	go twitchHandler.ReconcileStreamStatuses(context.Background())
@@ -228,6 +232,12 @@ func main() {
 	mux.Handle("GET /gifs/search", authMiddleware(http.HandlerFunc(gifHandler.SearchGifs)))
 	mux.Handle("GET /gifs/trending", authMiddleware(http.HandlerFunc(gifHandler.TrendingGifs)))
 	mux.Handle("GET /gifs/categories", authMiddleware(http.HandlerFunc(gifHandler.GifCategories)))
+
+	// GDPR — account deletion, data export
+	mux.Handle("DELETE /users/@me/account", authMiddleware(http.HandlerFunc(gdprHandler.ScheduleAccountDeletion)))
+	mux.HandleFunc("POST /users/restore", gdprHandler.RestoreAccount) // no auth — user is disabled
+	mux.Handle("GET /users/@me/account/status", authMiddleware(http.HandlerFunc(gdprHandler.GetDeletionStatus)))
+	mux.Handle("GET /users/@me/export", authMiddleware(http.HandlerFunc(gdprHandler.ExportUserData)))
 
 	// Kick integration (OAuth + API + EventSub)
 	mux.Handle("GET /kick/auth", authMiddleware(http.HandlerFunc(kickHandler.GetKickAuthURL)))

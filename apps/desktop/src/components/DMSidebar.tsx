@@ -6,6 +6,7 @@ import { useRelationshipStore } from "../stores/relationships";
 import { userColor } from "../lib/utils";
 import { toast } from "@nexe/ui";
 import CreateGroupDMModal from "./CreateGroupDMModal";
+import UserBar from "./UserBar";
 
 export default function DMSidebar() {
   const [showGroupModal, setShowGroupModal] = useState(false);
@@ -210,6 +211,9 @@ export default function DMSidebar() {
           })
         )}
       </div>
+
+      {/* User bar at bottom */}
+      <UserBar />
     </div>
     {showGroupModal && <CreateGroupDMModal onClose={() => setShowGroupModal(false)} />}
     </>

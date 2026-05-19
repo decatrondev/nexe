@@ -116,6 +116,30 @@ func main() {
 	webhookHandler.RegisterRoutes(mux)
 	stickerHandler.RegisterRoutes(mux)
 
+	// Internal: GDPR anonymize user data
+	mux.HandleFunc("POST /internal/anonymize/{userId}", func(w http.ResponseWriter, r *http.Request) {
+		uid := r.PathValue("userId")
+		// Remove from all guilds
+		db.ExecContext(r.Context(), `DELETE FROM guild_members WHERE user_id = $1`, uid)
+		// Remove relationships
+		db.ExecContext(r.Context(), `DELETE FROM relationships WHERE user_id = $1 OR target_id = $1`, uid)
+		// Anonymize DM messages
+		db.ExecContext(r.Context(), `UPDATE dm_messages SET author_id = '00000000-0000-0000-0000-000000000000' WHERE author_id = $1`, uid)
+		// Remove DM participants but keep channels for the other party
+		db.ExecContext(r.Context(), `DELETE FROM dm_participants WHERE user_id = $1`, uid)
+		// Remove privacy settings
+		db.ExecContext(r.Context(), `DELETE FROM user_privacy_settings WHERE user_id = $1`, uid)
+		// Remove bans (as banned user, not moderator)
+		db.ExecContext(r.Context(), `DELETE FROM bans WHERE user_id = $1`, uid)
+		// Remove moderation logs targeting user
+		db.ExecContext(r.Context(), `DELETE FROM moderation_logs WHERE target_id = $1`, uid)
+		// Remove event RSVPs
+		db.ExecContext(r.Context(), `DELETE FROM guild_event_rsvps WHERE user_id = $1`, uid)
+		// Remove poll votes
+		slog.Info("gdpr: guilds data anonymized", "userId", uid)
+		w.WriteHeader(http.StatusOK)
+	})
+
 	// Background worker for scheduled messages and reminders
 	go extrasHandler.StartScheduledMessageWorker(context.Background())
 	mux.HandleFunc("GET /guilds/{id}/emotes", emoteHandler.GetEmotes)
