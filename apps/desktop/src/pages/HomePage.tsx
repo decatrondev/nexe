@@ -7,6 +7,8 @@ import MemberList from "../components/MemberList";
 import CreateGuildModal from "../components/CreateGuildModal";
 import JoinServerModal from "../components/JoinServerModal";
 import FloatingVoice from "../components/FloatingVoice";
+import IncomingCall from "../components/IncomingCall";
+import ScreenSharePicker from "../components/ScreenSharePicker";
 import FriendsPage from "../components/FriendsPage";
 import DMSidebar from "../components/DMSidebar";
 import DMChat from "../components/DMChat";
@@ -92,19 +94,30 @@ function WelcomeScreen({ onCreateServer }: { onCreateServer: () => void }) {
   );
 }
 
-/** Shows VoiceView when active channel is voice & connected, otherwise ChatArea */
+/** Shows VoiceView when in a DM call on the active DM, otherwise DMChat */
+function DMChatOrCall() {
+  const activeCall = useVoiceStore((s) => s.activeCall);
+  const activeDMChannelId = useDMStore((s) => s.activeChannelId);
+  const isDMCallOnThis = activeCall?.type === "dm" && activeCall.channelId === activeDMChannelId && activeCall.status !== "connecting";
+
+  if (isDMCallOnThis) {
+    return <VoiceView />;
+  }
+  return <DMChat />;
+}
+
+/** Shows VoiceView when viewing active voice/call channel, otherwise ChatArea */
 function VoiceViewOrChat({ showMembers, onToggleMembers }: { showMembers: boolean; onToggleMembers: () => void }) {
   const activeChannelId = useGuildStore((s) => s.activeChannelId);
   const activeGuildId = useGuildStore((s) => s.activeGuildId);
   const channels = useGuildStore((s) => s.channels);
-  const voiceConnected = useVoiceStore((s) => s.connected);
-  const voiceChannelId = useVoiceStore((s) => s.channelId);
+  const activeCall = useVoiceStore((s) => s.activeCall);
 
   const guildChannels = activeGuildId ? channels[activeGuildId] : undefined;
   const activeChannel = guildChannels?.find((c) => c.id === activeChannelId);
   const isVoiceChannel = activeChannel?.type === "voice";
-  const isConnectedToThis = voiceConnected && voiceChannelId === activeChannelId;
-  const showVoiceView = !!(isVoiceChannel && isConnectedToThis);
+  const isGuildVoiceConnected = activeCall?.type === "guild" && activeCall.channelId === activeChannelId && activeCall.guildId === activeGuildId;
+  const showVoiceView = !!(isVoiceChannel && isGuildVoiceConnected);
 
   if (showVoiceView) {
     return <VoiceView />;
@@ -122,11 +135,10 @@ export default function HomePage() {
   const token = useAuthStore((s) => s.token);
   const activeChannelId = useGuildStore((s) => s.activeChannelId);
   const allChannels = useGuildStore((s) => s.channels);
-  const voiceConnected = useVoiceStore((s) => s.connected);
-  const voiceChannelId = useVoiceStore((s) => s.channelId);
+  const activeCall = useVoiceStore((s) => s.activeCall);
   const activeChannelObj = activeGuildId ? allChannels[activeGuildId]?.find((c) => c.id === activeChannelId) : undefined;
   const activeDMChannelId = useDMStore((s) => s.activeChannelId);
-  const isInVoiceView = activeChannelObj?.type === "voice" && voiceConnected && voiceChannelId === activeChannelId;
+  const isInVoiceView = activeChannelObj?.type === "voice" && activeCall?.type === "guild" && activeCall.channelId === activeChannelId;
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
@@ -595,6 +607,20 @@ export default function HomePage() {
         window.dispatchEvent(new CustomEvent("nexe:dm-reaction", { detail: { ...d, type: "remove" } }));
       });
 
+      // DM Call events
+      nexeWS.on("DM_CALL_RING", (data) => {
+        useVoiceStore.getState().handleDMCallRing(data as import("../lib/api").DMCallSignal);
+      });
+      nexeWS.on("DM_CALL_ACCEPT", (data) => {
+        useVoiceStore.getState().handleDMCallAccept(data as import("../lib/api").DMCallSignal);
+      });
+      nexeWS.on("DM_CALL_REJECT", (data) => {
+        useVoiceStore.getState().handleDMCallReject(data as import("../lib/api").DMCallSignal);
+      });
+      nexeWS.on("DM_CALL_END", (data) => {
+        useVoiceStore.getState().handleDMCallEnd(data as import("../lib/api").DMCallSignal);
+      });
+
       // Relationship events (friends)
       nexeWS.on("RELATIONSHIP_CREATE", (data) => {
         useRelationshipStore.getState().handleRelationshipCreate(data as Relationship);
@@ -652,7 +678,7 @@ export default function HomePage() {
     // Clean up voice on page close/refresh
     const handleUnload = () => {
       const voiceState = useVoiceStore.getState();
-      if (voiceState.connected || voiceState.connecting) {
+      if (voiceState.activeCall) {
         // Use sendBeacon for reliability on page unload
         const url = (window.location.protocol === "https:" || "__TAURI__" in window)
           ? "https://nexeapi.decatron.net/voice/leave"
@@ -701,7 +727,7 @@ export default function HomePage() {
       ) : !activeGuildId ? (
         <>
           <DMSidebar />
-          {activeDMChannelId === "__requests__" ? <DMRequestsPage /> : activeDMChannelId ? <DMChat /> : (
+          {activeDMChannelId === "__requests__" ? <DMRequestsPage /> : activeDMChannelId ? <DMChatOrCall /> : (
             <>
               <FriendsPage />
               <ActiveNowPanel />
@@ -737,6 +763,8 @@ export default function HomePage() {
 
       {/* Floating voice mini-player — persists when navigating away from voice channel */}
       <FloatingVoice />
+      <IncomingCall />
+      <ScreenSharePicker />
     </div>
   );
 }

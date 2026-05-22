@@ -2,24 +2,26 @@ import { useEffect, useState } from "react";
 import { ConnectionQuality } from "livekit-client";
 import { useVoiceStore } from "../stores/voice";
 import { useGuildStore } from "../stores/guild";
+import { useDMStore } from "../stores/dm";
+import { useAuthStore } from "../stores/auth";
 
 export default function VoicePanel() {
-  const connected = useVoiceStore((s) => s.connected);
-  const connecting = useVoiceStore((s) => s.connecting);
-  const channelId = useVoiceStore((s) => s.channelId);
+  const activeCall = useVoiceStore((s) => s.activeCall);
+  const room = useVoiceStore((s) => s.room);
   const selfMute = useVoiceStore((s) => s.selfMute);
   const selfDeaf = useVoiceStore((s) => s.selfDeaf);
-  const room = useVoiceStore((s) => s.room);
   const cameraEnabled = useVoiceStore((s) => s.cameraEnabled);
   const screenShareEnabled = useVoiceStore((s) => s.screenShareEnabled);
-  const leaveChannel = useVoiceStore((s) => s.leaveChannel);
+  const disconnect = useVoiceStore((s) => s.disconnect);
   const toggleMute = useVoiceStore((s) => s.toggleMute);
   const toggleDeafen = useVoiceStore((s) => s.toggleDeafen);
   const toggleCamera = useVoiceStore((s) => s.toggleCamera);
   const toggleScreenShare = useVoiceStore((s) => s.toggleScreenShare);
 
   const allChannels = useGuildStore((s) => s.channels);
-  const activeGuildId = useGuildStore((s) => s.activeGuildId);
+  const dmChannels = useDMStore((s) => s.channels);
+  const usernames = useGuildStore((s) => s.usernames);
+  const myId = useAuthStore((s) => s.user?.id);
 
   const [showSettings, setShowSettings] = useState(false);
   const [quality, setQuality] = useState<"excellent" | "good" | "poor">("excellent");
@@ -30,58 +32,67 @@ export default function VoicePanel() {
 
   // Connection quality monitoring
   useEffect(() => {
-    if (!connected || !room) return;
+    if (!activeCall || !room) return;
     const interval = setInterval(() => {
-      const local = room.localParticipant;
-      if (!local) return;
-      const stats = local.connectionQuality;
+      const stats = room.localParticipant?.connectionQuality;
       if (stats === ConnectionQuality.Excellent) setQuality("excellent");
       else if (stats === ConnectionQuality.Good) setQuality("good");
       else setQuality("poor");
     }, 3000);
     return () => clearInterval(interval);
-  }, [connected, room]);
+  }, [activeCall, room]);
 
-  // Load audio devices (request permission first to get labels)
+  // Load audio devices
   useEffect(() => {
     if (!showSettings) return;
     (async () => {
       try {
-        // Briefly request mic access to unlock device labels
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         stream.getTracks().forEach((t) => t.stop());
-      } catch { /* permission denied — labels will be generic */ }
+      } catch { /* */ }
       const devices = await navigator.mediaDevices.enumerateDevices();
       setAudioDevices(devices.filter((d) => d.kind === "audioinput"));
       setOutputDevices(devices.filter((d) => d.kind === "audiooutput"));
     })();
   }, [showSettings]);
 
-  if (!connected && !connecting) return null;
+  // Don't show if no active call
+  if (!activeCall) return null;
 
-  const guildChannels = activeGuildId ? allChannels[activeGuildId] : undefined;
-  const channel = guildChannels?.find((c) => c.id === channelId);
-  const channelName = channel?.name || "Voice Channel";
+  // Resolve channel name
+  let channelName = "Voice Channel";
+  if (activeCall.type === "guild" && activeCall.guildId) {
+    const guildChannels = allChannels[activeCall.guildId];
+    const ch = guildChannels?.find((c) => c.id === activeCall.channelId);
+    channelName = ch?.name || "Voice Channel";
+  } else if (activeCall.type === "dm") {
+    const dmCh = dmChannels.find((c) => c.id === activeCall.channelId);
+    if (dmCh) {
+      if (dmCh.type === "group_dm") {
+        channelName = dmCh.name || "Group Call";
+      } else {
+        const other = dmCh.participants?.find((p) => p.userId !== myId);
+        channelName = other ? (usernames[other.userId] || "DM Call") : "DM Call";
+      }
+    }
+  }
 
   const qualityColor = quality === "excellent" ? "bg-green-500" : quality === "good" ? "bg-yellow-500" : "bg-red-500";
   const qualityLabel = quality === "excellent" ? "Excellent" : quality === "good" ? "Good" : "Poor";
+  const isRinging = activeCall.status === "ringing";
 
   async function switchInput(deviceId: string) {
     setSelectedInput(deviceId);
     if (room?.localParticipant) {
       await room.localParticipant.setMicrophoneEnabled(false);
       await room.switchActiveDevice("audioinput", deviceId);
-      if (!selfMute) {
-        await room.localParticipant.setMicrophoneEnabled(true);
-      }
+      if (!selfMute) await room.localParticipant.setMicrophoneEnabled(true);
     }
   }
 
   async function switchOutput(deviceId: string) {
     setSelectedOutput(deviceId);
-    if (room) {
-      await room.switchActiveDevice("audiooutput", deviceId);
-    }
+    if (room) await room.switchActiveDevice("audiooutput", deviceId);
   }
 
   return (
@@ -89,18 +100,17 @@ export default function VoicePanel() {
       {/* Connection status + quality */}
       <div className="mb-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className={`h-2 w-2 rounded-full ${connecting ? "animate-pulse bg-yellow-500" : qualityColor}`} />
+          <div className={`h-2 w-2 rounded-full ${isRinging ? "animate-pulse bg-yellow-500" : qualityColor}`} />
           <span className="text-xs font-medium text-green-400">
-            {connecting ? "Connecting..." : "Voice Connected"}
+            {isRinging ? "Calling..." : activeCall.type === "dm" ? "In Call" : "Voice Connected"}
           </span>
-          {connected && (
+          {!isRinging && (
             <span className={`text-[10px] ${quality === "excellent" ? "text-green-600" : quality === "good" ? "text-yellow-600" : "text-red-500"}`}>
               {qualityLabel}
             </span>
           )}
         </div>
         <div className="flex items-center gap-1">
-          {/* Settings gear */}
           <button
             onClick={() => setShowSettings(!showSettings)}
             className={`flex h-6 w-6 items-center justify-center rounded text-slate-400 transition-colors hover:text-slate-200 ${showSettings ? "text-nexe-400" : ""}`}
@@ -110,9 +120,8 @@ export default function VoicePanel() {
               <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
             </svg>
           </button>
-          {/* Disconnect */}
           <button
-            onClick={leaveChannel}
+            onClick={disconnect}
             className="flex h-6 w-6 items-center justify-center rounded text-slate-400 transition-colors hover:text-red-400"
             title="Disconnect"
           >
@@ -123,20 +132,40 @@ export default function VoicePanel() {
         </div>
       </div>
 
-      {/* Channel name */}
+      {/* Channel / call name */}
       <div className="mb-2 flex items-center gap-1.5">
         <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0 fill-current text-slate-500">
-          <path d="M12 3a9 9 0 0 0-9 9v7c0 1.1.9 2 2 2h4v-8H5v-1c0-3.87 3.13-7 7-7s7 3.13 7 7v1h-4v8h4c1.1 0 2-.9 2-2v-7a9 9 0 0 0-9-9z" />
+          {activeCall.type === "dm" ? (
+            <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z" />
+          ) : (
+            <path d="M12 3a9 9 0 0 0-9 9v7c0 1.1.9 2 2 2h4v-8H5v-1c0-3.87 3.13-7 7-7s7 3.13 7 7v1h-4v8h4c1.1 0 2-.9 2-2v-7a9 9 0 0 0-9-9z" />
+          )}
         </svg>
         <span className="truncate text-xs text-slate-300">{channelName}</span>
       </div>
+
+      {/* Screen sharing indicator */}
+      {screenShareEnabled && (
+        <div className="mb-2 flex items-center gap-1.5 rounded-lg border border-nexe-500/20 bg-nexe-500/5 px-2.5 py-1.5">
+          <div className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-red-500" />
+          <span className="flex-1 truncate text-[11px] font-medium text-nexe-400">Sharing Screen</span>
+          <span className="rounded bg-dark-700 px-1.5 py-0.5 text-[9px] font-bold text-slate-400">
+            {useVoiceStore.getState().screenShareQuality.replace("p", "p ")}
+          </span>
+          <button
+            onClick={() => useVoiceStore.getState().switchScreenShare()}
+            className="rounded bg-dark-700 px-1.5 py-0.5 text-[9px] font-medium text-slate-300 transition-colors hover:bg-dark-600 hover:text-white"
+            title="Switch window or screen"
+          >
+            Switch
+          </button>
+        </div>
+      )}
 
       {/* Voice Settings Panel */}
       {showSettings && (
         <div className="mb-2 space-y-2 rounded-lg border border-dark-700 bg-dark-900 p-2.5">
           <p className="text-[10px] font-medium uppercase tracking-wider text-slate-500">Voice Settings</p>
-
-          {/* Input device */}
           <div>
             <label className="mb-1 block text-[10px] text-slate-500">Input Device</label>
             <select
@@ -150,8 +179,6 @@ export default function VoicePanel() {
               ))}
             </select>
           </div>
-
-          {/* Output device */}
           <div>
             <label className="mb-1 block text-[10px] text-slate-500">Output Device</label>
             <select
@@ -170,80 +197,43 @@ export default function VoicePanel() {
 
       {/* Controls */}
       <div className="flex items-center gap-1">
-        <button
-          onClick={toggleMute}
-          className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
-            selfMute
-              ? "bg-red-500/20 text-red-400 hover:bg-red-500/30"
-              : "bg-dark-700 text-slate-300 hover:bg-dark-600"
-          }`}
-          title={selfMute ? "Unmute" : "Mute"}
-        >
-          {selfMute ? (
-            <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
-              <path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z" />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
-              <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z" />
-            </svg>
-          )}
-        </button>
-
-        <button
-          onClick={toggleDeafen}
-          className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
-            selfDeaf
-              ? "bg-red-500/20 text-red-400 hover:bg-red-500/30"
-              : "bg-dark-700 text-slate-300 hover:bg-dark-600"
-          }`}
-          title={selfDeaf ? "Undeafen" : "Deafen"}
-        >
-          {selfDeaf ? (
-            <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
-              <path d="M4.34 2.93L2.93 4.34 7.29 8.7 7 9H3v6h4l5 5v-6.59l4.18 4.18c-.65.49-1.38.88-2.18 1.11v2.06a8.94 8.94 0 0 0 3.61-1.75l2.05 2.05 1.41-1.41L4.34 2.93zM19 12c0 .82-.15 1.61-.41 2.34l1.53 1.53c.56-1.17.88-2.48.88-3.87 0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zm-7-8l-1.88 1.88L12 7.76zm4.5 8A4.5 4.5 0 0 0 14 7.97v1.79l2.48 2.48c.01-.08.02-.16.02-.24z" />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
-              <path d="M12 3a9 9 0 0 0-9 9v7c0 1.1.9 2 2 2h4v-8H5v-1c0-3.87 3.13-7 7-7s7 3.13 7 7v1h-4v8h4c1.1 0 2-.9 2-2v-7a9 9 0 0 0-9-9z" />
-            </svg>
-          )}
-        </button>
-
-        {/* Camera toggle */}
-        <button
-          onClick={toggleCamera}
-          className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
-            cameraEnabled
-              ? "bg-nexe-500/20 text-nexe-400 hover:bg-nexe-500/30"
-              : "bg-dark-700 text-slate-300 hover:bg-dark-600"
-          }`}
-          title={cameraEnabled ? "Turn off camera" : "Turn on camera"}
-        >
-          <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
-            {cameraEnabled ? (
-              <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z" />
-            ) : (
-              <path d="M21 6.5l-4 4V7c0-.55-.45-1-1-1H9.82L21 17.18V6.5zM3.27 2L2 3.27 4.73 6H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.21 0 .39-.08.54-.18L19.73 21 21 19.73 3.27 2z" />
-            )}
-          </svg>
-        </button>
-
-        {/* Screen share toggle */}
-        <button
-          onClick={toggleScreenShare}
-          className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
-            screenShareEnabled
-              ? "bg-nexe-500/20 text-nexe-400 hover:bg-nexe-500/30"
-              : "bg-dark-700 text-slate-300 hover:bg-dark-600"
-          }`}
-          title={screenShareEnabled ? "Stop sharing" : "Share screen"}
-        >
-          <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
-            <path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z" />
-          </svg>
-        </button>
+        <PanelBtn active={selfMute} danger={selfMute} onClick={toggleMute} title={selfMute ? "Unmute" : "Mute"}>
+          {selfMute
+            ? <path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99zM4.27 3L3 4.27l6.01 6.01V11c0 1.66 1.33 3 2.99 3 .22 0 .44-.03.65-.08l1.66 1.66c-.71.33-1.5.52-2.31.52-2.76 0-5.3-2.1-5.3-5.1H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z" />
+            : <path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z" />}
+        </PanelBtn>
+        <PanelBtn active={selfDeaf} danger={selfDeaf} onClick={toggleDeafen} title={selfDeaf ? "Undeafen" : "Deafen"}>
+          {selfDeaf
+            ? <path d="M4.34 2.93L2.93 4.34 7.29 8.7 7 9H3v6h4l5 5v-6.59l4.18 4.18c-.65.49-1.38.88-2.18 1.11v2.06a8.94 8.94 0 0 0 3.61-1.75l2.05 2.05 1.41-1.41L4.34 2.93zM19 12c0 .82-.15 1.61-.41 2.34l1.53 1.53c.56-1.17.88-2.48.88-3.87 0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zm-7-8l-1.88 1.88L12 7.76zm4.5 8A4.5 4.5 0 0 0 14 7.97v1.79l2.48 2.48c.01-.08.02-.16.02-.24z" />
+            : <path d="M12 3a9 9 0 0 0-9 9v7c0 1.1.9 2 2 2h4v-8H5v-1c0-3.87 3.13-7 7-7s7 3.13 7 7v1h-4v8h4c1.1 0 2-.9 2-2v-7a9 9 0 0 0-9-9z" />}
+        </PanelBtn>
+        <PanelBtn active={cameraEnabled} onClick={toggleCamera} title={cameraEnabled ? "Turn off camera" : "Turn on camera"}>
+          {cameraEnabled
+            ? <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z" />
+            : <path d="M21 6.5l-4 4V7c0-.55-.45-1-1-1H9.82L21 17.18V6.5zM3.27 2L2 3.27 4.73 6H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.21 0 .39-.08.54-.18L19.73 21 21 19.73 3.27 2z" />}
+        </PanelBtn>
+        <PanelBtn active={screenShareEnabled} onClick={toggleScreenShare} title={screenShareEnabled ? "Stop sharing" : "Share screen"}>
+          <path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z" />
+        </PanelBtn>
       </div>
     </div>
+  );
+}
+
+function PanelBtn({ children, active, danger, onClick, title }: {
+  children: React.ReactNode; active?: boolean; danger?: boolean; onClick: () => void; title: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
+        danger || active
+          ? "bg-red-500/20 text-red-400 hover:bg-red-500/30"
+          : "bg-dark-700 text-slate-300 hover:bg-dark-600"
+      }`}
+      title={title}
+    >
+      <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">{children}</svg>
+    </button>
   );
 }

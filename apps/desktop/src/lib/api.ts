@@ -181,6 +181,14 @@ export interface User {
   totpEnabled?: boolean;
 }
 
+export interface DMCallSignal {
+  type: string;
+  callId: string;
+  channelId: string;
+  callerId: string;
+  video: boolean;
+}
+
 export interface StreamStatus {
   live: boolean;
   linked: boolean;

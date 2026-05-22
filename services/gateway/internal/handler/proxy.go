@@ -81,6 +81,7 @@ func (h *ProxyHandler) proxy(w http.ResponseWriter, r *http.Request, targetBase 
 			proxyReq.Header.Set("X-Tier-Max-Stickers", strconv.Itoa(limits.MaxStickersPerGuild))
 			proxyReq.Header.Set("X-Tier-Max-Owned-Guilds", strconv.Itoa(limits.MaxOwnedGuilds))
 			proxyReq.Header.Set("X-Tier-Voice-Bitrate", strconv.Itoa(limits.VoiceBitrate))
+			proxyReq.Header.Set("X-Tier-Screen-Share-Quality", limits.ScreenShareQuality)
 		}
 	}
 

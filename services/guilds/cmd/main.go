@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net"
 	"net/http"
@@ -141,6 +142,25 @@ func main() {
 		// Remove poll votes
 		slog.Info("gdpr: guilds data anonymized", "userId", uid)
 		w.WriteHeader(http.StatusOK)
+	})
+
+	// Internal: get DM channel participant IDs (for voice service)
+	mux.HandleFunc("GET /internal/dm-participants/{channelId}", func(w http.ResponseWriter, r *http.Request) {
+		channelID := r.PathValue("channelId")
+		ids, err := dmRepo.GetParticipantIDs(r.Context(), channelID)
+		if err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		type p struct {
+			UserID string `json:"userId"`
+		}
+		result := make([]p, len(ids))
+		for i, id := range ids {
+			result[i] = p{UserID: id}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(result)
 	})
 
 	// Background worker for scheduled messages and reminders

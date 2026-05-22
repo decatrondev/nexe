@@ -244,12 +244,21 @@ function VoiceParticipantRow({
     setShowTooltip(false);
   }
 
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const myUserId = useAuthStore((s) => s.user?.id);
+
   return (
     <div
       ref={rowRef}
       className="relative flex items-center gap-1.5 rounded px-2 py-0.5 text-xs text-slate-400 hover:bg-dark-800/50"
       onMouseEnter={showTip}
       onMouseLeave={hideTip}
+      onContextMenu={(e) => {
+        if (p.userId !== myUserId) {
+          e.preventDefault();
+          setCtxMenu({ x: e.clientX, y: e.clientY });
+        }
+      }}
     >
       {avatarUrl ? (
         <img
@@ -323,6 +332,51 @@ function VoiceParticipantRow({
           </button>
         </div>
       )}
+
+      {/* Right-click context menu */}
+      {ctxMenu && <VoiceContextMenu userId={p.userId} name={username} x={ctxMenu.x} y={ctxMenu.y} onClose={() => setCtxMenu(null)} />}
+    </div>
+  );
+}
+
+/* ─── Voice participant right-click menu ─── */
+function VoiceContextMenu({ userId, name, x, y, onClose }: { userId: string; name: string; x: number; y: number; onClose: () => void }) {
+  const [volume, setVolume] = useState(100);
+
+  useEffect(() => {
+    const handler = () => onClose();
+    window.addEventListener("click", handler);
+    window.addEventListener("contextmenu", handler);
+    return () => { window.removeEventListener("click", handler); window.removeEventListener("contextmenu", handler); };
+  }, [onClose]);
+
+  function handleVolume(val: number) {
+    setVolume(val);
+    document.querySelectorAll<HTMLAudioElement>(`.voice-audio-user-${userId}`).forEach((el) => { el.volume = Math.min(val / 100, 1); });
+  }
+
+  return (
+    <div style={{ position: "fixed", left: x, top: y, zIndex: 9999 }} className="w-52 rounded-lg border border-dark-700 bg-dark-900 py-1.5 shadow-2xl animate-fade-in" onClick={(e) => e.stopPropagation()}>
+      <p className="mb-1 truncate px-3 text-xs font-semibold text-white">{name}</p>
+      <div className="my-1 border-t border-dark-700" />
+      <div className="px-3 py-1.5">
+        <p className="mb-1.5 text-[10px] font-medium uppercase text-slate-500">User Volume</p>
+        <div className="flex items-center gap-2">
+          <svg viewBox="0 0 24 24" className="h-3 w-3 shrink-0 fill-current text-slate-500"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" /></svg>
+          <input type="range" min={0} max={200} value={volume} onChange={(e) => handleVolume(Number(e.target.value))}
+            className="h-1 flex-1 cursor-pointer appearance-none rounded-full bg-dark-600 accent-nexe-500 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-nexe-400" />
+          <span className="w-8 text-right text-[9px] font-medium text-slate-400">{volume}%</span>
+        </div>
+      </div>
+      <div className="my-1 border-t border-dark-700" />
+      <button onClick={() => { handleVolume(0); onClose(); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-dark-800">
+        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current text-slate-500"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a8.99 8.99 0 0 0 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" /></svg>
+        Mute for me
+      </button>
+      <button onClick={() => { window.dispatchEvent(new CustomEvent("nexe:open-profile", { detail: { userId } })); onClose(); }} className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-dark-800">
+        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current text-slate-500"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" /></svg>
+        View Profile
+      </button>
     </div>
   );
 }
@@ -632,9 +686,9 @@ export default function ChannelList() {
 
   const reorderChannels = useGuildStore((s) => s.reorderChannels);
 
-  const voiceChannelId = useVoiceStore((s) => s.channelId);
-  const voiceConnected = useVoiceStore((s) => s.connected);
-  const voiceConnecting = useVoiceStore((s) => s.connecting);
+  const voiceChannelId = useVoiceStore((s) => s.activeCall?.channelId ?? null);
+  const voiceConnected = useVoiceStore((s) => s.activeCall != null && s.activeCall.status !== "connecting");
+  const voiceConnecting = useVoiceStore((s) => s.activeCall?.status === "connecting");
   // Collapsed state per guild, persisted in localStorage
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(
     () => activeGuildId ? loadCollapsed(activeGuildId) : new Set()

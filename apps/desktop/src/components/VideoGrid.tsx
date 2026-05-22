@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { Track, ConnectionQuality } from "livekit-client";
 import { useVoiceStore } from "../stores/voice";
 import { useGuildStore } from "../stores/guild";
+import { useDMStore } from "../stores/dm";
 import { useAuthStore } from "../stores/auth";
 import type { VoiceState } from "../lib/api";
 
@@ -11,7 +12,7 @@ import type { VoiceState } from "../lib/api";
  * auto-hide controls, hide sidebar, viewers count.
  */
 export default function VoiceView() {
-  const connected = useVoiceStore((s) => s.connected);
+  const activeCall = useVoiceStore((s) => s.activeCall);
   const participants = useVoiceStore((s) => s.participants);
   useVoiceStore((s) => s.videoTracks); // subscribe for re-renders
   const speakingUsers = useVoiceStore((s) => s.speakingUsers);
@@ -19,18 +20,19 @@ export default function VoiceView() {
   const selfDeaf = useVoiceStore((s) => s.selfDeaf);
   const cameraEnabled = useVoiceStore((s) => s.cameraEnabled);
   const screenShareEnabled = useVoiceStore((s) => s.screenShareEnabled);
-  const channelId = useVoiceStore((s) => s.channelId);
   const room = useVoiceStore((s) => s.room);
   const toggleMute = useVoiceStore((s) => s.toggleMute);
   const toggleDeafen = useVoiceStore((s) => s.toggleDeafen);
   const toggleCamera = useVoiceStore((s) => s.toggleCamera);
   const toggleScreenShare = useVoiceStore((s) => s.toggleScreenShare);
-  const leaveChannel = useVoiceStore((s) => s.leaveChannel);
+  const disconnect = useVoiceStore((s) => s.disconnect);
   const usernames = useGuildStore((s) => s.usernames);
   const channels = useGuildStore((s) => s.channels);
-  const activeGuildId = useGuildStore((s) => s.activeGuildId);
+  // activeGuildId not needed — activeCall has it
   const setActiveChannel = useGuildStore((s) => s.setActiveChannel);
+  const dmChannels = useDMStore((s) => s.channels);
   const myUserId = useAuthStore((s) => s.user?.id);
+  const channelId = activeCall?.channelId || null;
 
   const [quality, setQuality] = useState<"excellent" | "good" | "poor">("excellent");
   const [layout, setLayout] = useState<"spotlight" | "grid">("spotlight");
@@ -39,6 +41,7 @@ export default function VoiceView() {
   const [showControls, setShowControls] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPiP, setIsPiP] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState<{ userId: string; name: string; x: number; y: number } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -46,7 +49,7 @@ export default function VoiceView() {
 
   // Connection quality
   useEffect(() => {
-    if (!connected || !room) return;
+    if (!activeCall || !room) return;
     const interval = setInterval(() => {
       const q = room.localParticipant?.connectionQuality;
       if (q === ConnectionQuality.Excellent) setQuality("excellent");
@@ -54,7 +57,7 @@ export default function VoiceView() {
       else setQuality("poor");
     }, 3000);
     return () => clearInterval(interval);
-  }, [connected, room]);
+  }, [activeCall, room]);
 
   // Auto-hide controls after 3s of no mouse movement
   const resetControlsTimer = useCallback(() => {
@@ -105,11 +108,22 @@ export default function VoiceView() {
     }
   }
 
-  if (!connected) return null;
+  if (!activeCall || activeCall.status === "connecting") return null;
 
-  const guildChannels = activeGuildId ? channels[activeGuildId] : [];
-  const channel = guildChannels?.find((c) => c.id === channelId);
-  const channelName = channel?.name || "Voice Channel";
+  // Resolve channel name for guild or DM
+  let channelName = "Voice Channel";
+  if (activeCall.type === "guild" && activeCall.guildId) {
+    const guildChs = channels[activeCall.guildId];
+    channelName = guildChs?.find((c) => c.id === channelId)?.name || "Voice Channel";
+  } else if (activeCall.type === "dm") {
+    const dmCh = dmChannels.find((c) => c.id === channelId);
+    if (dmCh?.type === "group_dm") {
+      channelName = dmCh.name || "Group Call";
+    } else {
+      const other = dmCh?.participants?.find((p) => p.userId !== myUserId);
+      channelName = other ? (usernames[other.userId] || "DM Call") : "DM Call";
+    }
+  }
 
   // Build participant list
   const channelParticipants = participants.filter((p) => p.channelId === channelId);
@@ -181,7 +195,7 @@ export default function VoiceView() {
   return (
     <div
       ref={containerRef}
-      className="voice-view-container flex flex-1 flex-col bg-dark-950"
+      className="voice-view-container flex flex-1 flex-col bg-dark-950 [&:fullscreen]:fixed [&:fullscreen]:inset-0 [&:fullscreen]:z-[9999]"
       onMouseMove={resetControlsTimer}
     >
       {/* Header */}
@@ -196,14 +210,22 @@ export default function VoiceView() {
         <div className="ml-1 flex items-center gap-1">
           <div className={`h-1.5 w-1.5 rounded-full ${quality === "excellent" ? "bg-green-500" : quality === "good" ? "bg-yellow-500" : "bg-red-500"}`} />
         </div>
+        {screenShareEnabled && (
+          <span className="rounded bg-red-500/15 px-1.5 py-0.5 text-[10px] font-bold text-red-400">
+            LIVE &middot; {useVoiceStore.getState().screenShareQuality.replace("p", "p ")}
+          </span>
+        )}
 
         <div className="ml-auto flex items-center gap-1">
           {/* Back to chat */}
           <button
             onClick={() => {
-              const guildChs = activeGuildId ? channels[activeGuildId] : [];
-              const firstText = guildChs?.find((c) => c.type === "text");
-              if (firstText) setActiveChannel(firstText.id);
+              if (activeCall?.type === "guild" && activeCall.guildId) {
+                const guildChs = channels[activeCall.guildId] || [];
+                const firstText = guildChs.find((c) => c.type === "text");
+                if (firstText) setActiveChannel(firstText.id);
+              }
+              // For DM calls, just close the view (user navigates normally)
             }}
             className="mr-2 flex items-center gap-1.5 rounded-md bg-dark-700 px-2.5 py-1 text-xs font-medium text-slate-300 transition-colors hover:bg-dark-600 hover:text-white"
           >
@@ -302,13 +324,9 @@ export default function VoiceView() {
                     </div>
                   </div>
                 )}
-                {/* Stream label overlay */}
+                {/* Stream label overlay + volume */}
                 {focusIsStreaming && (
-                  <div className="absolute bottom-3 left-3 flex items-center gap-2 rounded-md bg-black/70 px-2.5 py-1 backdrop-blur-sm">
-                    <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-                    <span className="text-xs font-medium text-white">{focusName}</span>
-                    <span className="text-[10px] text-slate-400">{focusStreamType === "screen" ? "Screen" : "Camera"}</span>
-                  </div>
+                  <StreamOverlay name={focusName} streamType={focusStreamType} userId={focusId || ""} isLocal={focusIsLocal} />
                 )}
               </div>
             </div>
@@ -348,6 +366,7 @@ export default function VoiceView() {
                     isFocused={p.userId === focusId && !focusSlot}
                     onClick={() => setFocusUserId(p.userId)}
                     hasCam={p.streaming || (p.userId === myUserId && cameraEnabled)}
+                    onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ userId: p.userId, name: usernames[p.userId] || p.userId.slice(0, 8), x: e.clientX, y: e.clientY }); }}
                   />
                 ))}
               </div>
@@ -395,14 +414,30 @@ export default function VoiceView() {
         <CtrlBtn active={screenShareEnabled} onClick={toggleScreenShare} label={screenShareEnabled ? "Stop Share" : "Share Screen"}>
           <path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z" />
         </CtrlBtn>
+        {screenShareEnabled && (
+          <CtrlBtn onClick={() => useVoiceStore.getState().switchScreenShare()} label="Switch Source">
+            <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
+          </CtrlBtn>
+        )}
         <div className="mx-1 h-5 w-px bg-dark-700" />
-        <CtrlBtn danger onClick={leaveChannel} label="Disconnect">
+        <CtrlBtn danger onClick={disconnect} label="Disconnect">
           <path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08a.956.956 0 0 1-.29-.7c0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28a11.27 11.27 0 0 0-2.67-1.85.996.996 0 0 1-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z" />
         </CtrlBtn>
       </div>
 
       {/* Hidden PiP video element */}
       <video ref={pipVideoRef} className="hidden" />
+
+      {/* Right-click context menu */}
+      {ctxMenu && (
+        <ParticipantContextMenu
+          userId={ctxMenu.userId}
+          name={ctxMenu.name}
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          onClose={() => setCtxMenu(null)}
+        />
+      )}
     </div>
   );
 }
@@ -424,48 +459,73 @@ function CtrlBtn({ children, active, danger, onClick, label }: {
   );
 }
 
-/* ─── Sidebar Tile (small, clickable to focus) ─── */
-function SidebarTile({ participant: p, name, speaking, isLocal, isFocused, onClick, hasCam }: {
-  participant: VoiceState; name: string; speaking: boolean; isLocal: boolean; isFocused: boolean; onClick: () => void; hasCam: boolean;
+/* ─── Sidebar Tile (clickable to focus + inline volume) ─── */
+function SidebarTile({ participant: p, name, speaking, isLocal, isFocused, onClick, hasCam, onContextMenu }: {
+  participant: VoiceState; name: string; speaking: boolean; isLocal: boolean; isFocused: boolean; onClick: () => void; hasCam: boolean; onContextMenu?: (e: React.MouseEvent) => void;
 }) {
   const avatarMap = useGuildStore((s) => s.avatarMap);
   const avatarUrl = avatarMap[p.userId];
+  const [showVolume, setShowVolume] = useState(false);
+  const [volume, setVolume] = useState(100);
+
+  function handleVolumeChange(val: number) {
+    setVolume(val);
+    document.querySelectorAll<HTMLAudioElement>(`.voice-audio-user-${p.userId}`).forEach((el) => { el.volume = Math.min(val / 100, 1); });
+  }
 
   return (
-    <button
-      onClick={onClick}
-      className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors ${isFocused ? "bg-nexe-500/10 border border-nexe-500/30" : "hover:bg-dark-800 border border-transparent"}`}
-    >
-      {avatarUrl ? (
-        <img
-          src={avatarUrl}
-          alt={name}
-          className={`h-8 w-8 shrink-0 rounded-full object-cover transition-all ${speaking ? "ring-2 ring-green-500" : ""}`}
-        />
-      ) : (
-        <div
-          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white transition-all ${
-            speaking ? "ring-2 ring-green-500" : ""
-          }`}
-          style={{ backgroundColor: stringToColor(p.userId) }}
-        >
-          {name.charAt(0).toUpperCase()}
+    <div onContextMenu={onContextMenu}>
+      <div className={`flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors ${isFocused ? "bg-nexe-500/10 border border-nexe-500/30" : "hover:bg-dark-800 border border-transparent"}`}>
+        <button onClick={onClick} className="flex shrink-0 items-center">
+          {avatarUrl ? (
+            <img src={avatarUrl} alt={name} className={`h-8 w-8 rounded-full object-cover transition-all ${speaking ? "ring-2 ring-green-500" : ""}`} />
+          ) : (
+            <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white transition-all ${speaking ? "ring-2 ring-green-500" : ""}`} style={{ backgroundColor: stringToColor(p.userId) }}>
+              {name.charAt(0).toUpperCase()}
+            </div>
+          )}
+        </button>
+        <button onClick={onClick} className="min-w-0 flex-1 text-left">
+          <div className="flex items-center gap-1">
+            <span className="truncate text-xs font-medium text-slate-300">{isLocal ? "You" : name}</span>
+            {p.streaming && <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />}
+          </div>
+          <div className="flex items-center gap-1">
+            {p.selfMute && <svg viewBox="0 0 24 24" className="h-2.5 w-2.5 fill-current text-red-400"><path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99z" /></svg>}
+            {p.selfDeaf && <svg viewBox="0 0 24 24" className="h-2.5 w-2.5 fill-current text-red-400"><path d="M4.34 2.93L2.93 4.34 7.29 8.7 7 9H3v6h4l5 5v-6.59l4.18 4.18c-.65.49-1.38.88-2.18 1.11v2.06a8.94 8.94 0 0 0 3.61-1.75l2.05 2.05 1.41-1.41z" /></svg>}
+            {hasCam && <svg viewBox="0 0 24 24" className="h-2.5 w-2.5 fill-current text-slate-500"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z" /></svg>}
+          </div>
+        </button>
+        {/* Volume toggle button (remote users only) */}
+        {!isLocal && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setShowVolume(!showVolume); }}
+            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded transition-colors ${showVolume ? "text-nexe-400" : "text-slate-600 hover:text-slate-400"}`}
+            title="Volume"
+          >
+            <svg viewBox="0 0 24 24" className="h-3 w-3 fill-current">
+              {volume === 0
+                ? <path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a8.99 8.99 0 0 0 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
+                : <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />}
+            </svg>
+          </button>
+        )}
+      </div>
+      {/* Inline volume slider (click to toggle) */}
+      {showVolume && !isLocal && (
+        <div className="mx-2 mb-1 mt-0.5 flex items-center gap-2 rounded-md bg-dark-800/80 px-2 py-1.5">
+          <input
+            type="range"
+            min={0}
+            max={200}
+            value={volume}
+            onChange={(e) => handleVolumeChange(Number(e.target.value))}
+            className="h-1 flex-1 cursor-pointer appearance-none rounded-full bg-dark-600 accent-nexe-500 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-nexe-400"
+          />
+          <span className="w-8 text-right text-[9px] font-medium text-slate-400">{volume}%</span>
         </div>
       )}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1">
-          <span className="truncate text-xs font-medium text-slate-300">{isLocal ? "You" : name}</span>
-          {p.streaming && (
-            <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-          )}
-        </div>
-        <div className="flex items-center gap-1">
-          {p.selfMute && <svg viewBox="0 0 24 24" className="h-2.5 w-2.5 fill-current text-red-400"><path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99z" /></svg>}
-          {p.selfDeaf && <svg viewBox="0 0 24 24" className="h-2.5 w-2.5 fill-current text-red-400"><path d="M4.34 2.93L2.93 4.34 7.29 8.7 7 9H3v6h4l5 5v-6.59l4.18 4.18c-.65.49-1.38.88-2.18 1.11v2.06a8.94 8.94 0 0 0 3.61-1.75l2.05 2.05 1.41-1.41z" /></svg>}
-          {hasCam && <svg viewBox="0 0 24 24" className="h-2.5 w-2.5 fill-current text-slate-500"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z" /></svg>}
-        </div>
-      </div>
-    </button>
+    </div>
   );
 }
 
@@ -545,6 +605,115 @@ function SpotlightVideo({ userId, streamType, isLocal }: { userId: string; strea
       playsInline
       className={`h-full w-full ${streamType === "screen" ? "object-contain" : "object-cover"}`}
     />
+  );
+}
+
+/* ─── Stream Overlay (volume control on the video) ─── */
+function StreamOverlay({ name, streamType, userId, isLocal }: { name: string; streamType: string; userId: string; isLocal: boolean }) {
+  const [volume, setVolume] = useState(100);
+  const [showSlider, setShowSlider] = useState(false);
+
+  function handleVolume(val: number) {
+    setVolume(val);
+    document.querySelectorAll<HTMLAudioElement>(`.voice-audio-user-${userId}`).forEach((el) => { el.volume = Math.min(val / 100, 1); });
+  }
+
+  return (
+    <div className="absolute bottom-3 left-3 flex items-center gap-2 rounded-lg bg-black/70 px-3 py-1.5 backdrop-blur-sm">
+      <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+      <span className="text-xs font-medium text-white">{name}</span>
+      <span className="text-[10px] text-slate-400">{streamType === "screen" ? "Screen" : "Camera"}</span>
+      {!isLocal && (
+        <>
+          <div className="mx-1 h-3 w-px bg-white/20" />
+          <button onClick={() => setShowSlider(!showSlider)} className="flex items-center text-slate-400 hover:text-white" title="Stream Volume">
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
+              <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
+            </svg>
+          </button>
+          {showSlider && (
+            <div className="flex items-center gap-1.5">
+              <input
+                type="range" min={0} max={200} value={volume}
+                onChange={(e) => handleVolume(Number(e.target.value))}
+                className="h-1 w-20 cursor-pointer appearance-none rounded-full bg-white/20 accent-nexe-500 [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+              />
+              <span className="text-[9px] text-slate-400">{volume}%</span>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/* ─── Participant Context Menu (right-click) ─── */
+function ParticipantContextMenu({ userId, name, x, y, onClose }: {
+  userId: string; name: string; x: number; y: number; onClose: () => void;
+}) {
+  const [volume, setVolume] = useState(100);
+  const myId = useAuthStore((s) => s.user?.id);
+
+  useEffect(() => {
+    const handler = () => onClose();
+    window.addEventListener("click", handler);
+    window.addEventListener("contextmenu", handler);
+    return () => { window.removeEventListener("click", handler); window.removeEventListener("contextmenu", handler); };
+  }, [onClose]);
+
+  function handleVolume(val: number) {
+    setVolume(val);
+    document.querySelectorAll<HTMLAudioElement>(`.voice-audio-user-${userId}`).forEach((el) => { el.volume = Math.min(val / 100, 1); });
+  }
+
+  function muteForMe() {
+    handleVolume(0);
+    onClose();
+  }
+
+  if (userId === myId) return null;
+
+  // Position: ensure menu stays on screen
+  const menuStyle: React.CSSProperties = {
+    position: "fixed", left: x, top: y, zIndex: 9999,
+  };
+
+  return (
+    <div style={menuStyle} className="w-52 rounded-lg border border-dark-700 bg-dark-900 py-1.5 shadow-2xl animate-fade-in" onClick={(e) => e.stopPropagation()}>
+      <p className="mb-1 truncate px-3 text-xs font-semibold text-white">{name}</p>
+      <div className="my-1 border-t border-dark-700" />
+
+      {/* Volume slider */}
+      <div className="px-3 py-1.5">
+        <p className="mb-1.5 text-[10px] font-medium uppercase text-slate-500">User Volume</p>
+        <div className="flex items-center gap-2">
+          <svg viewBox="0 0 24 24" className="h-3 w-3 shrink-0 fill-current text-slate-500">
+            <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" />
+          </svg>
+          <input
+            type="range" min={0} max={200} value={volume}
+            onChange={(e) => handleVolume(Number(e.target.value))}
+            className="h-1 flex-1 cursor-pointer appearance-none rounded-full bg-dark-600 accent-nexe-500 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-nexe-400"
+          />
+          <span className="w-8 text-right text-[9px] font-medium text-slate-400">{volume}%</span>
+        </div>
+      </div>
+
+      <div className="my-1 border-t border-dark-700" />
+
+      {/* Actions */}
+      <button onClick={muteForMe} className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 transition-colors hover:bg-dark-800">
+        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current text-slate-500"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a8.99 8.99 0 0 0 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" /></svg>
+        Mute for me
+      </button>
+      <button
+        onClick={() => { window.dispatchEvent(new CustomEvent("nexe:open-profile", { detail: { userId } })); onClose(); }}
+        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 transition-colors hover:bg-dark-800"
+      >
+        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current text-slate-500"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" /></svg>
+        View Profile
+      </button>
+    </div>
   );
 }
 

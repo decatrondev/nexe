@@ -27,7 +27,7 @@ export default function UserBar() {
   const presenceMap = useGuildStore((s) => s.presenceMap);
   const userStatus = (user?.id ? presenceMap[user.id] : null) || user?.status || "online";
 
-  const connected = useVoiceStore((s) => s.connected);
+  const connected = useVoiceStore((s) => s.activeCall != null && s.activeCall.status !== "connecting");
   const selfMute = useVoiceStore((s) => s.selfMute);
   const selfDeaf = useVoiceStore((s) => s.selfDeaf);
   const toggleMute = useVoiceStore((s) => s.toggleMute);

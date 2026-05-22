@@ -51,3 +51,24 @@ func (p *EventPublisher) Publish(ctx context.Context, guildID, channelID, eventT
 		slog.Debug("event published", "type", eventType, "guild", guildID)
 	}
 }
+
+// PublishToUser sends an event directly to a specific user via their notification channel.
+func (p *EventPublisher) PublishToUser(ctx context.Context, targetUserID, eventType string, data interface{}) {
+	event := Event{
+		Type: eventType,
+		Data: data,
+	}
+
+	payload, err := json.Marshal(event)
+	if err != nil {
+		slog.Error("failed to marshal user event", "error", err, "type", eventType)
+		return
+	}
+
+	channel := fmt.Sprintf("nexe:notifications:user:%s", targetUserID)
+	if err := p.rdb.Publish(ctx, channel, payload).Err(); err != nil {
+		slog.Error("failed to publish user event", "error", err, "channel", channel, "type", eventType)
+	} else {
+		slog.Debug("user event published", "type", eventType, "user", targetUserID)
+	}
+}

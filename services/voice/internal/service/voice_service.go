@@ -394,6 +394,45 @@ func dmCallKey(callID string) string {
 	return fmt.Sprintf("nexe:dm-call:%s", callID)
 }
 
+// getDMParticipantIDs fetches participant user IDs for a DM channel from the guilds service.
+func (s *VoiceService) getDMParticipantIDs(channelID string) ([]string, error) {
+	url := fmt.Sprintf("%s/internal/dm-participants/%s", s.guildsURL, channelID)
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to get DM participants: %d", resp.StatusCode)
+	}
+	var participants []struct {
+		UserID string `json:"userId"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&participants); err != nil {
+		return nil, err
+	}
+	ids := make([]string, len(participants))
+	for i, p := range participants {
+		ids[i] = p.UserID
+	}
+	return ids, nil
+}
+
+// publishDMCallEvent sends a DM call event to all participants of the channel except the sender.
+func (s *VoiceService) publishDMCallEvent(ctx context.Context, channelID, excludeUserID, eventType string, data interface{}) {
+	ids, err := s.getDMParticipantIDs(channelID)
+	if err != nil {
+		slog.Error("failed to get DM participants for call event", "error", err, "channel", channelID)
+		return
+	}
+	for _, uid := range ids {
+		if uid == excludeUserID {
+			continue
+		}
+		s.events.PublishToUser(ctx, uid, eventType, data)
+	}
+}
+
 // StartDMCall creates a LiveKit room for a DM call and signals the recipient.
 func (s *VoiceService) StartDMCall(ctx context.Context, callerID, username, channelID string, video bool) (*model.DMCallResponse, error) {
 	// Leave any existing voice channel
@@ -441,14 +480,15 @@ func (s *VoiceService) StartDMCall(ctx context.Context, callerID, username, chan
 	})
 	s.rdb.Set(ctx, dmCallKey(callID), callData, 2*time.Minute) // ring expires in 2 min
 
-	// Publish ring event to the DM channel
-	s.events.Publish(ctx, "", channelID, "DM_CALL_RING", callerID, model.DMCallSignal{
+	// Publish ring event to all DM participants except caller
+	signal := model.DMCallSignal{
 		Type:      "ring",
 		CallID:    callID,
 		ChannelID: channelID,
 		CallerID:  callerID,
 		Video:     video,
-	})
+	}
+	s.publishDMCallEvent(ctx, channelID, callerID, "DM_CALL_RING", signal)
 
 	return &model.DMCallResponse{
 		CallID: callID,
@@ -484,8 +524,8 @@ func (s *VoiceService) AcceptDMCall(ctx context.Context, userID, username, callI
 		return nil, fmt.Errorf("failed to generate accept token: %w", err)
 	}
 
-	// Publish accept event
-	s.events.Publish(ctx, "", signal.ChannelID, "DM_CALL_ACCEPT", userID, model.DMCallSignal{
+	// Publish accept event to all DM participants except accepter
+	s.publishDMCallEvent(ctx, signal.ChannelID, userID, "DM_CALL_ACCEPT", model.DMCallSignal{
 		Type:      "accept",
 		CallID:    callID,
 		ChannelID: signal.ChannelID,
@@ -512,7 +552,7 @@ func (s *VoiceService) RejectDMCall(ctx context.Context, userID, callID string) 
 	var signal model.DMCallSignal
 	json.Unmarshal([]byte(data), &signal)
 
-	s.events.Publish(ctx, "", signal.ChannelID, "DM_CALL_REJECT", userID, model.DMCallSignal{
+	s.publishDMCallEvent(ctx, signal.ChannelID, userID, "DM_CALL_REJECT", model.DMCallSignal{
 		Type:      "reject",
 		CallID:    callID,
 		ChannelID: signal.ChannelID,
@@ -533,7 +573,7 @@ func (s *VoiceService) EndDMCall(ctx context.Context, userID, callID string) err
 	var signal model.DMCallSignal
 	json.Unmarshal([]byte(data), &signal)
 
-	s.events.Publish(ctx, "", signal.ChannelID, "DM_CALL_END", userID, model.DMCallSignal{
+	s.publishDMCallEvent(ctx, signal.ChannelID, userID, "DM_CALL_END", model.DMCallSignal{
 		Type:      "end",
 		CallID:    callID,
 		ChannelID: signal.ChannelID,

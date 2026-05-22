@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { useDMStore } from "../stores/dm";
 import { useAuthStore } from "../stores/auth";
 import { useGuildStore } from "../stores/guild";
+import { useVoiceStore } from "../stores/voice";
 import { userColor, formatTimestamp } from "../lib/utils";
 import { api, type DMMessage, type ReactionGroup } from "../lib/api";
 import { toast } from "@nexe/ui";
@@ -287,30 +288,36 @@ export default function DMChat() {
         {isGroup ? (
           <>
             <span className="text-xs text-slate-500">{channel?.participants?.length ?? 0} members</span>
-            <button
-              onClick={() => setShowMembers(!showMembers)}
-              className={`ml-auto flex h-7 w-7 items-center justify-center rounded transition-colors ${
-                showMembers ? "text-white bg-dark-700" : "text-slate-400 hover:text-slate-200"
-              }`}
-              title="Toggle member list"
-            >
-              <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
-                <path d="M16.5 13c1.3 0 2.4.4 3.2 1.1A5.5 5.5 0 0 1 22 18.5V20h-4v-1.5a4 4 0 0 0-1.5-3.1zm-9 0C4.6 13 2 14.6 2 18.5V20h12v-1.5C14 14.6 11.4 13 7.5 13zM7.5 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm9-1a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z" />
-              </svg>
-            </button>
+            <div className="ml-auto flex items-center gap-1">
+              <DMCallButtons channelId={activeChannelId} />
+              <button
+                onClick={() => setShowMembers(!showMembers)}
+                className={`flex h-7 w-7 items-center justify-center rounded transition-colors ${
+                  showMembers ? "text-white bg-dark-700" : "text-slate-400 hover:text-slate-200"
+                }`}
+                title="Toggle member list"
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+                  <path d="M16.5 13c1.3 0 2.4.4 3.2 1.1A5.5 5.5 0 0 1 22 18.5V20h-4v-1.5a4 4 0 0 0-1.5-3.1zm-9 0C4.6 13 2 14.6 2 18.5V20h12v-1.5C14 14.6 11.4 13 7.5 13zM7.5 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm9-1a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z" />
+                </svg>
+              </button>
+            </div>
           </>
         ) : (
-          <button
-            onClick={() => setShowMembers(!showMembers)}
-            className={`ml-auto flex h-7 w-7 items-center justify-center rounded transition-colors ${
-              showMembers ? "text-white bg-dark-700" : "text-slate-400 hover:text-slate-200"
-            }`}
-            title="Toggle user info"
-          >
-            <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
-              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-            </svg>
-          </button>
+          <div className="ml-auto flex items-center gap-1">
+            <DMCallButtons channelId={activeChannelId} />
+            <button
+              onClick={() => setShowMembers(!showMembers)}
+              className={`flex h-7 w-7 items-center justify-center rounded transition-colors ${
+                showMembers ? "text-white bg-dark-700" : "text-slate-400 hover:text-slate-200"
+              }`}
+              title="Toggle user info"
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+              </svg>
+            </button>
+          </div>
         )}
       </div>
 
@@ -759,5 +766,53 @@ function ActionBtn({ onClick, title, danger, children }: {
     >
       {children}
     </button>
+  );
+}
+
+/* ─── DM Call Buttons (Voice + Video) ─── */
+function DMCallButtons({ channelId }: { channelId: string }) {
+  const activeCall = useVoiceStore((s) => s.activeCall);
+  const startDMCall = useVoiceStore((s) => s.startDMCall);
+  const disconnect = useVoiceStore((s) => s.disconnect);
+
+  // In a call on THIS channel
+  if (activeCall?.type === "dm" && activeCall.channelId === channelId) {
+    return (
+      <button
+        onClick={disconnect}
+        className="flex h-7 w-7 items-center justify-center rounded text-red-400 transition-colors hover:bg-red-500/15"
+        title="End Call"
+      >
+        <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+          <path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08a.956.956 0 0 1-.29-.7c0-.28.11-.53.29-.71C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.11-.7-.28a11.27 11.27 0 0 0-2.67-1.85.996.996 0 0 1-.56-.9v-3.1C15.15 9.25 13.6 9 12 9z" />
+        </svg>
+      </button>
+    );
+  }
+
+  // Already in a call somewhere else — don't show buttons
+  if (activeCall) return null;
+
+  return (
+    <>
+      <button
+        onClick={() => startDMCall(channelId, false)}
+        className="flex h-7 w-7 items-center justify-center rounded text-slate-400 transition-colors hover:text-slate-200"
+        title="Start Voice Call"
+      >
+        <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+          <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56-.35-.12-.74-.03-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z" />
+        </svg>
+      </button>
+      <button
+        onClick={() => startDMCall(channelId, true)}
+        className="flex h-7 w-7 items-center justify-center rounded text-slate-400 transition-colors hover:text-slate-200"
+        title="Start Video Call"
+      >
+        <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+          <path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z" />
+        </svg>
+      </button>
+    </>
   );
 }

@@ -1317,7 +1317,7 @@ function VoiceVideoTab() {
   const [noiseSupp, setNoiseSupp] = useState(() => localStorage.getItem("nexe:voice:noiseSuppression") !== "false");
   const [echoCancellation, setEchoCancellation] = useState(() => localStorage.getItem("nexe:voice:echoCancellation") !== "false");
   const [autoGain, setAutoGain] = useState(() => localStorage.getItem("nexe:voice:autoGain") !== "false");
-  const [streamQuality, setStreamQuality] = useState(() => localStorage.getItem("nexe:voice:streamQuality") || "720");
+  const [tierLimits, setTierLimits] = useState<import("../lib/api").TierLimits | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -1329,17 +1329,51 @@ function VoiceVideoTab() {
       setAudioDevices(devices.filter((d) => d.kind === "audioinput"));
       setOutputDevices(devices.filter((d) => d.kind === "audiooutput"));
     })();
+    // Fetch tier limits
+    (async () => {
+      try {
+        const userJson = localStorage.getItem("user");
+        if (!userJson) return;
+        const user = JSON.parse(userJson);
+        const profile = await api.getProfile(user.id);
+        if (profile?.tierLimits) setTierLimits(profile.tierLimits);
+      } catch { /* ignore */ }
+    })();
   }, []);
 
   function saveVoiceSetting(key: string, value: string) {
     localStorage.setItem(`nexe:voice:${key}`, value);
   }
 
+  const userTier = tierLimits?.tier || "free";
+  const screenQuality = tierLimits?.screenShareQuality || "720p30";
+  const voiceBitrate = tierLimits?.voiceBitrate || 128000;
+
+  // Quality options with tier gating
+  const qualityOptions = [
+    { value: "720p30", label: "720p 30fps", desc: "Standard quality", tier: "free", minTier: "free" },
+    { value: "1080p30", label: "1080p 30fps", desc: "Full HD", tier: "pro", minTier: "pro" },
+    { value: "1080p60", label: "1080p 60fps", desc: "Full HD smooth", tier: "ultra", minTier: "ultra" },
+  ];
+
+  const tierOrder = ["free", "pro", "ultra"];
+  const userTierIndex = tierOrder.indexOf(userTier);
+
   return (
     <div className="space-y-6">
       <div>
         <h2 className="mb-1 text-xl font-semibold text-white">Voice & Video</h2>
         <p className="text-sm text-slate-500">Configure your audio and video settings.</p>
+      </div>
+
+      {/* Tier badge */}
+      <div className="flex items-center gap-2 rounded-lg border border-dark-700 bg-dark-800/50 px-4 py-3">
+        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+          userTier === "ultra" ? "bg-amber-500/20 text-amber-400" : userTier === "pro" ? "bg-purple-500/20 text-purple-400" : "bg-slate-500/20 text-slate-400"
+        }`}>{userTier}</span>
+        <span className="text-xs text-slate-400">
+          Voice: {Math.round(voiceBitrate / 1000)} kbps &middot; Screen: {screenQuality}
+        </span>
       </div>
 
       <div className="space-y-4">
@@ -1401,33 +1435,68 @@ function VoiceVideoTab() {
         <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Stream Quality</p>
         <div className="rounded-lg border border-dark-700 bg-dark-800 p-4">
           <label className="mb-2 block text-sm font-medium text-slate-200">Screen Share Quality</label>
-          <p className="mb-3 text-xs text-slate-500">Higher quality requires a better tier.</p>
+          <p className="mb-3 text-xs text-slate-500">Your tier determines the maximum quality. Change your tier in the admin panel.</p>
           <div className="space-y-2">
-            {[
-              { value: "720", label: "720p (HD)", tier: "Free" },
-              { value: "1080", label: "1080p (Full HD)", tier: "Plus ($5/mo)" },
-              { value: "source", label: "Source Quality", tier: "Pro ($10/mo)" },
-            ].map((opt) => (
-              <label
-                key={opt.value}
-                className={`flex cursor-pointer items-center justify-between rounded-lg border px-3 py-2.5 transition-colors ${
-                  streamQuality === opt.value ? "border-nexe-500 bg-nexe-500/5" : "border-dark-600 hover:border-dark-500"
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <input
-                    type="radio"
-                    name="streamQuality"
-                    value={opt.value}
-                    checked={streamQuality === opt.value}
-                    onChange={(e) => { setStreamQuality(e.target.value); saveVoiceSetting("streamQuality", e.target.value); }}
-                    className="accent-nexe-500"
-                  />
-                  <span className="text-sm text-white">{opt.label}</span>
+            {qualityOptions.map((opt) => {
+              const optIndex = tierOrder.indexOf(opt.minTier);
+              const locked = optIndex > userTierIndex;
+              const isActive = screenQuality === opt.value;
+              return (
+                <div
+                  key={opt.value}
+                  className={`flex items-center justify-between rounded-lg border px-3 py-2.5 transition-colors ${
+                    locked ? "border-dark-700 opacity-50 cursor-not-allowed" :
+                    isActive ? "border-nexe-500 bg-nexe-500/5" : "border-dark-600"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`flex h-4 w-4 items-center justify-center rounded-full border ${
+                      isActive ? "border-nexe-500 bg-nexe-500" : "border-dark-500"
+                    }`}>
+                      {isActive && <div className="h-1.5 w-1.5 rounded-full bg-white" />}
+                    </div>
+                    <div>
+                      <span className="text-sm text-white">{opt.label}</span>
+                      <span className="ml-2 text-xs text-slate-500">{opt.desc}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {locked && (
+                      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current text-slate-600">
+                        <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" />
+                      </svg>
+                    )}
+                    <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase ${
+                      opt.minTier === "ultra" ? "bg-amber-500/15 text-amber-400" :
+                      opt.minTier === "pro" ? "bg-purple-500/15 text-purple-400" : "bg-slate-500/15 text-slate-400"
+                    }`}>{opt.minTier}</span>
+                  </div>
                 </div>
-                <span className="text-[10px] text-slate-500">{opt.tier}</span>
-              </label>
-            ))}
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Voice Bitrate */}
+        <div className="rounded-lg border border-dark-700 bg-dark-800 p-4">
+          <label className="mb-2 block text-sm font-medium text-slate-200">Voice Bitrate</label>
+          <p className="mb-3 text-xs text-slate-500">Higher bitrate = clearer voice quality. Determined by your tier.</p>
+          <div className="flex items-center gap-4">
+            <div className="flex-1">
+              <div className="relative h-2 rounded-full bg-dark-600">
+                <div
+                  className="h-2 rounded-full bg-gradient-to-r from-nexe-500 to-nexe-400"
+                  style={{ width: `${Math.min(100, (voiceBitrate / 320000) * 100)}%` }}
+                />
+              </div>
+              <div className="mt-1.5 flex justify-between text-[10px] text-slate-600">
+                <span>64 kbps</span>
+                <span>128 kbps</span>
+                <span>256 kbps</span>
+                <span>320 kbps</span>
+              </div>
+            </div>
+            <span className="text-lg font-bold text-white">{Math.round(voiceBitrate / 1000)}<span className="text-xs font-normal text-slate-500"> kbps</span></span>
           </div>
         </div>
       </div>
