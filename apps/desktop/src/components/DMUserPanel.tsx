@@ -164,7 +164,7 @@ export default function DMUserPanel({ userId }: { userId: string }) {
           <div className="mt-2 flex items-center gap-2 rounded-md bg-red-500/10 px-2.5 py-1.5 border border-red-500/20">
             <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
             <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-bold uppercase text-red-400">Live on Twitch</p>
+              <p className="text-[10px] font-bold uppercase text-red-400">Live</p>
               {stream.title && <p className="truncate text-[11px] text-slate-400">{stream.title}</p>}
               {stream.game && <p className="text-[10px] text-slate-500">{stream.game}</p>}
             </div>

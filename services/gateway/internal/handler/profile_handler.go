@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/decatrondev/nexe/services/gateway/internal/middleware"
 	"github.com/decatrondev/nexe/services/gateway/internal/repository"
@@ -12,10 +13,11 @@ import (
 
 type ProfileHandler struct {
 	profiles *repository.ProfileRepository
+	tiers    *repository.TierRepository
 }
 
-func NewProfileHandler(profiles *repository.ProfileRepository) *ProfileHandler {
-	return &ProfileHandler{profiles: profiles}
+func NewProfileHandler(profiles *repository.ProfileRepository, tiers *repository.TierRepository) *ProfileHandler {
+	return &ProfileHandler{profiles: profiles, tiers: tiers}
 }
 
 func (h *ProfileHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
@@ -39,7 +41,20 @@ func (h *ProfileHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{"data": profile})
+	// Build response with tier info embedded in data
+	tier, _ := h.tiers.GetUserTier(r.Context(), userID)
+	limits, _ := h.tiers.GetLimits(r.Context(), tier)
+
+	// Marshal profile to map, inject tier fields
+	profileBytes, _ := json.Marshal(profile)
+	var profileMap map[string]interface{}
+	json.Unmarshal(profileBytes, &profileMap)
+	profileMap["tier"] = tier
+	if limits != nil {
+		profileMap["tierLimits"] = limits
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"data": profileMap})
 }
 
 func (h *ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
@@ -73,6 +88,31 @@ func (h *ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	if len(fields) == 0 {
 		writeError(w, http.StatusBadRequest, "no_fields", "no valid fields to update")
 		return
+	}
+
+	// Enforce tier limits
+	tier, _ := h.tiers.GetUserTier(r.Context(), claims.Subject)
+	limits, _ := h.tiers.GetLimits(r.Context(), tier)
+	if limits != nil {
+		if bio, ok := fields["bio"].(string); ok && len(bio) > limits.MaxBioLength {
+			writeError(w, http.StatusForbidden, "tier_limit", "Bio exceeds your tier limit of "+strconv.Itoa(limits.MaxBioLength)+" characters. Upgrade to increase.")
+			return
+		}
+		if links, ok := fields["socialLinks"].([]interface{}); ok && limits.MaxSocialLinks >= 0 && len(links) > limits.MaxSocialLinks {
+			writeError(w, http.StatusForbidden, "tier_limit", "Social links exceed your tier limit of "+strconv.Itoa(limits.MaxSocialLinks)+". Upgrade to increase.")
+			return
+		}
+		if clips, ok := fields["featuredClips"].([]interface{}); ok && len(clips) > limits.MaxClipsShowcase {
+			writeError(w, http.StatusForbidden, "tier_limit", "Featured clips exceed your tier limit of "+strconv.Itoa(limits.MaxClipsShowcase)+". Upgrade to increase.")
+			return
+		}
+		if bgVal, ok := fields["backgroundUrl"]; ok && !limits.CustomBackground {
+			// CSS gradient patterns are free. Only custom image URLs require tier.
+			if bgStr, isStr := bgVal.(string); isStr && strings.HasPrefix(bgStr, "http") {
+				writeError(w, http.StatusForbidden, "tier_limit", "Custom image backgrounds require Pro or Ultra tier.")
+				return
+			}
+		}
 	}
 
 	if err := h.profiles.Update(r.Context(), claims.Subject, fields); err != nil {

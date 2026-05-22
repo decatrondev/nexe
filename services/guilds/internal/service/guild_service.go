@@ -108,6 +108,10 @@ func (s *GuildService) checkPermission(ctx context.Context, guildID, userID stri
 // Guild CRUD
 // ---------------------------------------------------------------------------
 
+func (s *GuildService) CountOwnedGuilds(ctx context.Context, userID string) (int, error) {
+	return s.guilds.CountByOwner(ctx, userID)
+}
+
 func (s *GuildService) CreateGuild(ctx context.Context, name, description string, ownerID string, isStreamer bool) (*model.Guild, error) {
 	// Validate name length
 	if len(name) < 2 || len(name) > 100 {

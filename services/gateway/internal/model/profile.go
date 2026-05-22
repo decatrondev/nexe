@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"math"
+	"time"
+)
 
 type Profile struct {
 	UserID         string       `json:"userId"`
@@ -51,21 +54,34 @@ type ProfileActivity struct {
 	CreatedAt time.Time   `json:"createdAt"`
 }
 
-// XP thresholds per level
-var LevelThresholds = []int64{
-	0, 0, 100, 250, 500, 800,       // 0-5
-	1200, 1700, 2300, 3000, 3800,    // 6-10
-	4700, 5700, 6800, 8000, 9300,    // 11-15
-	10700, 12200, 13800, 15500, 17300, // 16-20
-	19200, 21200, 23300, 25500, 27800, // 21-25
-	30200, 32700, 35300, 38000, 40800, // 26-30
+// XpForLevel returns the XP needed to go from level n to n+1.
+// Formula: 100 * n^1.8 — scales infinitely, no cap.
+func XpForLevel(n int) int64 {
+	if n < 1 {
+		return 0
+	}
+	return int64(100.0 * math.Pow(float64(n), 1.8))
 }
 
-func CalculateLevel(totalXP int64) int {
-	for i := len(LevelThresholds) - 1; i >= 0; i-- {
-		if totalXP >= LevelThresholds[i] {
-			return i
-		}
+// CumulativeXp returns the total XP needed to reach a given level.
+func CumulativeXp(level int) int64 {
+	var total int64
+	for i := 1; i < level; i++ {
+		total += XpForLevel(i)
 	}
-	return 1
+	return total
+}
+
+// CalculateLevel returns the level for a given total XP amount.
+func CalculateLevel(totalXP int64) int {
+	level := 1
+	var accumulated int64
+	for {
+		needed := XpForLevel(level)
+		if accumulated+needed > totalXP {
+			return level
+		}
+		accumulated += needed
+		level++
+	}
 }

@@ -169,12 +169,30 @@ export const useGuildStore = create<GuildState>((set, get) => ({
     // Clear DM active channel when switching to a guild
     try { const { useDMStore } = await import("./dm"); useDMStore.getState().setActive(null); } catch { /* ignore */ }
     try {
-      const [channels, members, roleList, categoryList] = await Promise.all([
+      const [channels, firstBatch, roleList, categoryList] = await Promise.all([
         api.getChannels(guildId),
-        api.getMembers(guildId, 100),
+        api.getMembers(guildId, 200),
         api.getRoles(guildId),
         api.getCategories(guildId).catch(() => []),
       ]);
+
+      // Load remaining members if guild has more than first batch
+      let members = firstBatch;
+      if (Array.isArray(firstBatch) && firstBatch.length >= 200) {
+        let allMembers = [...firstBatch];
+        let offset = 200;
+        while (true) {
+          if (get().activeGuildId !== guildId) return;
+          try {
+            const batch = await api.getMembers(guildId, 200, offset);
+            if (!Array.isArray(batch) || batch.length === 0) break;
+            allMembers = allMembers.concat(batch);
+            offset += batch.length;
+            if (batch.length < 200) break;
+          } catch { break; }
+        }
+        members = allMembers;
+      }
 
       // Emotes are loaded for all guilds at startup — no need to reload here
 

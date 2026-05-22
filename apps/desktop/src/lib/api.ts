@@ -197,6 +197,37 @@ export interface SocialLink {
   verified?: boolean;
 }
 
+export interface TierLimits {
+  tier: string;
+  maxOwnedGuilds: number;
+  maxEmojisPerGuild: number;
+  maxStickersPerGuild: number;
+  maxUploadBytes: number;
+  voiceBitrate: number;
+  screenShareQuality: string;
+  animatedAvatar: boolean;
+  animatedBanner: boolean;
+  videoBanner: boolean;
+  chatBridgeChannels: number;
+  analyticsDays: number;
+  serverBoosts: number;
+  prioritySupport: boolean;
+  maxMessageLength: number;
+  maxBioLength: number;
+  maxSocialLinks: number;
+  maxBadgesVisible: number;
+  maxClipsShowcase: number;
+  profileEffects: boolean;
+  profileMusic: boolean;
+  customCss: boolean;
+  dragDropLayout: boolean;
+  customBackground: boolean;
+  featuredServers: number;
+  vanitySlug: boolean;
+  visitorCounter: boolean;
+  uploadStorageBytes: number;
+}
+
 export interface UserProfile {
   userId: string;
   username: string;
@@ -213,6 +244,8 @@ export interface UserProfile {
   status?: "online" | "idle" | "dnd" | "offline" | "invisible";
   twitchId?: string;
   twitchLogin?: string;
+  tier?: string;
+  tierLimits?: TierLimits;
 }
 
 export interface UpdateProfileData {
@@ -220,8 +253,11 @@ export interface UpdateProfileData {
   bio?: string;
   avatarUrl?: string;
   accentColor?: string;
+  backgroundUrl?: string;
   status?: "online" | "idle" | "dnd" | "offline" | "invisible";
   socialLinks?: SocialLink[];
+  featuredClips?: { title: string; url: string; thumbnail_url: string; view_count?: number }[];
+  streamSchedule?: Record<string, unknown>;
 }
 
 export interface UserBadge {
@@ -689,9 +725,12 @@ export const api = {
     return request<Role[]>("GET", `/guilds/${guildId}/roles`);
   },
 
-  getMembers(guildId: string, limit?: number) {
-    const params = limit ? `?limit=${limit}` : "";
-    return request<GuildMember[]>("GET", `/guilds/${guildId}/members${params}`);
+  getMembers(guildId: string, limit?: number, offset?: number) {
+    const p = new URLSearchParams();
+    if (limit) p.set("limit", String(limit));
+    if (offset) p.set("offset", String(offset));
+    const qs = p.toString() ? `?${p}` : "";
+    return request<GuildMember[]>("GET", `/guilds/${guildId}/members${qs}`);
   },
 
   getMessages(channelId: string, limit?: number, before?: string) {

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 
@@ -10,15 +11,29 @@ import (
 	"github.com/decatrondev/nexe/services/gateway/internal/service"
 )
 
-const maxUploadSize = 50 << 20 // 50 MB (Free tier)
+const defaultMaxUpload = 50 << 20 // 50 MB fallback
 
 type UploadHandler struct {
 	storage  service.Storage
 	profiles *repository.ProfileRepository
+	tiers    *repository.TierRepository
 }
 
-func NewUploadHandler(storage service.Storage, profiles *repository.ProfileRepository) *UploadHandler {
-	return &UploadHandler{storage: storage, profiles: profiles}
+func NewUploadHandler(storage service.Storage, profiles *repository.ProfileRepository, tiers *repository.TierRepository) *UploadHandler {
+	return &UploadHandler{storage: storage, profiles: profiles, tiers: tiers}
+}
+
+func (h *UploadHandler) getMaxUpload(r *http.Request) int64 {
+	claims := middleware.GetClaims(r)
+	if claims == nil {
+		return defaultMaxUpload
+	}
+	tier, _ := h.tiers.GetUserTier(r.Context(), claims.Subject)
+	limits, err := h.tiers.GetLimits(r.Context(), tier)
+	if err != nil || limits == nil {
+		return defaultMaxUpload
+	}
+	return limits.MaxUploadBytes
 }
 
 // UploadAvatar handles POST /users/@me/avatar
@@ -49,9 +64,10 @@ func (h *UploadHandler) UploadAttachment(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
-	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
-		writeError(w, http.StatusBadRequest, "too_large", "file must be under 50MB")
+	maxSize := h.getMaxUpload(r)
+	r.Body = http.MaxBytesReader(w, r.Body, maxSize)
+	if err := r.ParseMultipartForm(maxSize); err != nil {
+		writeError(w, http.StatusBadRequest, "too_large", fmt.Sprintf("File must be under %dMB for your tier.", maxSize/(1<<20)))
 		return
 	}
 
@@ -83,9 +99,10 @@ func (h *UploadHandler) handleUpload(w http.ResponseWriter, r *http.Request, buc
 		return
 	}
 
-	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
-	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
-		writeError(w, http.StatusBadRequest, "too_large", "file must be under 50MB")
+	maxSize := h.getMaxUpload(r)
+	r.Body = http.MaxBytesReader(w, r.Body, maxSize)
+	if err := r.ParseMultipartForm(maxSize); err != nil {
+		writeError(w, http.StatusBadRequest, "too_large", fmt.Sprintf("File must be under %dMB for your tier.", maxSize/(1<<20)))
 		return
 	}
 

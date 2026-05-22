@@ -11,16 +11,13 @@ concurrency:
   group: release
   cancel-in-progress: true
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   # Create the GitHub Release first (once)
   create-release:
     name: Create Release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -44,7 +41,7 @@ jobs:
     needs: create-release
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -56,9 +53,10 @@ jobs:
           workspaces: apps/desktop/src-tauri
 
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
+          cache: "pnpm"
 
       - run: pnpm install --no-frozen-lockfile
       - name: Install desktop deps
@@ -136,7 +134,7 @@ jobs:
             args: ""
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -156,9 +154,10 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
 
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
+          cache: "pnpm"
 
       - run: pnpm install --no-frozen-lockfile
       - name: Install desktop deps

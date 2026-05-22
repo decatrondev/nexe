@@ -101,18 +101,23 @@ func main() {
 	// Handlers
 	authHandler := handler.NewAuthHandler(authSvc, rdb, profileRepo)
 	wsHandler := handler.NewWSHandler(jwtSvc, rdb, cfg.GuildsURL, cfg.PresenceURL, cfg.VoiceURL)
-	profileHandler := handler.NewProfileHandler(profileRepo)
-	uploadHandler := handler.NewUploadHandler(storageSvc, profileRepo)
+	tierRepo := repository.NewTierRepository(db, rdb)
+	profileHandler := handler.NewProfileHandler(profileRepo, tierRepo)
+	uploadHandler := handler.NewUploadHandler(storageSvc, profileRepo, tierRepo)
 	totpHandler := handler.NewTOTPHandler(userRepo, authSvc)
 	twitchHandler := handler.NewTwitchHandler(twitchSvc, userRepo, authSvc, jwtSvc, rdb, cfg.TwitchEventSubSecret, cfg.BaseURL, cfg.FrontendURL, cfg.MessagingURL, cfg.GuildsURL, cfg.PresenceURL)
 	botHandler := handler.NewBotHandler(botRepo, jwtSvc)
-	proxyHandler := handler.NewProxyHandler(cfg.GuildsURL, cfg.MessagingURL, cfg.PresenceURL, cfg.VoiceURL, cfg.NotificationsURL)
+	proxyHandler := handler.NewProxyHandler(cfg.GuildsURL, cfg.MessagingURL, cfg.PresenceURL, cfg.VoiceURL, cfg.NotificationsURL, tierRepo)
 	gifHandler := handler.NewGifHandler(cfg.GiphyAPIKey)
 	kickHandler := handler.NewKickHandler(cfg.KickClientID, cfg.KickClientSecret, cfg.KickRedirectURI)
 	gdprHandler := handler.NewGDPRHandler(db, userRepo, cfg.GuildsURL, cfg.MessagingURL)
+	statusHandler := handler.NewStatusHandler(db, cfg.GuildsURL, cfg.MessagingURL, cfg.PresenceURL, cfg.VoiceURL, cfg.NotificationsURL)
 
 	// Start GDPR background worker
 	go gdprHandler.ProcessScheduledDeletions()
+
+	// Start status page health checker (every 60s)
+	go statusHandler.StartHealthChecker()
 
 	// Reconcile any active streams on startup
 	go twitchHandler.ReconcileStreamStatuses(context.Background())
@@ -227,6 +232,22 @@ func main() {
 	// Proxy to guilds service (authenticated)
 	guildsProxy := func(h http.Handler) http.Handler { return authMiddleware(h) }
 	gp := http.HandlerFunc(proxyHandler.ProxyGuilds)
+
+	// Status page (public, no auth)
+	mux.HandleFunc("GET /status", statusHandler.GetStatus)
+	mux.HandleFunc("GET /status/history", statusHandler.GetHistory)
+
+	// Tier limits (public)
+	mux.HandleFunc("GET /tiers", func(w http.ResponseWriter, r *http.Request) {
+		tiers := make(map[string]interface{})
+		for _, t := range []string{"free", "pro", "ultra"} {
+			if l, err := tierRepo.GetLimits(r.Context(), t); err == nil {
+				tiers[t] = l
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(tiers)
+	})
 
 	// GIF search (Tenor proxy, authenticated)
 	mux.Handle("GET /gifs/search", authMiddleware(http.HandlerFunc(gifHandler.SearchGifs)))
@@ -493,11 +514,12 @@ func main() {
 
 func corsMiddleware(next http.Handler, frontendURL string) http.Handler {
 	allowed := map[string]bool{
-		frontendURL:            true,
-		"http://localhost:1420": true,
-		"http://localhost:3013": true,
-		"https://tauri.localhost": true,
-		"http://tauri.localhost":  true,
+		frontendURL:                          true,
+		"http://localhost:1420":              true,
+		"http://localhost:3013":              true,
+		"https://tauri.localhost":            true,
+		"http://tauri.localhost":             true,
+		"https://statusnexe.decatron.net":   true,
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

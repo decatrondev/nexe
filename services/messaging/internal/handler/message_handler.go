@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -11,10 +12,11 @@ import (
 
 type MessageHandler struct {
 	svc *service.MessageService
+	xp  *service.XPService
 }
 
-func NewMessageHandler(svc *service.MessageService) *MessageHandler {
-	return &MessageHandler{svc: svc}
+func NewMessageHandler(svc *service.MessageService, xp *service.XPService) *MessageHandler {
+	return &MessageHandler{svc: svc, xp: xp}
 }
 
 func (h *MessageHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -134,6 +136,18 @@ func (h *MessageHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Enforce message length from tier
+	maxLen := 2000
+	if v := r.Header.Get("X-Tier-Max-Message-Length"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			maxLen = n
+		}
+	}
+	if len(body.Content) > maxLen {
+		writeError(w, http.StatusForbidden, "TIER_LIMIT", "Message exceeds your tier limit of "+strconv.Itoa(maxLen)+" characters.")
+		return
+	}
+
 	// Bridge messages have special handling
 	if body.Type == "bridge" && body.BridgeSource != nil {
 		msg, err := h.svc.SendBridgeMessage(r.Context(), channelID, body.Content, body.BridgeSource, body.BridgeAuthor, body.BridgeAuthorID)
@@ -165,6 +179,12 @@ func (h *MessageHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		classifyError(w, err)
 		return
 	}
+
+	// Award XP (non-blocking)
+	if h.xp != nil {
+		go h.xp.AwardMessageXP(context.Background(), userID)
+	}
+
 	writeJSON(w, http.StatusCreated, msg)
 }
 
@@ -403,6 +423,12 @@ func (h *MessageHandler) AddReaction(w http.ResponseWriter, r *http.Request) {
 		classifyError(w, err)
 		return
 	}
+
+	// Award XP (non-blocking)
+	if h.xp != nil {
+		go h.xp.AwardReactionXP(context.Background(), userID)
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }
 

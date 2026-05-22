@@ -22,10 +22,11 @@ type GuildHandler struct {
 	automod   *repository.AutomodRepository
 	overrides *repository.OverrideRepository
 	rdb       *redis.Client
+	xp        *service.XPService
 }
 
-func NewGuildHandler(svc *service.GuildService, automod *repository.AutomodRepository, overrides *repository.OverrideRepository, rdb *redis.Client) *GuildHandler {
-	return &GuildHandler{svc: svc, automod: automod, overrides: overrides, rdb: rdb}
+func NewGuildHandler(svc *service.GuildService, automod *repository.AutomodRepository, overrides *repository.OverrideRepository, rdb *redis.Client, xp *service.XPService) *GuildHandler {
+	return &GuildHandler{svc: svc, automod: automod, overrides: overrides, rdb: rdb, xp: xp}
 }
 
 func (h *GuildHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -162,6 +163,17 @@ func (h *GuildHandler) CreateGuild(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(body.Name) == "" {
 		writeError(w, http.StatusBadRequest, "BAD_REQUEST", "name is required")
 		return
+	}
+
+	// Enforce max owned guilds from tier
+	if maxStr := r.Header.Get("X-Tier-Max-Owned-Guilds"); maxStr != "" {
+		if maxGuilds, err := strconv.Atoi(maxStr); err == nil && maxGuilds >= 0 {
+			owned, _ := h.svc.CountOwnedGuilds(r.Context(), userID)
+			if owned >= maxGuilds {
+				writeError(w, http.StatusForbidden, "TIER_LIMIT", fmt.Sprintf("You can own up to %d servers on your tier. Upgrade to create more.", maxGuilds))
+				return
+			}
+		}
 	}
 
 	guild, err := h.svc.CreateGuild(r.Context(), body.Name, body.Description, userID, body.IsStreamer)
@@ -705,6 +717,12 @@ func (h *GuildHandler) JoinGuild(w http.ResponseWriter, r *http.Request) {
 		classifyError(w, err)
 		return
 	}
+
+	// Award XP (non-blocking)
+	if h.xp != nil {
+		go h.xp.AwardJoinXP(context.Background(), userID, guildID)
+	}
+
 	writeJSON(w, http.StatusOK, member)
 }
 

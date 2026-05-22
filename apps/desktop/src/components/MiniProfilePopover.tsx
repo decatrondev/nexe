@@ -335,7 +335,7 @@ export default function MiniProfilePopover({ userId, x, y, streamStatus, onClose
             {/* Stream Preview */}
             {streamStatus?.live && (
               <div className="mb-3">
-                <p className="mb-1.5 text-[11px] font-bold uppercase text-red-400">🔴 Live on Twitch</p>
+                <p className="mb-1.5 text-[11px] font-bold uppercase text-red-400">🔴 Live</p>
                 <a
                   href={`https://twitch.tv/${(profile as UserProfileWithTwitch)?.twitchLogin || ""}`}
                   target="_blank"

@@ -6,9 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   go:
     name: Go — ${{ matrix.service }}
@@ -17,7 +14,7 @@ jobs:
       matrix:
         service: [gateway, guilds, messaging, presence, voice, notifications]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-go@v5
         with:
           go-version: "1.22"
@@ -36,11 +33,12 @@ jobs:
     name: Frontend
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: "22"
+          cache: "pnpm"
       - run: pnpm install --no-frozen-lockfile
       - name: Type check
         working-directory: apps/desktop

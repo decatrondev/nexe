@@ -37,3 +37,21 @@ export async function updateUser(userId: string, data: { username?: string }) {
     );
   }
 }
+
+export async function setUserTier(userId: string, tier: string, expiresAt: string | null) {
+  await requireAdmin();
+
+  if (!["free", "pro", "ultra"].includes(tier)) {
+    throw new Error("Invalid tier. Must be free, pro, or ultra.");
+  }
+
+  const expires = expiresAt ? new Date(expiresAt) : null;
+
+  await query(
+    `INSERT INTO user_tiers (user_id, tier, started_at, expires_at, updated_at)
+     VALUES ($1, $2, NOW(), $3, NOW())
+     ON CONFLICT (user_id) DO UPDATE SET
+       tier = $2, started_at = NOW(), expires_at = $3, updated_at = NOW()`,
+    [userId, tier, expires]
+  );
+}

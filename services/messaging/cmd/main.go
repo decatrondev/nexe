@@ -84,8 +84,11 @@ func main() {
 	// Repositories (polls)
 	pollRepo := repository.NewPollRepository(db)
 
+	// XP service
+	xpSvc := service.NewXPService(rdb, cfg.GatewayURL)
+
 	// Handler
-	messageHandler := handler.NewMessageHandler(messageSvc)
+	messageHandler := handler.NewMessageHandler(messageSvc, xpSvc)
 	pollHandler := handler.NewPollHandler(pollRepo, messageSvc)
 
 	// Router

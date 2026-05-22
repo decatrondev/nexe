@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAuthStore } from "../stores/auth";
-import { api, type SocialLink } from "../lib/api";
+import { api, type SocialLink, type TierLimits } from "../lib/api";
 import ImageCropModal from "./ImageCropModal";
 import { Tabs, TabList, TabPanel, Select, ColorPicker, Toggle, type TabItem } from "@nexe/ui";
 
@@ -224,8 +224,37 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 // Profiles
 // ═══════════════════════════
 
-const SOCIAL_PLATFORMS = ["Twitch", "YouTube", "Twitter", "Instagram", "TikTok", "Website"] as const;
-const MAX_SOCIAL_LINKS = 8;
+const SOCIAL_PLATFORMS = ["Twitch", "YouTube", "Twitter", "Instagram", "TikTok", "Kick", "GitHub", "Website"] as const;
+const DEFAULT_LIMITS: TierLimits = {
+  tier: "free", maxOwnedGuilds: 10, maxEmojisPerGuild: 50, maxStickersPerGuild: 20,
+  maxUploadBytes: 26214400, voiceBitrate: 128000, screenShareQuality: "720p30",
+  animatedAvatar: false, animatedBanner: false, videoBanner: false,
+  chatBridgeChannels: 1, analyticsDays: 7, serverBoosts: 0, prioritySupport: false,
+  maxMessageLength: 2000, maxBioLength: 300, maxSocialLinks: 5, maxBadgesVisible: 5,
+  maxClipsShowcase: 4, profileEffects: false, profileMusic: false, customCss: false,
+  dragDropLayout: false, customBackground: false, featuredServers: 0, vanitySlug: false,
+  visitorCounter: false, uploadStorageBytes: 52428800,
+};
+
+const BACKGROUND_PATTERNS = [
+  { id: "none", label: "Default", value: "" },
+  { id: "dots", label: "Dots", value: "radial-gradient(circle, rgba(99,102,241,0.08) 1px, transparent 1px)" },
+  { id: "grid", label: "Grid", value: "linear-gradient(rgba(99,102,241,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(99,102,241,0.06) 1px, transparent 1px)" },
+  { id: "diagonal", label: "Diagonal", value: "repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(99,102,241,0.04) 10px, rgba(99,102,241,0.04) 11px)" },
+  { id: "gradient1", label: "Aurora", value: "linear-gradient(135deg, rgba(99,102,241,0.1), rgba(52,211,153,0.05), transparent)" },
+  { id: "gradient2", label: "Sunset", value: "linear-gradient(135deg, rgba(244,114,182,0.08), rgba(251,191,36,0.04), transparent)" },
+];
+
+function TierBadge({ tier, feature }: { tier: string; feature?: string }) {
+  if (tier === "pro") return <span className="ml-1 rounded bg-blue-500/15 px-1.5 py-0.5 text-[9px] font-bold text-blue-400" title={feature ? `Requires Pro for ${feature}` : undefined}>PRO</span>;
+  if (tier === "ultra") return <span className="ml-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold text-amber-400" title={feature ? `Requires Ultra for ${feature}` : undefined}>ULTRA</span>;
+  return null;
+}
+
+function xpForLevel(n: number): number {
+  if (n < 1) return 0;
+  return Math.floor(100 * Math.pow(n, 1.8));
+}
 
 function ProfileTab() {
   const user = useAuthStore((s) => s.user);
@@ -235,9 +264,20 @@ function ProfileTab() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [bannerUrl, setBannerUrl] = useState<string | null>(null);
   const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
+  const [featuredClips, setFeaturedClips] = useState<{ title: string; url: string; thumbnail_url: string }[]>([]);
+  const [level, setLevel] = useState(1);
+  const [totalXp, setTotalXp] = useState(0);
+  const [createdAt, setCreatedAt] = useState("");
+  const [tier, setTier] = useState("free");
+  const [limits, setLimits] = useState<TierLimits>(DEFAULT_LIMITS);
+  const [backgroundPattern, setBackgroundPattern] = useState("");
   const [showAddLink, setShowAddLink] = useState(false);
+  const [showAddClip, setShowAddClip] = useState(false);
   const [newPlatform, setNewPlatform] = useState<string>(SOCIAL_PLATFORMS[0]);
   const [newUrl, setNewUrl] = useState("");
+  const [newClipTitle, setNewClipTitle] = useState("");
+  const [newClipUrl, setNewClipUrl] = useState("");
+  const [newClipThumb, setNewClipThumb] = useState("");
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [uploading, setUploading] = useState<"avatar" | "banner" | null>(null);
@@ -257,6 +297,16 @@ function ProfileTab() {
       setAvatarUrl(p.avatarUrl ?? null);
       setBannerUrl(p.bannerUrl ?? null);
       setSocialLinks(p.socialLinks ?? []);
+      setLevel(p.level ?? 1);
+      setTotalXp(p.totalXp ?? 0);
+      setCreatedAt(p.createdAt ?? "");
+      if (p.tier) setTier(p.tier);
+      if (p.tierLimits) setLimits(p.tierLimits);
+      try {
+        const raw = p as unknown as Record<string, unknown>;
+        if (Array.isArray(raw.featuredClips)) setFeaturedClips(raw.featuredClips as typeof featuredClips);
+        if (typeof raw.backgroundUrl === "string" && raw.backgroundUrl) setBackgroundPattern(raw.backgroundUrl);
+      } catch { /* */ }
       setLoaded(true);
     }).catch(() => { if (!cancel) setLoaded(true); });
     return () => { cancel = true; };
@@ -265,12 +315,43 @@ function ProfileTab() {
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>, type: "avatar" | "banner") {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      setCropModal({ src: reader.result as string, type });
-    };
-    reader.readAsDataURL(file);
     e.target.value = "";
+
+    const isGif = file.type === "image/gif";
+    const isVideo = file.type.startsWith("video/");
+
+    // Videos upload direct (no crop possible)
+    if (isVideo && limits.videoBanner && type === "banner") {
+      uploadFileDirect(file, type);
+      return;
+    }
+
+    // GIFs skip crop modal — cropping destroys animation frames
+    if (isGif && limits.animatedBanner && type === "banner") {
+      uploadFileDirect(file, type);
+      return;
+    }
+    if (isGif && limits.animatedAvatar && type === "avatar") {
+      uploadFileDirect(file, type);
+      return;
+    }
+
+    // Non-GIF/video → crop as usual
+    const reader = new FileReader();
+    reader.onload = () => setCropModal({ src: reader.result as string, type });
+    reader.readAsDataURL(file);
+  }
+
+  async function uploadFileDirect(file: File, type: "avatar" | "banner") {
+    setUploading(type);
+    try {
+      const { url } = type === "avatar" ? await api.uploadAvatar(file) : await api.uploadBanner(file);
+      if (type === "avatar") setAvatarUrl(url);
+      else setBannerUrl(url);
+      flash("success", `${type === "avatar" ? "Avatar" : "Banner"} updated!`);
+    } catch {
+      flash("error", `Failed to upload ${type}`);
+    } finally { setUploading(null); }
   }
 
   async function handleCropConfirm(blob: Blob) {
@@ -283,35 +364,25 @@ function ProfileTab() {
       const { url } = type === "avatar" ? await api.uploadAvatar(file) : await api.uploadBanner(file);
       if (type === "avatar") setAvatarUrl(url);
       else setBannerUrl(url);
-      setFeedback({ type: "success", msg: `${type === "avatar" ? "Avatar" : "Banner"} updated!` });
-      setTimeout(() => setFeedback(null), 3000);
+      flash("success", `${type === "avatar" ? "Avatar" : "Banner"} updated!`);
     } catch {
-      setFeedback({ type: "error", msg: `Failed to upload ${type}` });
-    } finally {
-      setUploading(null);
-    }
+      flash("error", `Failed to upload ${type}`);
+    } finally { setUploading(null); }
   }
 
   async function handleRemoveAvatar() {
-    try {
-      await api.deleteAvatar();
-      setAvatarUrl(null);
-      setFeedback({ type: "success", msg: "Avatar removed" });
-      setTimeout(() => setFeedback(null), 3000);
-    } catch {
-      setFeedback({ type: "error", msg: "Failed to remove avatar" });
-    }
+    try { await api.deleteAvatar(); setAvatarUrl(null); flash("success", "Avatar removed"); }
+    catch { flash("error", "Failed"); }
   }
 
   async function handleRemoveBanner() {
-    try {
-      await api.deleteBanner();
-      setBannerUrl(null);
-      setFeedback({ type: "success", msg: "Banner removed" });
-      setTimeout(() => setFeedback(null), 3000);
-    } catch {
-      setFeedback({ type: "error", msg: "Failed to remove banner" });
-    }
+    try { await api.deleteBanner(); setBannerUrl(null); flash("success", "Banner removed"); }
+    catch { flash("error", "Failed"); }
+  }
+
+  function flash(type: "success" | "error", msg: string) {
+    setFeedback({ type, msg });
+    setTimeout(() => setFeedback(null), 3000);
   }
 
   async function handleSave(e: FormEvent) {
@@ -323,274 +394,358 @@ function ProfileTab() {
         bio: bio.trim() || undefined,
         accentColor,
         socialLinks,
+        featuredClips: featuredClips.length > 0 ? featuredClips : undefined,
+        backgroundUrl: backgroundPattern || undefined,
       });
-      setFeedback({ type: "success", msg: "Profile saved!" });
-      setTimeout(() => setFeedback(null), 3000);
+      flash("success", "Profile saved!");
     } catch (err) {
-      setFeedback({ type: "error", msg: err instanceof Error ? err.message : "Failed" });
+      flash("error", err instanceof Error ? err.message : "Failed");
     } finally { setLoading(false); }
   }
 
   function handleAddLink() {
-    if (!newUrl.trim() || socialLinks.length >= MAX_SOCIAL_LINKS) return;
+    if (!newUrl.trim() || (limits.maxSocialLinks !== -1 && socialLinks.length >= limits.maxSocialLinks)) return;
     setSocialLinks((prev) => [...prev, { platform: newPlatform.toLowerCase(), url: newUrl.trim() }]);
-    setNewUrl("");
-    setNewPlatform(SOCIAL_PLATFORMS[0]);
-    setShowAddLink(false);
+    setNewUrl(""); setNewPlatform(SOCIAL_PLATFORMS[0]); setShowAddLink(false);
   }
 
-  function handleRemoveLink(index: number) {
-    setSocialLinks((prev) => prev.filter((_, i) => i !== index));
+  function handleAddClip() {
+    if (!newClipUrl.trim() || !newClipTitle.trim()) return;
+    setFeaturedClips((prev) => [...prev, { title: newClipTitle.trim(), url: newClipUrl.trim(), thumbnail_url: newClipThumb.trim() || "" }]);
+    setNewClipTitle(""); setNewClipUrl(""); setNewClipThumb(""); setShowAddClip(false);
   }
 
   const previewName = displayName.trim() || user?.username || "User";
 
+  // XP progress calc
+  let accumulated = 0;
+  for (let i = 1; i < level; i++) accumulated += xpForLevel(i);
+  const xpIntoLevel = totalXp - accumulated;
+  const xpNeeded = xpForLevel(level);
+  const xpPercent = xpNeeded > 0 ? Math.min(Math.round((xpIntoLevel / xpNeeded) * 100), 100) : 0;
+
   return (
     <div className="space-y-5">
       {feedback && (
-        <div className={`rounded-lg border px-4 py-2.5 text-sm ${
-          feedback.type === "success" ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400" : "border-red-500/20 bg-red-500/10 text-red-400"
-        }`}>{feedback.msg}</div>
+        <div className={`rounded-lg border px-4 py-2.5 text-sm ${feedback.type === "success" ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-400" : "border-red-500/20 bg-red-500/10 text-red-400"}`}>{feedback.msg}</div>
       )}
 
-      {/* Avatar & Banner uploads */}
       <div className="flex gap-6">
-        <div>
-          <label className="mb-1.5 block text-[11px] font-bold uppercase text-slate-400">Avatar</label>
-          <div className="group relative h-20 w-20">
-            {avatarUrl ? (
-              <img src={avatarUrl} alt="Avatar" className="h-20 w-20 rounded-full object-cover" />
-            ) : (
-              <div className="flex h-20 w-20 items-center justify-center rounded-full bg-nexe-600 text-2xl font-bold text-white">
-                {(displayName || user?.username || "U").charAt(0).toUpperCase()}
-              </div>
-            )}
-            <div className="absolute inset-0 flex items-center justify-center gap-1 rounded-full bg-black/60 opacity-0 transition-opacity group-hover:opacity-100">
-              <button type="button" onClick={() => avatarInputRef.current?.click()} disabled={uploading === "avatar"}
-                className="rounded-full bg-nexe-600 p-1.5 text-white hover:bg-nexe-500">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-              </button>
-              {avatarUrl && (
-                <button type="button" onClick={handleRemoveAvatar}
-                  className="rounded-full bg-red-600 p-1.5 text-white hover:bg-red-500">
-                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
-              )}
-            </div>
-            {uploading === "avatar" && (
-              <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/60">
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-nexe-500 border-t-transparent" />
-              </div>
-            )}
-          </div>
-          <input ref={avatarInputRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="hidden" onChange={(e) => handleFileSelect(e, "avatar")} />
-        </div>
+        {/* ── Left: Form ── */}
+        <form onSubmit={handleSave} className="w-[360px] shrink-0 space-y-5">
 
-        <div className="flex-1">
-          <label className="mb-1.5 block text-[11px] font-bold uppercase text-slate-400">Banner</label>
-          <div className="group relative h-20 overflow-hidden rounded-lg">
-            {bannerUrl ? (
-              <img src={bannerUrl} alt="Banner" className="h-20 w-full object-cover" />
-            ) : (
-              <div className="h-20 w-full bg-gradient-to-r from-nexe-600 to-nexe-500" />
-            )}
-            <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/60 opacity-0 transition-opacity group-hover:opacity-100">
-              <button type="button" onClick={() => bannerInputRef.current?.click()} disabled={uploading === "banner"}
-                className="rounded-md bg-nexe-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-nexe-500">
-                {uploading === "banner" ? "Uploading..." : "Change Banner"}
-              </button>
-              {bannerUrl && (
-                <button type="button" onClick={handleRemoveBanner}
-                  className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-500">
-                  Remove
-                </button>
-              )}
+          {/* Tier indicator */}
+          <div className="flex items-center gap-2">
+            <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
+              tier === "ultra" ? "bg-amber-500/15 text-amber-400" :
+              tier === "pro" ? "bg-blue-500/15 text-blue-400" :
+              "bg-slate-500/10 text-slate-500"
+            }`}>
+              {tier.toUpperCase()}
+            </span>
+            <span className="text-[10px] text-slate-700">Your current tier</span>
+          </div>
+
+          {/* Avatar & Banner */}
+          <div>
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">Visuals</p>
+            <div className="flex gap-4">
+              <div>
+                <label className="mb-1 block text-[10px] font-medium text-slate-600">Avatar</label>
+                <div className="group relative h-[72px] w-[72px]">
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt="" className="h-[72px] w-[72px] rounded-2xl object-cover" />
+                  ) : (
+                    <div className="flex h-[72px] w-[72px] items-center justify-center rounded-2xl bg-nexe-600 text-xl font-bold text-white">
+                      {previewName.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="absolute inset-0 flex items-center justify-center gap-1 rounded-2xl bg-black/60 opacity-0 transition-opacity group-hover:opacity-100">
+                    <button type="button" onClick={() => avatarInputRef.current?.click()} disabled={uploading === "avatar"} className="rounded-lg bg-white/20 p-1.5 text-white hover:bg-white/30">
+                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    </button>
+                    {avatarUrl && (
+                      <button type="button" onClick={handleRemoveAvatar} className="rounded-lg bg-red-500/30 p-1.5 text-white hover:bg-red-500/50">
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    )}
+                  </div>
+                  {uploading === "avatar" && <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-black/60"><div className="h-4 w-4 animate-spin rounded-full border-2 border-nexe-500 border-t-transparent" /></div>}
+                </div>
+                <input ref={avatarInputRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="hidden" onChange={(e) => handleFileSelect(e, "avatar")} />
+              </div>
+              <div className="flex-1">
+                <label className="mb-1 block text-[10px] font-medium text-slate-600">Banner</label>
+                <div className="group relative h-[72px] overflow-hidden rounded-xl">
+                  {bannerUrl && (bannerUrl.endsWith(".mp4") || bannerUrl.includes("video")) ? (
+                    <video src={bannerUrl} className="h-[72px] w-full object-cover" autoPlay loop muted playsInline />
+                  ) : bannerUrl ? (
+                    <img src={bannerUrl} alt="" className="h-[72px] w-full object-cover" />
+                  ) : (
+                    <div className="h-[72px] w-full" style={{ background: `linear-gradient(135deg, ${accentColor}44, ${accentColor}11)` }} />
+                  )}
+                  <div className="absolute inset-0 flex items-center justify-center gap-2 bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
+                    <button type="button" onClick={() => bannerInputRef.current?.click()} disabled={uploading === "banner"} className="rounded-lg bg-white/20 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-white/30">
+                      {uploading === "banner" ? "..." : "Change"}
+                    </button>
+                    {bannerUrl && <button type="button" onClick={handleRemoveBanner} className="rounded-lg bg-red-500/30 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-red-500/50">Remove</button>}
+                  </div>
+                </div>
+                <input ref={bannerInputRef} type="file" accept={limits.videoBanner ? "image/png,image/jpeg,image/gif,image/webp,video/mp4" : limits.animatedBanner ? "image/png,image/jpeg,image/gif,image/webp" : "image/png,image/jpeg,image/webp"} className="hidden" onChange={(e) => handleFileSelect(e, "banner")} />
+                <p className="mt-1 text-[9px] text-slate-700">
+                  {limits.videoBanner ? "Image, GIF, or MP4 video" : limits.animatedBanner ? "Image or GIF" : "Image only"} · 600×240
+                </p>
+              </div>
             </div>
           </div>
-          <input ref={bannerInputRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" className="hidden" onChange={(e) => handleFileSelect(e, "banner")} />
-          <p className="mt-1 text-[10px] text-slate-600">Recommended: 600×240. Max 8MB.</p>
-        </div>
-      </div>
 
-      <div className="flex gap-8">
-        {/* Form */}
-        <form onSubmit={handleSave} className="w-[340px] shrink-0 space-y-4">
+          {/* Display Name */}
           <div>
             <label className="mb-1.5 block text-[11px] font-bold uppercase text-slate-400">Display Name</label>
-            <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder={user?.username ?? ""}
-              className="w-full rounded-md border border-dark-700 bg-dark-800 px-3 py-2 text-sm text-slate-200 outline-none focus:border-nexe-500" />
+            <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder={user?.username ?? ""} className="w-full rounded-lg border border-dark-700 bg-dark-800 px-3 py-2 text-sm text-slate-200 outline-none focus:border-nexe-500" />
           </div>
+
+          {/* Bio */}
           <div>
             <label className="mb-1.5 block text-[11px] font-bold uppercase text-slate-400">About Me</label>
-            <textarea value={bio} onChange={(e) => setBio(e.target.value)} rows={5} maxLength={190} placeholder="Tell people about yourself..."
-              className="w-full resize-none rounded-md border border-dark-700 bg-dark-800 px-3 py-2 text-sm text-slate-200 outline-none focus:border-nexe-500" />
-            <p className="mt-1 text-right text-[11px] text-slate-600">{bio.length}/190</p>
+            <textarea value={bio} onChange={(e) => setBio(e.target.value)} rows={4} maxLength={limits.maxBioLength} placeholder="Tell people about yourself..."
+              className="w-full resize-none rounded-lg border border-dark-700 bg-dark-800 px-3 py-2 text-sm text-slate-200 outline-none focus:border-nexe-500" />
+            <p className="mt-0.5 text-right text-[10px] text-slate-700">{bio.length}/{limits.maxBioLength}</p>
           </div>
 
           {/* Accent Color */}
           <ColorPicker value={accentColor} onChange={setAccentColor} label="Profile Color" />
 
+          {/* Background */}
+          <div>
+            <label className="mb-1.5 flex items-center text-[11px] font-bold uppercase text-slate-400">
+              Background
+              {!limits.customBackground && <TierBadge tier="pro" feature="custom background" />}
+            </label>
+            {/* Patterns (free) */}
+            <div className="grid grid-cols-3 gap-1.5">
+              {BACKGROUND_PATTERNS.map((pat) => (
+                <button
+                  key={pat.id}
+                  type="button"
+                  onClick={() => setBackgroundPattern(pat.value)}
+                  className={`h-10 rounded-lg border text-[9px] font-medium transition-all ${
+                    backgroundPattern === pat.value
+                      ? "border-nexe-500 ring-1 ring-nexe-500/30 text-white"
+                      : "border-dark-700 text-slate-500 hover:border-dark-600"
+                  }`}
+                  style={{ background: pat.value || "var(--color-dark-900)" }}
+                >
+                  {!pat.value && pat.label}
+                </button>
+              ))}
+            </div>
+            {/* Custom upload (Pro+) */}
+            {limits.customBackground && (
+              <div className="mt-2">
+                {backgroundPattern.startsWith("http") ? (
+                  <div className="flex items-center gap-2 rounded-lg border border-nexe-500/20 bg-nexe-500/5 px-3 py-2">
+                    <span className="flex-1 truncate text-[10px] text-slate-400">{backgroundPattern.split("/").pop()}</span>
+                    <button type="button" onClick={() => setBackgroundPattern("")} className="text-[10px] text-red-400 hover:text-red-300">Remove</button>
+                  </div>
+                ) : (
+                  <label className="flex cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed border-dark-600 px-3 py-2 text-[10px] text-slate-500 transition-colors hover:border-nexe-500 hover:text-nexe-400">
+                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    Upload custom image
+                    <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      e.target.value = "";
+                      try {
+                        const { url } = await api.uploadAttachment(file);
+                        setBackgroundPattern(url);
+                        flash("success", "Background uploaded!");
+                      } catch {
+                        flash("error", "Failed to upload background");
+                      }
+                    }} />
+                  </label>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Social Links */}
           <div>
-            <label className="mb-1.5 block text-[11px] font-bold uppercase text-slate-400">
-              Social Links ({socialLinks.length}/{MAX_SOCIAL_LINKS})
-            </label>
-
+            <label className="mb-1.5 block text-[11px] font-bold uppercase text-slate-400">Social Links <span className="font-normal normal-case text-slate-600">({socialLinks.length}/{limits.maxSocialLinks === -1 ? "∞" : limits.maxSocialLinks})</span></label>
             {socialLinks.length > 0 && (
-              <div className="mb-2 space-y-1.5">
+              <div className="mb-2 space-y-1">
                 {socialLinks.map((link, i) => (
-                  <div key={i} className="flex items-center gap-2 rounded-md border border-dark-700 bg-dark-800 px-3 py-1.5">
-                    <span className="text-xs font-medium capitalize text-slate-400 w-16 shrink-0">{link.platform}</span>
-                    <span className="min-w-0 flex-1 truncate text-xs text-slate-300">{link.url}</span>
-                    {link.verified && (
-                      <svg className="h-3 w-3 shrink-0 text-nexe-400" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                      </svg>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveLink(i)}
-                      className="shrink-0 text-slate-500 hover:text-red-400 transition-colors"
-                      title="Remove link"
-                    >
-                      <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                      </svg>
+                  <div key={i} className="flex items-center gap-2 rounded-lg border border-dark-700 bg-dark-800 px-3 py-1.5">
+                    <span className="w-14 shrink-0 text-[10px] font-semibold capitalize text-slate-500">{link.platform}</span>
+                    <span className="min-w-0 flex-1 truncate text-[11px] text-slate-400">{link.url}</span>
+                    <button type="button" onClick={() => setSocialLinks((p) => p.filter((_, j) => j !== i))} className="shrink-0 text-slate-600 hover:text-red-400">
+                      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
                   </div>
                 ))}
               </div>
             )}
-
             {showAddLink ? (
-              <div className="space-y-2 rounded-md border border-dark-700 bg-dark-800 p-3">
-                <Select
-                  value={newPlatform}
-                  onChange={setNewPlatform}
-                  options={SOCIAL_PLATFORMS.map((p) => ({ value: p, label: p }))}
-                />
-                <input
-                  type="url"
-                  value={newUrl}
-                  onChange={(e) => setNewUrl(e.target.value)}
-                  placeholder="https://..."
-                  className="w-full rounded-md border border-dark-700 bg-dark-900 px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-nexe-500"
-                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddLink(); } }}
-                  autoFocus
-                />
+              <div className="space-y-2 rounded-lg border border-dark-700 bg-dark-800 p-3">
+                <Select value={newPlatform} onChange={setNewPlatform} options={SOCIAL_PLATFORMS.map((p) => ({ value: p, label: p }))} />
+                <input type="url" value={newUrl} onChange={(e) => setNewUrl(e.target.value)} placeholder="https://..." className="w-full rounded-md border border-dark-700 bg-dark-900 px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-nexe-500" onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddLink(); }}} autoFocus />
                 <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={handleAddLink}
-                    disabled={!newUrl.trim()}
-                    className="rounded-md bg-nexe-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-nexe-500 disabled:opacity-50"
-                  >
-                    Add
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setShowAddLink(false); setNewUrl(""); }}
-                    className="text-xs text-slate-400 hover:text-white"
-                  >
-                    Cancel
-                  </button>
+                  <button type="button" onClick={handleAddLink} disabled={!newUrl.trim()} className="rounded-md bg-nexe-600 px-3 py-1 text-xs font-medium text-white hover:bg-nexe-500 disabled:opacity-50">Add</button>
+                  <button type="button" onClick={() => { setShowAddLink(false); setNewUrl(""); }} className="text-xs text-slate-500 hover:text-white">Cancel</button>
                 </div>
               </div>
-            ) : socialLinks.length < MAX_SOCIAL_LINKS ? (
-              <button
-                type="button"
-                onClick={() => setShowAddLink(true)}
-                className="flex items-center gap-1.5 rounded-md border border-dashed border-dark-600 px-3 py-1.5 text-xs text-slate-400 transition-colors hover:border-nexe-500 hover:text-nexe-400"
-              >
-                <svg className="h-3 w-3" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M13 5a1 1 0 1 0-2 0v6H5a1 1 0 1 0 0 2h6v6a1 1 0 1 0 2 0v-6h6a1 1 0 1 0 0-2h-6z" />
-                </svg>
+            ) : (limits.maxSocialLinks === -1 || socialLinks.length < limits.maxSocialLinks) ? (
+              <button type="button" onClick={() => setShowAddLink(true)} className="flex items-center gap-1.5 rounded-lg border border-dashed border-dark-600 px-3 py-1.5 text-xs text-slate-500 hover:border-nexe-500 hover:text-nexe-400">
+                <svg className="h-3 w-3" viewBox="0 0 24 24" fill="currentColor"><path d="M13 5a1 1 0 10-2 0v6H5a1 1 0 100 2h6v6a1 1 0 102 0v-6h6a1 1 0 100-2h-6z" /></svg>
                 Add Link
               </button>
             ) : null}
           </div>
 
-          <button type="submit" disabled={loading || !loaded}
-            className="rounded-md bg-nexe-600 px-4 py-2 text-sm font-medium text-white hover:bg-nexe-500 disabled:opacity-50">
+          {/* Featured Clips */}
+          <div>
+            <label className="mb-1.5 block text-[11px] font-bold uppercase text-slate-400">Featured Clips <span className="font-normal normal-case text-slate-600">({featuredClips.length}/{limits.maxClipsShowcase})</span></label>
+            {featuredClips.length > 0 && (
+              <div className="mb-2 space-y-1">
+                {featuredClips.map((clip, i) => (
+                  <div key={i} className="flex items-center gap-2 rounded-lg border border-dark-700 bg-dark-800 px-3 py-1.5">
+                    {clip.thumbnail_url && <img src={clip.thumbnail_url} alt="" className="h-6 w-10 shrink-0 rounded object-cover" />}
+                    <span className="min-w-0 flex-1 truncate text-[11px] text-slate-300">{clip.title}</span>
+                    <button type="button" onClick={() => setFeaturedClips((p) => p.filter((_, j) => j !== i))} className="shrink-0 text-slate-600 hover:text-red-400">
+                      <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {showAddClip ? (
+              <div className="space-y-2 rounded-lg border border-dark-700 bg-dark-800 p-3">
+                <input type="text" value={newClipTitle} onChange={(e) => setNewClipTitle(e.target.value)} placeholder="Clip title" className="w-full rounded-md border border-dark-700 bg-dark-900 px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-nexe-500" autoFocus />
+                <input type="url" value={newClipUrl} onChange={(e) => setNewClipUrl(e.target.value)} placeholder="Clip URL (Twitch/YouTube)" className="w-full rounded-md border border-dark-700 bg-dark-900 px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-nexe-500" />
+                <input type="url" value={newClipThumb} onChange={(e) => setNewClipThumb(e.target.value)} placeholder="Thumbnail URL (optional)" className="w-full rounded-md border border-dark-700 bg-dark-900 px-3 py-1.5 text-sm text-slate-200 outline-none focus:border-nexe-500" />
+                <div className="flex gap-2">
+                  <button type="button" onClick={handleAddClip} disabled={!newClipTitle.trim() || !newClipUrl.trim()} className="rounded-md bg-nexe-600 px-3 py-1 text-xs font-medium text-white hover:bg-nexe-500 disabled:opacity-50">Add</button>
+                  <button type="button" onClick={() => { setShowAddClip(false); setNewClipTitle(""); setNewClipUrl(""); setNewClipThumb(""); }} className="text-xs text-slate-500 hover:text-white">Cancel</button>
+                </div>
+              </div>
+            ) : featuredClips.length < limits.maxClipsShowcase ? (
+              <button type="button" onClick={() => setShowAddClip(true)} className="flex items-center gap-1.5 rounded-lg border border-dashed border-dark-600 px-3 py-1.5 text-xs text-slate-500 hover:border-nexe-500 hover:text-nexe-400">
+                <svg className="h-3 w-3" viewBox="0 0 24 24" fill="currentColor"><path d="M13 5a1 1 0 10-2 0v6H5a1 1 0 100 2h6v6a1 1 0 102 0v-6h6a1 1 0 100-2h-6z" /></svg>
+                Add Clip
+              </button>
+            ) : null}
+          </div>
+
+          {/* Save */}
+          <button type="submit" disabled={loading || !loaded} className="w-full rounded-lg bg-nexe-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-nexe-500 disabled:opacity-50 transition-colors">
             {loading ? "Saving..." : "Save Changes"}
           </button>
         </form>
 
-        {/* Preview — larger, matches MiniProfilePopover style */}
+        {/* ── Right: Live Preview ── */}
         <div className="min-w-0 flex-1">
           <p className="mb-2 text-[11px] font-bold uppercase text-slate-500">Preview</p>
-          <div className="overflow-hidden rounded-lg border border-dark-700" style={{ backgroundColor: "#111827" }}>
+          <div className="overflow-hidden rounded-xl border border-white/[0.06]" style={{ backgroundColor: "#0c1220" }}>
             {/* Banner */}
-            {bannerUrl ? (
-              <img src={bannerUrl} alt="Banner" className="h-24 w-full object-cover" />
-            ) : (
-              <div className="h-24 bg-gradient-to-r from-nexe-600 to-nexe-500" />
-            )}
-            {/* Avatar */}
-            <div className="px-5">
-              {avatarUrl ? (
-                <img src={avatarUrl} alt="Avatar" className="-mt-10 h-[76px] w-[76px] rounded-full object-cover" style={{ border: "6px solid #111827" }} />
+            <div className="relative">
+              {bannerUrl ? (
+                <img src={bannerUrl} alt="" className="h-28 w-full object-cover" />
               ) : (
-                <div className="-mt-10 flex h-[76px] w-[76px] items-center justify-center rounded-full bg-nexe-600 text-2xl font-bold text-white" style={{ border: "6px solid #111827" }}>
-                  {previewName.charAt(0).toUpperCase()}
+                <div className="h-28" style={{ background: `linear-gradient(135deg, ${accentColor}33, ${accentColor}08)` }} />
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-[#0c1220] via-[#0c1220]/40 to-transparent" />
+              {/* Avatar overlapping */}
+              <div className="absolute -bottom-8 left-4">
+                <div className="rounded-xl p-[2px]" style={{ background: `linear-gradient(135deg, ${accentColor}, ${accentColor}44)` }}>
+                  {avatarUrl ? (
+                    <img src={avatarUrl} alt="" className="h-16 w-16 rounded-xl object-cover" style={{ border: "2px solid #0c1220" }} />
+                  ) : (
+                    <div className="flex h-16 w-16 items-center justify-center rounded-xl text-lg font-bold text-white" style={{ backgroundColor: accentColor, border: "2px solid #0c1220" }}>
+                      {previewName.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Info */}
+            <div className="px-4 pb-4 pt-10">
+              <div className="flex items-center gap-2 mb-0.5">
+                <p className="text-base font-bold text-white truncate">{previewName}</p>
+                <span className="shrink-0 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums" style={{ backgroundColor: accentColor + "20", color: accentColor }}>
+                  <svg className="h-2.5 w-2.5" viewBox="0 0 20 20" fill="currentColor"><path d="M10 1l2.39 6.26H19l-5.3 3.98L15.69 18 10 14.27 4.31 18l1.99-6.76L1 7.26h6.61z" /></svg>
+                  {level}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 mb-3">@{user?.username}</p>
+
+              {/* XP bar */}
+              <div className="mb-3 rounded-lg bg-white/[0.03] p-2.5 border border-white/[0.04]">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-medium text-slate-400">Level {level}</span>
+                  <span className="text-[10px] font-semibold tabular-nums" style={{ color: accentColor }}>{xpPercent}%</span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
+                  <div className="h-full rounded-full" style={{ width: `${xpPercent}%`, backgroundColor: accentColor }} />
+                </div>
+                <div className="mt-1 flex justify-between text-[9px] text-slate-700">
+                  <span className="tabular-nums">{Math.max(xpIntoLevel, 0).toLocaleString()} / {xpNeeded.toLocaleString()} XP</span>
+                  <span>Level {level + 1}</span>
+                </div>
+              </div>
+
+              {/* Bio */}
+              {bio.trim() && (
+                <div className="mb-3">
+                  <p className="text-[10px] font-bold uppercase text-slate-600 mb-1">About</p>
+                  <p className="text-[12px] leading-relaxed text-slate-300 break-words whitespace-pre-wrap">{bio}</p>
                 </div>
               )}
-            </div>
-            {/* Info */}
-            <div className="px-5 pb-5 pt-2">
-              <p className="text-lg font-bold text-white">{previewName}</p>
-              <p className="text-sm text-slate-400">@{user?.username}</p>
 
-              {bio.trim() && (
-                <>
-                  <div className="my-3 h-px bg-dark-700" />
-                  <p className="text-[11px] font-bold uppercase text-slate-500">About Me</p>
-                  <p className="mt-1 text-sm leading-relaxed text-slate-300 break-words">{bio}</p>
-                </>
-              )}
-
+              {/* Social links */}
               {socialLinks.length > 0 && (
-                <>
-                  <div className="my-3 h-px bg-dark-700" />
-                  <p className="text-[11px] font-bold uppercase text-slate-500">Connections</p>
-                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                <div className="mb-3">
+                  <p className="text-[10px] font-bold uppercase text-slate-600 mb-1">Links</p>
+                  <div className="flex flex-wrap gap-1">
                     {socialLinks.map((link, i) => (
-                      <span key={i} className="rounded-md bg-slate-800 px-2.5 py-1 text-[11px] capitalize text-slate-300">
-                        {link.platform}
-                      </span>
+                      <span key={i} className="rounded-md bg-white/[0.04] px-2 py-0.5 text-[10px] capitalize text-slate-400 border border-white/[0.04]">{link.platform}</span>
                     ))}
                   </div>
-                </>
+                </div>
               )}
 
-              <div className="mt-3 h-px bg-dark-700" />
-              <div className="mt-3 flex items-center gap-2">
-                <div className="flex h-6 items-center gap-1 rounded-full bg-nexe-600/15 px-2.5 text-[11px] font-semibold text-nexe-400">
-                  <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
-                    <path d="M10 1l2.39 6.26H19l-5.3 3.98L15.69 18 10 14.27 4.31 18l1.99-6.76L1 7.26h6.61z" />
-                  </svg>
-                  Level 1
+              {/* Clips */}
+              {featuredClips.length > 0 && (
+                <div className="mb-3">
+                  <p className="text-[10px] font-bold uppercase text-slate-600 mb-1">Clips</p>
+                  <div className="grid grid-cols-2 gap-1">
+                    {featuredClips.map((clip, i) => (
+                      <div key={i} className="relative overflow-hidden rounded-md bg-dark-900 aspect-video">
+                        {clip.thumbnail_url ? (
+                          <img src={clip.thumbnail_url} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="flex h-full items-center justify-center text-[9px] text-slate-600">{clip.title}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <span className="text-[11px] text-slate-600">Member since May 2026</span>
-              </div>
+              )}
+
+              {/* Member since */}
+              {createdAt && (
+                <p className="text-[9px] text-slate-700">
+                  Nexe member since {new Date(createdAt).toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+                </p>
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Crop modal */}
       {cropModal && (
-        <ImageCropModal
-          imageSrc={cropModal.src}
-          type={cropModal.type}
-          onConfirm={handleCropConfirm}
-          onClose={() => setCropModal(null)}
-        />
+        <ImageCropModal imageSrc={cropModal.src} type={cropModal.type} onConfirm={handleCropConfirm} onClose={() => setCropModal(null)} />
       )}
     </div>
   );

@@ -98,7 +98,7 @@ func (s *PresenceService) GetPresence(ctx context.Context, userID string) (*mode
 		presence.LastSeen = lastSeen
 	}
 
-	if data["streamingLive"] == "true" {
+	if data["streamingLive"] == "true" && status != "offline" {
 		presence.StreamingLive = true
 		presence.StreamTitle = data["streamTitle"]
 		presence.StreamGame = data["streamGame"]
@@ -156,6 +156,7 @@ func (s *PresenceService) SetOffline(ctx context.Context, userID string) error {
 	key := presenceKeyPrefix + userID
 	pipe := s.rdb.Pipeline()
 	pipe.HSet(ctx, key, "status", "offline", "lastSeen", time.Now().UTC().Format(time.RFC3339))
+	pipe.HDel(ctx, key, "streamingLive", "streamTitle", "streamGame", "streamViewers", "streamStartedAt", "streamThumbnail")
 	pipe.Expire(ctx, key, 24*time.Hour) // keep offline presence for 24h
 	_, err := pipe.Exec(ctx)
 
@@ -243,7 +244,7 @@ func (s *PresenceService) GetBulkPresence(ctx context.Context, userIDs []string)
 		if t, err := time.Parse(time.RFC3339, data["lastSeen"]); err == nil {
 			p.LastSeen = t
 		}
-		if data["streamingLive"] == "true" {
+		if data["streamingLive"] == "true" && bulkStatus != "offline" {
 			p.StreamingLive = true
 			p.StreamTitle = data["streamTitle"]
 			p.StreamGame = data["streamGame"]

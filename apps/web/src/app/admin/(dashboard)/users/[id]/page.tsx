@@ -37,6 +37,23 @@ interface UserGuild {
   joined_at: string;
 }
 
+interface UserTier {
+  tier: string;
+  started_at: string | null;
+  expires_at: string | null;
+}
+
+async function getUserTier(userId: string): Promise<UserTier> {
+  const [row] = await query<UserTier>(
+    `SELECT tier,
+            to_char(started_at, 'YYYY-MM-DD') as started_at,
+            to_char(expires_at, 'YYYY-MM-DD') as expires_at
+     FROM user_tiers WHERE user_id = $1`,
+    [userId]
+  );
+  return row || { tier: "free", started_at: null, expires_at: null };
+}
+
 async function getUser(id: string) {
   const [user] = await query<UserDetail>(
     `SELECT id, username, email, email_verified, disabled, twitch_id, twitch_login,
@@ -79,9 +96,10 @@ export default async function UserDetailPage({
     notFound();
   }
 
-  const [profile, guilds] = await Promise.all([
+  const [profile, guilds, userTier] = await Promise.all([
     getUserProfile(id),
     getUserGuilds(id),
+    getUserTier(id),
   ]);
 
   return (
@@ -242,7 +260,7 @@ export default async function UserDetailPage({
 
         {/* Actions Sidebar */}
         <div>
-          <UserActions userId={user.id} username={user.username} disabled={user.disabled} />
+          <UserActions userId={user.id} username={user.username} disabled={user.disabled} currentTier={userTier.tier} tierExpiresAt={userTier.expires_at} />
         </div>
       </div>
     </div>

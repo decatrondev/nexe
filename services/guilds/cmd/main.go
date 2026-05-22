@@ -86,8 +86,11 @@ func main() {
 		cfg.MessagingURL,
 	)
 
+	// XP service
+	xpSvc := service.NewXPService(rdb, cfg.GatewayURL)
+
 	// Handler
-	guildHandler := handler.NewGuildHandler(guildService, automodRepo, overrideRepo, rdb)
+	guildHandler := handler.NewGuildHandler(guildService, automodRepo, overrideRepo, rdb, xpSvc)
 	emoteHandler := handler.NewEmoteHandler(guildService, rdb, db)
 	relationshipHandler := handler.NewRelationshipHandler(relationshipRepo, privacyRepo, db, rdb)
 	dmHandler := handler.NewDMHandler(dmRepo, privacyRepo, rdb)
