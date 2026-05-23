@@ -199,15 +199,25 @@ jobs:
         if: matrix.platform == 'linux'
         run: |
           VERSION="${{ github.ref_name }}"
-          RELEASE_DIR="apps/desktop/src-tauri/target/release"
+          BUNDLE_DIR="apps/desktop/src-tauri/target/release/bundle/appimage"
           ZIP_NAME="nexe-update-${VERSION}-linux-x86_64.zip"
           mkdir -p update-package
-          for name in nexe Nexe app; do
-            if [ -f "$RELEASE_DIR/$name" ] && file "$RELEASE_DIR/$name" | grep -q ELF; then
-              cp "$RELEASE_DIR/$name" update-package/nexe
-              break
-            fi
-          done
+
+          # Use the AppImage for updates (not the raw binary)
+          APPIMAGE=$(find "$BUNDLE_DIR" -maxdepth 1 -name "*.AppImage" -type f | head -1)
+          if [ -n "$APPIMAGE" ]; then
+            cp "$APPIMAGE" update-package/$(basename "$APPIMAGE")
+          else
+            # Fallback: raw binary (for deb installs)
+            RELEASE_DIR="apps/desktop/src-tauri/target/release"
+            for name in nexe Nexe app; do
+              if [ -f "$RELEASE_DIR/$name" ] && file "$RELEASE_DIR/$name" | grep -q ELF; then
+                cp "$RELEASE_DIR/$name" update-package/nexe
+                break
+              fi
+            done
+          fi
+
           if [ "$(ls -A update-package)" ]; then
             cd update-package
             zip -r "$GITHUB_WORKSPACE/$ZIP_NAME" .

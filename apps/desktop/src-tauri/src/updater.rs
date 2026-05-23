@@ -158,6 +158,40 @@ pub fn apply_staged_update(app: &AppHandle) -> bool {
     }
     let _ = fs::write(&attempts_file, (attempts + 1).to_string());
 
+    // Linux AppImage: replace the AppImage file directly
+    #[cfg(target_os = "linux")]
+    {
+        if let Ok(appimage_path) = std::env::var("APPIMAGE") {
+            log::info!("Linux AppImage detected: {:?}", appimage_path);
+            let result = apply_appimage_update(&staged_dir, &appimage_path);
+            let _ = fs::remove_dir_all(&staged_dir);
+            let _ = fs::remove_file(&attempts_file);
+            if result {
+                log::info!("AppImage update applied successfully");
+            } else {
+                log::error!("AppImage update failed");
+            }
+            return result;
+        }
+        // Not an AppImage — fall through to generic Unix path
+    }
+
+    // macOS: replace the .app bundle
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(result) = apply_macos_update(&staged_dir) {
+            let _ = fs::remove_dir_all(&staged_dir);
+            let _ = fs::remove_file(&attempts_file);
+            if result {
+                log::info!("macOS .app update applied successfully");
+            } else {
+                log::error!("macOS .app update failed");
+            }
+            return result;
+        }
+        // No .app found in staged — fall through to generic path
+    }
+
     let app_dir = match get_app_dir() {
         Some(d) => d,
         None => return false,
@@ -247,6 +281,108 @@ pub fn apply_staged_update(app: &AppHandle) -> bool {
 
     log::info!("Staged update applied successfully");
     true
+}
+
+/// Linux: replace the running AppImage with the new one from staged dir.
+#[cfg(target_os = "linux")]
+fn apply_appimage_update(staged_dir: &Path, appimage_path: &str) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+
+    let appimage = Path::new(appimage_path);
+
+    // Find the .AppImage file in staged dir
+    let new_appimage = find_file_by_ext(staged_dir, "AppImage")
+        .or_else(|| find_file_by_ext(staged_dir, "appimage"));
+
+    let src = match new_appimage {
+        Some(p) => p,
+        None => {
+            // No AppImage in staged — maybe the zip contains the raw binary.
+            // Find any ELF binary and try to use it as a replacement.
+            // But for AppImage this won't work, so skip.
+            log::error!("No .AppImage file found in staged update — cannot update AppImage");
+            return false;
+        }
+    };
+
+    // Replace the old AppImage: rename old to .old, copy new, delete old
+    let old_backup = appimage.with_extension("AppImage.old");
+    let _ = fs::remove_file(&old_backup);
+
+    if let Err(e) = fs::rename(appimage, &old_backup) {
+        log::error!("Failed to rename old AppImage: {}", e);
+        return false;
+    }
+
+    if let Err(e) = fs::copy(&src, appimage) {
+        log::error!("Failed to copy new AppImage: {}", e);
+        // Try to restore
+        let _ = fs::rename(&old_backup, appimage);
+        return false;
+    }
+
+    // Make executable
+    if let Ok(meta) = fs::metadata(appimage) {
+        let mut perms = meta.permissions();
+        perms.set_mode(0o755);
+        let _ = fs::set_permissions(appimage, perms);
+    }
+
+    // Clean up backup
+    let _ = fs::remove_file(&old_backup);
+
+    true
+}
+
+/// macOS: replace the .app bundle at its current location.
+#[cfg(target_os = "macos")]
+fn apply_macos_update(staged_dir: &Path) -> Option<bool> {
+    // Find a .app directory in staged
+    let app_bundle = fs::read_dir(staged_dir).ok()?.flatten().find(|e| {
+        e.file_name().to_string_lossy().ends_with(".app") && e.path().is_dir()
+    })?;
+
+    let src_app = app_bundle.path();
+
+    // Find the current .app bundle by walking up from current_exe
+    // current_exe is like /Applications/Nexe.app/Contents/MacOS/nexe
+    let exe = std::env::current_exe().ok()?;
+    let app_dir = exe.ancestors().find(|p| {
+        p.extension().map_or(false, |ext| ext == "app")
+    })?;
+
+    let app_path = app_dir.to_path_buf();
+    let old_backup = app_path.with_extension("app.old");
+
+    log::info!("macOS: replacing {:?} with {:?}", app_path, src_app);
+
+    let _ = fs::remove_dir_all(&old_backup);
+
+    if let Err(e) = fs::rename(&app_path, &old_backup) {
+        log::error!("Failed to rename old .app: {}", e);
+        return Some(false);
+    }
+
+    if let Err(e) = copy_dir_recursive(&src_app, &app_path) {
+        log::error!("Failed to copy new .app: {}", e);
+        let _ = fs::rename(&old_backup, &app_path);
+        return Some(false);
+    }
+
+    let _ = fs::remove_dir_all(&old_backup);
+
+    Some(true)
+}
+
+fn find_file_by_ext(dir: &Path, ext: &str) -> Option<PathBuf> {
+    fs::read_dir(dir).ok()?.flatten().find_map(|e| {
+        let p = e.path();
+        if p.is_file() && p.extension().map_or(false, |x| x == ext) {
+            Some(p)
+        } else {
+            None
+        }
+    })
 }
 
 pub fn cleanup_old_files() {
