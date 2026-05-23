@@ -18,6 +18,7 @@
     "core:window:allow-set-focus",
     "core:window:allow-minimize",
     "core:event:default",
-    "core:tray:default"
+    "core:tray:default",
+    "opener:default"
   ]
 }

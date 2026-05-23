@@ -920,6 +920,25 @@ export const api = {
     return request<void>("DELETE", "/auth/twitch/link");
   },
 
+  generateDeviceCode() {
+    return request<{ sessionId: string; code: string; verifyUrl: string; expiresIn: number }>("POST", "/auth/twitch/device", {});
+  },
+
+  checkDeviceCodeStatus(sessionId: string) {
+    return request<{
+      status: string;
+      isNew?: boolean;
+      accessToken?: string;
+      refreshToken?: string;
+      twitchId?: string;
+      twitchLogin?: string;
+      twitchDisplayName?: string;
+      twitchEmail?: string;
+      twitchAvatar?: string;
+      error?: string;
+    }>("GET", `/auth/twitch/device/${sessionId}`);
+  },
+
   getStreamStatus(userId: string) {
     return request<StreamStatus>("GET", `/users/${userId}/stream`);
   },

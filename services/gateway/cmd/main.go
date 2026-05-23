@@ -182,6 +182,9 @@ func main() {
 	// Twitch routes
 	mux.HandleFunc("GET /auth/twitch", twitchHandler.TwitchAuth)
 	mux.HandleFunc("GET /auth/twitch/callback", twitchHandler.TwitchCallback)
+	mux.Handle("POST /auth/twitch/device", apiRateLimiter.Middleware(http.HandlerFunc(twitchHandler.GenerateDeviceCode)))
+	mux.Handle("GET /auth/twitch/device/{sessionId}", apiRateLimiter.Middleware(http.HandlerFunc(twitchHandler.CheckDeviceCodeStatus)))
+	mux.HandleFunc("GET /link", twitchHandler.DeviceLinkPage)
 	mux.Handle("POST /auth/twitch/link", authMiddleware(http.HandlerFunc(twitchHandler.LinkTwitch)))
 	mux.Handle("DELETE /auth/twitch/link", authMiddleware(http.HandlerFunc(twitchHandler.UnlinkTwitch)))
 	mux.Handle("GET /users/{id}/stream", apiRateLimiter.Middleware(http.HandlerFunc(twitchHandler.GetStreamStatus)))

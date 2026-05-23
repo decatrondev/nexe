@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
+	crand "crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -209,7 +210,9 @@ func (h *TwitchHandler) runPeriodicSync(ctx context.Context) {
 }
 
 // TwitchAuth redirects to Twitch OAuth
-// Query params: ?action=link&token=JWT (optional — for linking to existing account)
+// Query params:
+//   - ?action=link&token=JWT — link Twitch to existing account
+//   - ?device_session=UUID   — device code flow (desktop app polling)
 func (h *TwitchHandler) TwitchAuth(w http.ResponseWriter, r *http.Request) {
 	state := uuid.NewString()
 
@@ -222,6 +225,18 @@ func (h *TwitchHandler) TwitchAuth(w http.ResponseWriter, r *http.Request) {
 		claims, err := h.jwt.ValidateAccessToken(userToken)
 		if err == nil {
 			stateValue = "link:" + claims.Subject // store action + userId
+		}
+	}
+
+	// Device code flow — desktop app opens browser with session ID
+	if deviceSession := r.URL.Query().Get("device_session"); deviceSession != "" {
+		data, err := h.rdb.Get(r.Context(), "nexe:device:"+deviceSession).Result()
+		if err == nil {
+			var session map[string]string
+			json.Unmarshal([]byte(data), &session)
+			if session["status"] == "pending" {
+				stateValue = "device:" + deviceSession
+			}
 		}
 	}
 
@@ -302,6 +317,69 @@ func (h *TwitchHandler) TwitchCallback(w http.ResponseWriter, r *http.Request) {
 		redirectURL := fmt.Sprintf("%s/auth/twitch/callback?linked=true&twitchLogin=%s",
 			h.frontendURL, url.QueryEscape(twitchUser.Login))
 		http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
+		return
+	}
+
+	// Handle device code flow — store tokens in Redis for desktop app polling
+	if strings.HasPrefix(stateValue, "device:") {
+		deviceSessionID := strings.TrimPrefix(stateValue, "device:")
+
+		// Clean up reverse lookup (code → sessionId)
+		oldData, _ := h.rdb.Get(r.Context(), "nexe:device:"+deviceSessionID).Result()
+		var oldSession map[string]string
+		json.Unmarshal([]byte(oldData), &oldSession)
+		if oldCode := oldSession["code"]; oldCode != "" {
+			h.rdb.Del(r.Context(), "nexe:device_code:"+oldCode)
+		}
+
+		// Check if user already exists
+		deviceUser, _ := h.users.GetByTwitchID(r.Context(), twitchUser.ID)
+		if deviceUser == nil && twitchUser.Email != "" {
+			deviceUser, _ = h.users.GetByEmail(r.Context(), twitchUser.Email)
+		}
+
+		if deviceUser != nil {
+			// Existing user — update Twitch tokens and create session
+			h.users.LinkTwitch(r.Context(), deviceUser.ID, twitchUser.ID, twitchUser.Login, twitchUser.DisplayName, token.AccessToken, token.RefreshToken)
+
+			ip := r.Header.Get("X-Real-IP")
+			if ip == "" {
+				ip = r.RemoteAddr
+			}
+
+			tokens, err := h.auth.CreateSessionForUser(r.Context(), deviceUser, ip, r.UserAgent())
+			if err != nil {
+				slog.Error("device flow: session creation failed", "error", err)
+				errData, _ := json.Marshal(map[string]string{"status": "error", "error": "Failed to create session"})
+				h.rdb.Set(r.Context(), "nexe:device:"+deviceSessionID, string(errData), 5*time.Minute)
+				h.renderDeviceResultPage(w, false)
+				return
+			}
+
+			go h.autoSyncUserRoles(deviceUser.ID, twitchUser.ID)
+
+			sessionData, _ := json.Marshal(map[string]interface{}{
+				"status":       "authorized",
+				"isNew":        false,
+				"accessToken":  tokens.AccessToken,
+				"refreshToken": tokens.RefreshToken,
+			})
+			h.rdb.Set(r.Context(), "nexe:device:"+deviceSessionID, string(sessionData), 5*time.Minute)
+		} else {
+			// New user — store Twitch data for registration in the app
+			sessionData, _ := json.Marshal(map[string]interface{}{
+				"status":            "authorized",
+				"isNew":             true,
+				"twitchId":          twitchUser.ID,
+				"twitchLogin":       twitchUser.Login,
+				"twitchDisplayName": twitchUser.DisplayName,
+				"twitchEmail":       twitchUser.Email,
+				"twitchAvatar":      twitchUser.ProfileImageURL,
+			})
+			h.rdb.Set(r.Context(), "nexe:device:"+deviceSessionID, string(sessionData), 5*time.Minute)
+		}
+
+		h.renderDeviceResultPage(w, true)
 		return
 	}
 
@@ -1700,4 +1778,205 @@ func (h *TwitchHandler) sendLiveNotification(ctx context.Context, twitchID, disp
 			resp.Body.Close()
 		}
 	}
+}
+
+// ── Device Code Flow ──────────────────────────────────────────────
+
+// generateDeviceCode generates a random 8-character code formatted as XXXX-XXXX.
+func generateDeviceCode() string {
+	const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // no I, O, 0, 1 to avoid confusion
+	b := make([]byte, 8)
+	crand.Read(b)
+	for i := range b {
+		b[i] = chars[int(b[i])%len(chars)]
+	}
+	return string(b[:4]) + "-" + string(b[4:])
+}
+
+// GenerateDeviceCode creates a new device code session for Twitch login.
+// POST /auth/twitch/device
+func (h *TwitchHandler) GenerateDeviceCode(w http.ResponseWriter, r *http.Request) {
+	sessionID := uuid.NewString()
+	code := generateDeviceCode()
+
+	// Store device session in Redis (5 min TTL)
+	data, _ := json.Marshal(map[string]string{"status": "pending", "code": code})
+	h.rdb.Set(r.Context(), "nexe:device:"+sessionID, string(data), 5*time.Minute)
+
+	// Reverse lookup: code → sessionId
+	h.rdb.Set(r.Context(), "nexe:device_code:"+code, sessionID, 5*time.Minute)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data": map[string]interface{}{
+			"sessionId": sessionID,
+			"code":      code,
+			"verifyUrl": h.baseURL + "/link",
+			"expiresIn": 300,
+		},
+	})
+}
+
+// CheckDeviceCodeStatus checks if a device code session has been authorized.
+// GET /auth/twitch/device/{sessionId}
+func (h *TwitchHandler) CheckDeviceCodeStatus(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.PathValue("sessionId")
+
+	data, err := h.rdb.Get(r.Context(), "nexe:device:"+sessionID).Result()
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"data": map[string]string{"status": "expired"},
+		})
+		return
+	}
+
+	var session map[string]interface{}
+	json.Unmarshal([]byte(data), &session)
+
+	status, _ := session["status"].(string)
+	if status == "authorized" {
+		// One-time use: delete after reading
+		h.rdb.Del(r.Context(), "nexe:device:"+sessionID)
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"data": session,
+		})
+		return
+	}
+
+	if status == "error" {
+		h.rdb.Del(r.Context(), "nexe:device:"+sessionID)
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"data": session,
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"data": map[string]string{"status": "pending"},
+	})
+}
+
+// DeviceLinkPage serves the HTML page where users enter a device code.
+// GET /link
+func (h *TwitchHandler) DeviceLinkPage(w http.ResponseWriter, r *http.Request) {
+	code := strings.TrimSpace(r.URL.Query().Get("code"))
+
+	// If code provided, validate and redirect to Twitch OAuth
+	if code != "" {
+		code = strings.ToUpper(code)
+		sessionID, err := h.rdb.Get(r.Context(), "nexe:device_code:"+code).Result()
+		if err != nil || sessionID == "" {
+			h.renderLinkPage(w, code, "Invalid or expired code. Please try again.")
+			return
+		}
+
+		// Check session is still pending
+		data, _ := h.rdb.Get(r.Context(), "nexe:device:"+sessionID).Result()
+		var session map[string]string
+		json.Unmarshal([]byte(data), &session)
+		if session["status"] != "pending" {
+			h.renderLinkPage(w, code, "This code has already been used or expired.")
+			return
+		}
+
+		// Valid — redirect to Twitch OAuth with device session
+		redirectURL := h.baseURL + "/auth/twitch?device_session=" + sessionID
+		http.Redirect(w, r, redirectURL, http.StatusTemporaryRedirect)
+		return
+	}
+
+	h.renderLinkPage(w, "", "")
+}
+
+func (h *TwitchHandler) renderLinkPage(w http.ResponseWriter, code, errorMsg string) {
+	errorHTML := ""
+	if errorMsg != "" {
+		errorHTML = `<div class="error">` + errorMsg + `</div>`
+	}
+
+	html := `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Link Device — Nexe</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f1117;color:#e2e8f0;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.card{background:#1a1d27;border-radius:16px;padding:40px;width:100%;max-width:420px;box-shadow:0 25px 50px rgba(0,0,0,.5)}
+.logo{text-align:center;margin-bottom:8px;font-size:28px;font-weight:700}
+.logo span{color:#8b5cf6}
+.sub{text-align:center;color:#94a3b8;font-size:14px;margin-bottom:32px;line-height:1.5}
+label{display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:#cbd5e1;margin-bottom:8px}
+input[type=text]{width:100%;padding:14px 16px;background:#0f1117;border:1px solid #2d3348;border-radius:8px;color:#e2e8f0;font-size:22px;text-align:center;letter-spacing:.25em;font-family:monospace;outline:none;transition:border-color .2s}
+input:focus{border-color:#8b5cf6}
+input::placeholder{color:#475569;letter-spacing:normal;font-family:-apple-system,sans-serif;font-size:14px}
+.btn{width:100%;padding:12px;background:#9146FF;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;margin-top:16px;display:flex;align-items:center;justify-content:center;gap:8px;transition:background .2s}
+.btn:hover{background:#7c3aed}
+.error{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);color:#f87171;padding:12px 16px;border-radius:8px;font-size:14px;margin-bottom:16px;text-align:center}
+.icon{width:20px;height:20px;fill:#fff}
+.footer{text-align:center;margin-top:24px;color:#64748b;font-size:12px}
+</style>
+</head>
+<body>
+<div class="card">
+<div class="logo"><span>Nexe</span></div>
+<p class="sub">Enter the code shown in your Nexe app<br/>to log in with Twitch.</p>
+` + errorHTML + `
+<form method="GET" action="/link">
+<label>Device Code</label>
+<input type="text" name="code" placeholder="XXXX-XXXX" value="` + code + `" maxlength="9" autofocus required autocomplete="off" />
+<button type="submit" class="btn">
+<svg viewBox="0 0 24 24" class="icon"><path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0 1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z"/></svg>
+Continue with Twitch
+</button>
+</form>
+<div class="footer"><span style="color:#8b5cf6;font-weight:600">Nexe</span></div>
+</div>
+</body>
+</html>`
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprint(w, html)
+}
+
+func (h *TwitchHandler) renderDeviceResultPage(w http.ResponseWriter, success bool) {
+	title := "Authorized!"
+	message := "You can close this tab.<br/>Your Nexe app will log you in automatically."
+	icon := `<svg style="width:48px;height:48px;color:#22c55e" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>`
+
+	if !success {
+		title = "Something went wrong"
+		message = "Please try again from your Nexe app."
+		icon = `<svg style="width:48px;height:48px;color:#ef4444" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>`
+	}
+
+	html := `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>` + title + ` — Nexe</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f1117;color:#e2e8f0;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.card{background:#1a1d27;border-radius:16px;padding:48px;width:100%;max-width:420px;box-shadow:0 25px 50px rgba(0,0,0,.5);text-align:center}
+h1{font-size:24px;font-weight:700;margin:16px 0 8px}
+p{color:#94a3b8;font-size:14px;line-height:1.6}
+.footer{margin-top:24px;color:#64748b;font-size:12px}
+</style>
+</head>
+<body>
+<div class="card">
+` + icon + `
+<h1>` + title + `</h1>
+<p>` + message + `</p>
+<div class="footer"><span style="color:#8b5cf6;font-weight:600">Nexe</span></div>
+</div>
+</body>
+</html>`
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprint(w, html)
 }
