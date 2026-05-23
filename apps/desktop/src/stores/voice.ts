@@ -19,6 +19,21 @@ function getScreenShareOpts(quality: string): { width: number; height: number; f
   }
 }
 
+// ── Build screen share capture options ──
+// Prefers screen/window over tab so switching tabs doesn't freeze the stream
+function buildScreenShareConfig(quality: string, audio: boolean) {
+  return {
+    audio,
+    contentHint: "detail" as const,
+    resolution: getScreenShareOpts(quality),
+    // Browser hints: prefer screen/window, not tabs (tabs pause when hidden)
+    selfBrowserSurface: "exclude" as const,    // don't show current tab
+    surfaceSwitching: "include" as const,       // allow switching source mid-stream
+    preferCurrentTab: false,                    // don't default to current tab
+    systemAudio: "include" as const,            // include system audio option
+  };
+}
+
 // ── Unified call type ──
 export interface ActiveCall {
   type: "guild" | "dm";
@@ -339,10 +354,8 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
   startScreenShare: async (quality: string, audio: boolean) => {
     const { room } = get();
     if (!room) { set({ screenSharePending: false }); return; }
-
-    const resolution = getScreenShareOpts(quality);
     try {
-      await room.localParticipant.setScreenShareEnabled(true, { audio, contentHint: "detail", resolution });
+      await room.localParticipant.setScreenShareEnabled(true, buildScreenShareConfig(quality, audio));
       set({ screenShareEnabled: true, screenSharePending: false, screenShareQuality: quality, screenShareAudio: audio });
       if (get().activeCall?.type === "guild") {
         api.updateStreaming(true, "screen").catch(() => {});
@@ -365,11 +378,10 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
     if (!room) return;
 
     // Try to get new source FIRST — if user cancels, keep current share
-    const resolution = getScreenShareOpts(screenShareQuality);
     try {
       // Stop current share only after user picks new source
       await room.localParticipant.setScreenShareEnabled(false);
-      await room.localParticipant.setScreenShareEnabled(true, { audio: screenShareAudio, contentHint: "detail", resolution });
+      await room.localParticipant.setScreenShareEnabled(true, buildScreenShareConfig(screenShareQuality, screenShareAudio));
       set({ screenShareEnabled: true });
       if (get().activeCall?.type === "guild") api.updateStreaming(true, "screen").catch(() => {});
 
@@ -383,9 +395,8 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
     } catch {
       // User cancelled the picker — re-enable the previous share if it was stopped
       if (!room.localParticipant.getTrackPublication(Track.Source.ScreenShare)?.track) {
-        // Previous share was already stopped, try to restore it
         try {
-          await room.localParticipant.setScreenShareEnabled(true, { audio: screenShareAudio, contentHint: "detail", resolution });
+          await room.localParticipant.setScreenShareEnabled(true, buildScreenShareConfig(screenShareQuality, screenShareAudio));
         } catch {
           // Can't restore — share is gone
           set({ screenShareEnabled: false });
