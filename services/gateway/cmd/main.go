@@ -523,6 +523,7 @@ func corsMiddleware(next http.Handler, frontendURL string) http.Handler {
 		"https://tauri.localhost":            true,
 		"http://tauri.localhost":             true,
 		"https://statusnexe.decatron.net":   true,
+		"null":                              true, // WebKitGTK (Linux Tauri) sends "null" origin
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -530,6 +531,10 @@ func corsMiddleware(next http.Handler, frontendURL string) http.Handler {
 		if allowed[origin] {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
+		}
+		// Tauri on Linux (WebKitGTK) may send no Origin header at all
+		if origin == "" {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
 		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")

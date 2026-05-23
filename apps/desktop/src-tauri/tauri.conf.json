@@ -37,7 +37,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' http://ipc.localhost; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://ipc.localhost https://nexeapi.decatron.net http://161.132.53.175:8090 wss://nexews.decatron.net ws://161.132.53.175:8090 wss://nexelk.decatron.net https://nexelk.decatron.net https://github.com https://objects.githubusercontent.com; media-src 'self' https: wss: ws: mediastream:; img-src 'self' https: data: blob:; frame-src https: http:"
+      "csp": "default-src 'self' http://ipc.localhost https://ipc.localhost; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https: http: ws: wss:; media-src 'self' https: http: wss: ws: mediastream: blob:; img-src 'self' https: http: data: blob:; frame-src https: http:"
     }
   },
   "bundle": {
