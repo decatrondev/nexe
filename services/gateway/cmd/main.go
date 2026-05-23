@@ -34,7 +34,7 @@ func main() {
 		if err := sentry.Init(sentry.ClientOptions{
 			Dsn:              cfg.SentryDSN,
 			Environment:      cfg.Env,
-			Release:          "nexe-gateway@0.5.8",
+			Release:          "nexe-gateway@0.5.9",
 			TracesSampleRate: 0.1,
 		}); err != nil {
 			slog.Error("sentry init failed", "error", err)

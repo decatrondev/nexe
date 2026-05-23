@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Nexe",
-  "version": "0.5.8",
+  "version": "0.5.9",
   "identifier": "net.decatron.nexe",
   "build": {
     "frontendDist": "../dist",
@@ -37,7 +37,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' http://ipc.localhost https://ipc.localhost; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https: http: ws: wss:; media-src 'self' https: http: wss: ws: mediastream: blob:; img-src 'self' https: http: data: blob:; frame-src https: http:"
+      "csp": null
     }
   },
   "bundle": {
