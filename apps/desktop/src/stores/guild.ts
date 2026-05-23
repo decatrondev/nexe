@@ -62,6 +62,7 @@ interface GuildState {
   deleteRole: (roleId: string, guildId: string) => Promise<void>;
   assignRole: (guildId: string, userId: string, roleId: string) => Promise<void>;
   removeRole: (guildId: string, userId: string, roleId: string) => Promise<void>;
+  refreshPresence: () => Promise<void>;
   reset: () => void;
 }
 
@@ -91,6 +92,34 @@ export const useGuildStore = create<GuildState>((set, get) => ({
   loadingGuilds: false,
   hasMoreMessages: {},
   error: null,
+
+  async refreshPresence() {
+    const guildId = get().activeGuildId;
+    if (!guildId) return;
+    const memberList = get().members[guildId];
+    if (!memberList || memberList.length === 0) return;
+
+    try {
+      const memberIds = memberList.map((m) => m.userId);
+      const presences = await api.getBulkPresence(memberIds);
+      if (!presences || get().activeGuildId !== guildId) return;
+
+      const map: Record<string, string> = {};
+      const streams: GuildState["streamStatusMap"] = {};
+      // Start fresh for this guild's members (don't carry stale data)
+      for (const p of presences) {
+        map[p.userId] = p.status;
+        if (p.streamingLive) {
+          streams[p.userId] = { live: true, title: p.streamTitle, game: p.streamGame, viewers: p.streamViewers, startedAt: p.streamStartedAt, thumbnail: p.streamThumbnail };
+        }
+      }
+      // Merge with existing (preserve other guilds' presence)
+      set((s) => ({
+        presenceMap: { ...s.presenceMap, ...map },
+        streamStatusMap: { ...s.streamStatusMap, ...streams },
+      }));
+    } catch { /* ignore */ }
+  },
 
   reset() {
     set({

@@ -1,9 +1,12 @@
 import { useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useGuildStore } from "../stores/guild";
+import { useAuthStore } from "../stores/auth";
+import { hasPermission, computePermissions, Permissions } from "../lib/permissions";
 import { type GuildMember, type Role } from "../lib/api";
 import MiniProfilePopover from "./MiniProfilePopover";
 import ProfileModal from "./ProfileModal";
+import ContextMenu, { MenuIcons } from "./ContextMenu";
 
 function getHighestRoleColor(
   userId: string,
@@ -81,10 +84,19 @@ export default function MemberList() {
   const streamStatusMap = useGuildStore((s) => s.streamStatusMap);
   const loading = useGuildStore((s) => s.loading);
 
+  const user = useAuthStore((s) => s.user);
+  const guilds = useGuildStore((s) => s.guilds);
+  const activeGuild = guilds.find((g) => g.id === activeGuildId);
+  const isOwner = activeGuild?.ownerId === user?.id;
+  const myRoleIds = memberRoles[user?.id ?? ""] || [];
+  const myPerms = computePermissions(myRoleIds, roles);
+  const canModerate = isOwner || hasPermission(myPerms, Permissions.KICK_MEMBERS) || hasPermission(myPerms, Permissions.BAN_MEMBERS);
+
   const [search, setSearch] = useState("");
   const [profilePopover, setProfilePopover] = useState<{ userId: string; x: number; y: number } | null>(null);
   const [fullProfileUserId, setFullProfileUserId] = useState<string | null>(null);
   const [hoveredMemberId, setHoveredMemberId] = useState<string | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ userId: string; name: string; x: number; y: number } | null>(null);
 
   const flatItems = useMemo((): FlatItem[] => {
     const hoistedRoles = roles
@@ -247,6 +259,12 @@ export default function MemberList() {
                 >
                   <button
                     onClick={(e) => setProfilePopover({ userId: member.userId, x: e.clientX, y: e.clientY })}
+                    onContextMenu={(e) => {
+                      if (member.userId !== user?.id) {
+                        e.preventDefault();
+                        setCtxMenu({ userId: member.userId, name, x: e.clientX, y: e.clientY });
+                      }
+                    }}
                     onMouseEnter={() => setHoveredMemberId(member.userId)}
                     onMouseLeave={() => setHoveredMemberId(null)}
                     className={`group relative flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 transition-all duration-150 hover:bg-white/[0.04] ${
@@ -358,6 +376,27 @@ export default function MemberList() {
           userId={fullProfileUserId}
           streamStatus={streamStatusMap[fullProfileUserId] ? { ...streamStatusMap[fullProfileUserId], linked: true } : undefined}
           onClose={() => setFullProfileUserId(null)}
+        />
+      )}
+
+      {ctxMenu && (
+        <ContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          onClose={() => setCtxMenu(null)}
+          header={ctxMenu.name}
+          sections={[
+            { items: [
+              { label: "View Profile", icon: MenuIcons.profile, onClick: () => { setFullProfileUserId(ctxMenu.userId); } },
+              { label: "Message", icon: MenuIcons.message, onClick: () => { window.dispatchEvent(new CustomEvent("nexe:open-dm", { detail: { userId: ctxMenu.userId } })); } },
+              { label: "Copy User ID", icon: MenuIcons.id, onClick: () => { navigator.clipboard.writeText(ctxMenu.userId); } },
+            ] },
+            ...(canModerate ? [{ items: [
+              { label: "Kick", icon: MenuIcons.kick, danger: true, onClick: () => { window.dispatchEvent(new CustomEvent("nexe:mod-action", { detail: { action: "kick", userId: ctxMenu.userId } })); } },
+              { label: "Ban", icon: MenuIcons.ban, danger: true, onClick: () => { window.dispatchEvent(new CustomEvent("nexe:mod-action", { detail: { action: "ban", userId: ctxMenu.userId } })); } },
+              { label: "Timeout", icon: MenuIcons.timeout, danger: true, onClick: () => { window.dispatchEvent(new CustomEvent("nexe:mod-action", { detail: { action: "timeout", userId: ctxMenu.userId } })); } },
+            ] }] : []),
+          ]}
         />
       )}
     </div>

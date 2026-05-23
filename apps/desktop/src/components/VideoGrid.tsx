@@ -5,6 +5,7 @@ import { useGuildStore } from "../stores/guild";
 import { useDMStore } from "../stores/dm";
 import { useAuthStore } from "../stores/auth";
 import type { VoiceState } from "../lib/api";
+import ContextMenu, { MenuIcons, VolumeSlider } from "./ContextMenu";
 
 /**
  * VoiceView — Full Discord-style voice/video experience.
@@ -430,12 +431,16 @@ export default function VoiceView() {
 
       {/* Right-click context menu */}
       {ctxMenu && (
-        <ParticipantContextMenu
-          userId={ctxMenu.userId}
-          name={ctxMenu.name}
-          x={ctxMenu.x}
-          y={ctxMenu.y}
+        <ContextMenu
+          x={ctxMenu.x} y={ctxMenu.y}
           onClose={() => setCtxMenu(null)}
+          header={ctxMenu.name}
+          extra={<VolumeSlider userId={ctxMenu.userId} />}
+          sections={[{ items: [
+            { label: useVoiceStore.getState().localMutes.has(ctxMenu.userId) ? "Unmute for me" : "Mute for me", icon: MenuIcons.mute, onClick: () => { useVoiceStore.getState().toggleLocalMute(ctxMenu.userId); } },
+            { label: "View Profile", icon: MenuIcons.profile, onClick: () => { window.dispatchEvent(new CustomEvent("nexe:open-profile", { detail: { userId: ctxMenu.userId } })); } },
+            { label: "Copy User ID", icon: MenuIcons.id, onClick: () => { navigator.clipboard.writeText(ctxMenu.userId); } },
+          ] }]}
         />
       )}
     </div>
@@ -465,6 +470,7 @@ function SidebarTile({ participant: p, name, speaking, isLocal, isFocused, onCli
 }) {
   const avatarMap = useGuildStore((s) => s.avatarMap);
   const avatarUrl = avatarMap[p.userId];
+  const isLocallyMuted = useVoiceStore((s) => s.localMutes.has(p.userId));
   const [showVolume, setShowVolume] = useState(false);
   const [volume, setVolume] = useState(100);
 
@@ -494,6 +500,9 @@ function SidebarTile({ participant: p, name, speaking, isLocal, isFocused, onCli
             {p.selfMute && <svg viewBox="0 0 24 24" className="h-2.5 w-2.5 fill-current text-red-400"><path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.09.9-3.28zm-4.02.17c0-.06.02-.11.02-.17V5c0-1.66-1.34-3-3-3S9 3.34 9 5v.18l5.98 5.99z" /></svg>}
             {p.selfDeaf && <svg viewBox="0 0 24 24" className="h-2.5 w-2.5 fill-current text-red-400"><path d="M4.34 2.93L2.93 4.34 7.29 8.7 7 9H3v6h4l5 5v-6.59l4.18 4.18c-.65.49-1.38.88-2.18 1.11v2.06a8.94 8.94 0 0 0 3.61-1.75l2.05 2.05 1.41-1.41z" /></svg>}
             {hasCam && <svg viewBox="0 0 24 24" className="h-2.5 w-2.5 fill-current text-slate-500"><path d="M17 10.5V7c0-.55-.45-1-1-1H4c-.55 0-1 .45-1 1v10c0 .55.45 1 1 1h12c.55 0 1-.45 1-1v-3.5l4 4v-11l-4 4z" /></svg>}
+            {isLocallyMuted && !isLocal && (
+              <span className="rounded bg-red-500/15 px-1 py-px text-[8px] font-bold text-red-400">MUTED</span>
+            )}
           </div>
         </button>
         {/* Volume toggle button (remote users only) */}
@@ -643,76 +652,6 @@ function StreamOverlay({ name, streamType, userId, isLocal }: { name: string; st
           )}
         </>
       )}
-    </div>
-  );
-}
-
-/* ─── Participant Context Menu (right-click) ─── */
-function ParticipantContextMenu({ userId, name, x, y, onClose }: {
-  userId: string; name: string; x: number; y: number; onClose: () => void;
-}) {
-  const [volume, setVolume] = useState(100);
-  const myId = useAuthStore((s) => s.user?.id);
-
-  useEffect(() => {
-    const handler = () => onClose();
-    window.addEventListener("click", handler);
-    window.addEventListener("contextmenu", handler);
-    return () => { window.removeEventListener("click", handler); window.removeEventListener("contextmenu", handler); };
-  }, [onClose]);
-
-  function handleVolume(val: number) {
-    setVolume(val);
-    document.querySelectorAll<HTMLAudioElement>(`.voice-audio-user-${userId}`).forEach((el) => { el.volume = Math.min(val / 100, 1); });
-  }
-
-  function muteForMe() {
-    handleVolume(0);
-    onClose();
-  }
-
-  if (userId === myId) return null;
-
-  // Position: ensure menu stays on screen
-  const menuStyle: React.CSSProperties = {
-    position: "fixed", left: x, top: y, zIndex: 9999,
-  };
-
-  return (
-    <div style={menuStyle} className="w-52 rounded-lg border border-dark-700 bg-dark-900 py-1.5 shadow-2xl animate-fade-in" onClick={(e) => e.stopPropagation()}>
-      <p className="mb-1 truncate px-3 text-xs font-semibold text-white">{name}</p>
-      <div className="my-1 border-t border-dark-700" />
-
-      {/* Volume slider */}
-      <div className="px-3 py-1.5">
-        <p className="mb-1.5 text-[10px] font-medium uppercase text-slate-500">User Volume</p>
-        <div className="flex items-center gap-2">
-          <svg viewBox="0 0 24 24" className="h-3 w-3 shrink-0 fill-current text-slate-500">
-            <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z" />
-          </svg>
-          <input
-            type="range" min={0} max={200} value={volume}
-            onChange={(e) => handleVolume(Number(e.target.value))}
-            className="h-1 flex-1 cursor-pointer appearance-none rounded-full bg-dark-600 accent-nexe-500 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-nexe-400"
-          />
-          <span className="w-8 text-right text-[9px] font-medium text-slate-400">{volume}%</span>
-        </div>
-      </div>
-
-      <div className="my-1 border-t border-dark-700" />
-
-      {/* Actions */}
-      <button onClick={muteForMe} className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 transition-colors hover:bg-dark-800">
-        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current text-slate-500"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a8.99 8.99 0 0 0 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" /></svg>
-        Mute for me
-      </button>
-      <button
-        onClick={() => { window.dispatchEvent(new CustomEvent("nexe:open-profile", { detail: { userId } })); onClose(); }}
-        className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 transition-colors hover:bg-dark-800"
-      >
-        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current text-slate-500"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" /></svg>
-        View Profile
-      </button>
     </div>
   );
 }

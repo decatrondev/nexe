@@ -7,9 +7,13 @@ import { userColor } from "../lib/utils";
 import { toast } from "@nexe/ui";
 import CreateGroupDMModal from "./CreateGroupDMModal";
 import UserBar from "./UserBar";
+import ContextMenu, { MenuIcons, type ContextMenuSection } from "./ContextMenu";
 
 export default function DMSidebar() {
   const [showGroupModal, setShowGroupModal] = useState(false);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; channelId: string; otherId: string; isPinned: boolean } | null>(null);
+  const pinDM = useDMStore((s) => s.pinDM);
+  const unpinDM = useDMStore((s) => s.unpinDM);
   const myId = useAuthStore((s) => s.user?.id) ?? "";
   const channels = useDMStore((s) => s.channels);
   const requests = useDMStore((s) => s.requests);
@@ -150,6 +154,11 @@ export default function DMSidebar() {
                       : "text-slate-400 hover:bg-dark-800 hover:text-slate-200"
                 }`}
                 onClick={() => { setActive(ch.id); if (unreadCount > 0) ackChannel(ch.id); }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setCtxMenu({ x: e.clientX, y: e.clientY, channelId: ch.id, otherId, isPinned });
+                }}
               >
                 {/* Avatar */}
                 <div className="relative shrink-0">
@@ -216,6 +225,33 @@ export default function DMSidebar() {
       <UserBar />
     </div>
     {showGroupModal && <CreateGroupDMModal onClose={() => setShowGroupModal(false)} />}
+    {ctxMenu && (
+      <ContextMenu
+        x={ctxMenu.x}
+        y={ctxMenu.y}
+        onClose={() => setCtxMenu(null)}
+        sections={[
+          {
+            items: [
+              { label: "View Profile", icon: MenuIcons.profile, onClick: () => { setActive(ctxMenu.channelId); } },
+              { label: ctxMenu.isPinned ? "Unpin DM" : "Pin DM", icon: MenuIcons.pin, onClick: () => {
+                (ctxMenu.isPinned ? unpinDM(ctxMenu.channelId) : pinDM(ctxMenu.channelId)).catch(() => toast.error("Failed to toggle pin"));
+              }},
+            ],
+          },
+          {
+            items: [
+              { label: "Close DM", icon: MenuIcons.close, onClick: () => { closeDM(ctxMenu.channelId).catch(() => toast.error("Failed to close DM")); }, danger: true },
+            ],
+          },
+          {
+            items: [
+              { label: "Copy User ID", icon: MenuIcons.id, onClick: () => { navigator.clipboard.writeText(ctxMenu.otherId); toast.success("Copied user ID"); } },
+            ],
+          },
+        ] satisfies ContextMenuSection[]}
+      />
+    )}
     </>
   );
 }

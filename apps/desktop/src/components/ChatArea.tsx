@@ -6,6 +6,7 @@ import { nexeWS } from "../lib/websocket";
 import { hasPermission, computePermissions, Permissions } from "../lib/permissions";
 import { copyToClipboard, formatTimestamp, userColor, getRoleColor } from "../lib/utils";
 import { toast, ContextMenu, SkeletonMessage, type ContextMenuItem } from "@nexe/ui";
+import UserContextMenu, { MenuIcons } from "./ContextMenu";
 import ThreadPanel from "./ThreadPanel";
 import MiniProfilePopover from "./MiniProfilePopover";
 import ProfileModal from "./ProfileModal";
@@ -113,6 +114,9 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
   // Mini profile popover + full profile
   const [profilePopover, setProfilePopover] = useState<{ userId: string; x: number; y: number } | null>(null);
   const [fullProfileUserId, setFullProfileUserId] = useState<string | null>(null);
+
+  // User context menu (right-click on author name)
+  const [userCtxMenu, setUserCtxMenu] = useState<{ userId: string; x: number; y: number } | null>(null);
 
   // Edit history
   const [editHistoryMsg, setEditHistoryMsg] = useState<{ id: string; content: string } | null>(null);
@@ -275,6 +279,7 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
     setCtxMenu(null);
     setDeleteConfirm(null);
     setProfilePopover(null);
+    setUserCtxMenu(null);
     setTypingUsers(new Map());
     setMessageReactions({});
     setEmojiPicker(null);
@@ -1048,6 +1053,7 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
                           ) : (
                             <button
                               onClick={(e) => { e.stopPropagation(); setProfilePopover({ userId: msg.authorId, x: e.clientX, y: e.clientY }); }}
+                              onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setUserCtxMenu({ userId: msg.authorId, x: e.clientX, y: e.clientY }); }}
                               className="text-sm font-semibold hover:underline"
                               style={{ color }}
                             >
@@ -1559,6 +1565,20 @@ export default function ChatArea({ showMembers = true, onToggleMembers }: ChatAr
         ];
         return <ContextMenu x={ctxMenu.x} y={ctxMenu.y} items={items} onClose={() => setCtxMenu(null)} />;
       })()}
+
+      {/* User context menu (right-click on author name) */}
+      {userCtxMenu && (
+        <UserContextMenu
+          x={userCtxMenu.x} y={userCtxMenu.y}
+          onClose={() => setUserCtxMenu(null)}
+          header={usernames[userCtxMenu.userId] || "Unknown"}
+          sections={[{ items: [
+            { label: "View Profile", icon: MenuIcons.profile, onClick: () => { setFullProfileUserId(userCtxMenu.userId); } },
+            { label: "Message", icon: MenuIcons.message, onClick: () => { window.dispatchEvent(new CustomEvent("nexe:open-dm", { detail: { userId: userCtxMenu.userId } })); } },
+            { label: "Copy User ID", icon: MenuIcons.id, onClick: () => { navigator.clipboard.writeText(userCtxMenu.userId); } },
+          ] }]}
+        />
+      )}
 
       {/* Delete confirmation modal */}
       {deleteConfirm && (

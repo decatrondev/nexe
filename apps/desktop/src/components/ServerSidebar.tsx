@@ -3,9 +3,10 @@ import { useGuildStore } from "../stores/guild";
 import { useAuthStore } from "../stores/auth";
 import { useRelationshipStore } from "../stores/relationships";
 import { FREE_TIER_LIMITS } from "../lib/limits";
-import { Tooltip } from "@nexe/ui";
+import { Tooltip, toast } from "@nexe/ui";
 import CreateGuildModal from "./CreateGuildModal";
 import JoinServerModal from "./JoinServerModal";
+import ContextMenu, { MenuIcons, type ContextMenuSection } from "./ContextMenu";
 
 function SidebarIcon({
   isActive,
@@ -17,6 +18,7 @@ function SidebarIcon({
   badge,
   live,
   accentColor,
+  onContextMenu,
   children,
 }: {
   isActive?: boolean;
@@ -28,6 +30,7 @@ function SidebarIcon({
   badge?: number;
   live?: boolean;
   accentColor?: string;
+  onContextMenu?: (e: React.MouseEvent) => void;
   children: React.ReactNode;
 }) {
   const [hovered, setHovered] = useState(false);
@@ -54,6 +57,7 @@ function SidebarIcon({
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
           onClick={() => !disabled && onClick()}
+          onContextMenu={onContextMenu}
           disabled={disabled}
         >
           {children}
@@ -84,6 +88,8 @@ export default function ServerSidebar() {
   const liveGuilds = useGuildStore((s) => s.liveGuilds);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
+  const [serverCtx, setServerCtx] = useState<{ x: number; y: number; guild: typeof guilds[0] } | null>(null);
+  const leaveGuild = useGuildStore((s) => s.leaveGuild);
   const myId = useAuthStore((s) => s.user?.id) ?? "";
   const pendingCount = useRelationshipStore((s) =>
     s.relationships.filter((r) => r.type === "pending" && r.targetId === myId).length
@@ -123,6 +129,11 @@ export default function ServerSidebar() {
             badge={getGuildUnread(guild.id)}
             live={liveGuilds.has(guild.id)}
             accentColor={guild.accentColor}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setServerCtx({ x: e.clientX, y: e.clientY, guild });
+            }}
           >
             {guild.iconUrl ? (
               <img
@@ -187,6 +198,43 @@ export default function ServerSidebar() {
       )}
       {showJoinModal && (
         <JoinServerModal onClose={() => setShowJoinModal(false)} />
+      )}
+      {serverCtx && (
+        <ContextMenu
+          x={serverCtx.x}
+          y={serverCtx.y}
+          onClose={() => setServerCtx(null)}
+          header={serverCtx.guild.name}
+          sections={(() => {
+            const isOwner = serverCtx.guild.ownerId === myId;
+            const sections: ContextMenuSection[] = [];
+            if (isOwner) {
+              sections.push({
+                items: [
+                  { label: "Server Settings", icon: MenuIcons.settings, onClick: () => { setActiveGuild(serverCtx.guild.id); } },
+                ],
+              });
+            }
+            sections.push({
+              items: [
+                { label: "Notification Settings", icon: MenuIcons.notification, onClick: () => {} },
+              ],
+            });
+            if (!isOwner) {
+              sections.push({
+                items: [
+                  { label: "Leave Server", icon: MenuIcons.leave, onClick: () => { leaveGuild(serverCtx.guild.id).catch(() => toast.error("Failed to leave server")); }, danger: true },
+                ],
+              });
+            }
+            sections.push({
+              items: [
+                { label: "Copy Server ID", icon: MenuIcons.id, onClick: () => { navigator.clipboard.writeText(serverCtx.guild.id); toast.success("Copied"); } },
+              ],
+            });
+            return sections;
+          })()}
+        />
       )}
     </>
   );

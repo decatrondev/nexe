@@ -9,6 +9,7 @@ import JoinServerModal from "../components/JoinServerModal";
 import FloatingVoice from "../components/FloatingVoice";
 import IncomingCall from "../components/IncomingCall";
 import ScreenSharePicker from "../components/ScreenSharePicker";
+import ProfileModal from "../components/ProfileModal";
 import FriendsPage from "../components/FriendsPage";
 import DMSidebar from "../components/DMSidebar";
 import DMChat from "../components/DMChat";
@@ -142,6 +143,17 @@ export default function HomePage() {
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [globalProfileUserId, setGlobalProfileUserId] = useState<string | null>(null);
+
+  // Global listener for "View Profile" from context menus
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.userId) setGlobalProfileUserId(detail.userId);
+    };
+    window.addEventListener("nexe:open-profile", handler);
+    return () => window.removeEventListener("nexe:open-profile", handler);
+  }, []);
   const [showMembers, setShowMembers] = useState(() => {
     const saved = localStorage.getItem("nexe:showMembers");
     return saved !== null ? saved === "true" : true;
@@ -635,7 +647,14 @@ export default function HomePage() {
       // Presence heartbeat every 60s
       heartbeatInterval = setInterval(() => {
         api.presenceHeartbeat().catch(() => {});
+        // Refresh member presence every 60s to keep member list accurate
+        useGuildStore.getState().refreshPresence().catch(() => {});
       }, 60000);
+
+      // On WS reconnect — refresh presence so member list stays accurate
+      nexeWS.on("__RECONNECT__", () => {
+        useGuildStore.getState().refreshPresence().catch(() => {});
+      });
 
       // Auto-idle after 5 minutes of inactivity
       const IDLE_DELAY = 5 * 60 * 1000; // 5 minutes
@@ -717,6 +736,7 @@ export default function HomePage() {
     <div
       className="flex h-screen w-screen overflow-hidden"
       style={serverAccent ? { "--server-accent": serverAccent, "--server-accent-rgb": hexToRgb(serverAccent) } as React.CSSProperties : undefined}
+      onContextMenu={(e) => { e.preventDefault(); }}
     >
       <ServerSidebar />
 
@@ -765,6 +785,10 @@ export default function HomePage() {
       <FloatingVoice />
       <IncomingCall />
       <ScreenSharePicker />
+
+      {globalProfileUserId && (
+        <ProfileModal userId={globalProfileUserId} onClose={() => setGlobalProfileUserId(null)} />
+      )}
     </div>
   );
 }

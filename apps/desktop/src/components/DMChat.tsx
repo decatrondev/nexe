@@ -10,6 +10,7 @@ import MessageContent from "./MessageContent";
 import DMUserPanel from "./DMUserPanel";
 import EmotePicker from "./EmotePicker";
 import GifPicker from "./GifPicker";
+import ContextMenu, { MenuIcons, type ContextMenuSection } from "./ContextMenu";
 
 export default function DMChat() {
   const activeChannelId = useDMStore((s) => s.activeChannelId);
@@ -45,6 +46,8 @@ export default function DMChat() {
   const [pendingPreview, setPendingPreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
+  const [msgCtx, setMsgCtx] = useState<{ x: number; y: number; msg: DMMessage } | null>(null);
+  const [authorCtx, setAuthorCtx] = useState<{ x: number; y: number; userId: string } | null>(null);
 
   // Mention autocomplete
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -360,6 +363,11 @@ export default function DMChat() {
                 key={msg.id}
                 id={`dm-msg-${msg.id}`}
                 className={`group relative flex gap-3 rounded-md px-2 transition-colors hover:bg-dark-800/40 ${isGrouped ? "py-0.5" : "py-2.5 mt-0.5"}`}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setMsgCtx({ x: e.clientX, y: e.clientY, msg });
+                }}
               >
                 {/* Avatar or spacer */}
                 <div className="w-10 shrink-0">
@@ -399,7 +407,14 @@ export default function DMChat() {
 
                   {!isGrouped && (
                     <div className="flex items-baseline gap-2">
-                      <span className="text-sm font-medium text-white">{authorName}</span>
+                      <span
+                        className="text-sm font-medium text-white cursor-pointer hover:underline"
+                        onContextMenu={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setAuthorCtx({ x: e.clientX, y: e.clientY, userId: msg.authorId });
+                        }}
+                      >{authorName}</span>
                       <span className="text-[11px] text-slate-500">{formatTimestamp(msg.createdAt)}</span>
                     </div>
                   )}
@@ -718,6 +733,57 @@ export default function DMChat() {
         <DMUserPanel userId={otherUser.userId} />
       )}
       </div>{/* end content row */}
+
+      {/* Message context menu */}
+      {msgCtx && (
+        <ContextMenu
+          x={msgCtx.x}
+          y={msgCtx.y}
+          onClose={() => setMsgCtx(null)}
+          sections={(() => {
+            const isOwn = msgCtx.msg.authorId === myId;
+            const sections: ContextMenuSection[] = [
+              {
+                items: [
+                  { label: "Reply", icon: MenuIcons.reply, onClick: () => setReplyTo(msgCtx.msg) },
+                  { label: "Copy Text", icon: MenuIcons.copy, onClick: () => { navigator.clipboard.writeText(msgCtx.msg.content); toast.success("Copied"); } },
+                ],
+              },
+            ];
+            if (isOwn) {
+              sections.push({
+                items: [
+                  { label: "Edit Message", icon: MenuIcons.edit, onClick: () => { setEditingId(msgCtx.msg.id); setEditContent(msgCtx.msg.content); } },
+                  { label: "Delete Message", icon: MenuIcons.delete, onClick: () => handleDelete(msgCtx.msg.id), danger: true },
+                ],
+              });
+            }
+            sections.push({
+              items: [
+                { label: "Copy Message ID", icon: MenuIcons.id, onClick: () => { navigator.clipboard.writeText(msgCtx.msg.id); toast.success("Copied"); } },
+              ],
+            });
+            return sections;
+          })()}
+        />
+      )}
+
+      {/* Author name context menu */}
+      {authorCtx && (
+        <ContextMenu
+          x={authorCtx.x}
+          y={authorCtx.y}
+          onClose={() => setAuthorCtx(null)}
+          sections={[
+            {
+              items: [
+                { label: "View Profile", icon: MenuIcons.profile, onClick: () => { window.dispatchEvent(new CustomEvent("nexe:open-profile", { detail: { userId: authorCtx.userId } })); } },
+                { label: "Copy User ID", icon: MenuIcons.id, onClick: () => { navigator.clipboard.writeText(authorCtx.userId); toast.success("Copied"); } },
+              ],
+            },
+          ]}
+        />
+      )}
 
       {/* Emoji Picker for reactions */}
       {emojiPicker && (

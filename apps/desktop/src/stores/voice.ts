@@ -53,6 +53,7 @@ interface VoiceStore {
   speakingUsers: Set<string>;
 
   // ── Local user state ──
+  localMutes: Set<string>;             // users muted locally (volume=0 by us)
   selfMute: boolean;
   selfDeaf: boolean;
   cameraEnabled: boolean;
@@ -78,6 +79,7 @@ interface VoiceStore {
   startScreenShare: (quality: string, audio: boolean) => Promise<void>;
   switchScreenShare: () => Promise<void>;
   cancelScreenShare: () => void;
+  toggleLocalMute: (userId: string) => void;
   updateParticipants: (states: VoiceState[]) => void;
   handleVoiceStateUpdate: (state: VoiceState) => void;
   fetchTierLimits: () => Promise<void>;
@@ -172,6 +174,7 @@ const INITIAL_STATE = {
   activeCall: null as ActiveCall | null,
   participants: [] as VoiceState[],
   speakingUsers: new Set<string>(),
+  localMutes: new Set<string>(),
   selfMute: false,
   selfDeaf: false,
   cameraEnabled: false,
@@ -407,6 +410,22 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
   },
 
   cancelScreenShare: () => set({ screenSharePending: false }),
+
+  toggleLocalMute: (userId: string) => {
+    set((s) => {
+      const next = new Set(s.localMutes);
+      if (next.has(userId)) {
+        next.delete(userId);
+        // Restore volume
+        document.querySelectorAll<HTMLAudioElement>(`.voice-audio-user-${userId}`).forEach((el) => { el.volume = 1; });
+      } else {
+        next.add(userId);
+        // Mute
+        document.querySelectorAll<HTMLAudioElement>(`.voice-audio-user-${userId}`).forEach((el) => { el.volume = 0; });
+      }
+      return { localMutes: next };
+    });
+  },
 
   updateParticipants: (states: VoiceState[]) => set({ participants: states }),
 

@@ -22,6 +22,7 @@ class NexeWebSocket {
   private maxReconnectAttempts = 10;
   private intentionalClose = false;
   private messageQueue: WSMessage[] = [];
+  private hasConnectedOnce = false;
 
   connect(token: string) {
     this.token = token;
@@ -56,9 +57,16 @@ class NexeWebSocket {
     }
 
     this.ws.onopen = () => {
+      const isReconnect = this.hasConnectedOnce;
+      this.hasConnectedOnce = true;
       this.reconnectAttempts = 0;
       this.startHeartbeat();
       this.flushQueue();
+      // Fire reconnect event so stores can refresh stale data
+      if (isReconnect) {
+        const handlers = this.handlers.get("__RECONNECT__");
+        if (handlers) handlers.forEach((h) => h(null));
+      }
     };
 
     this.ws.onmessage = (event: MessageEvent) => {
