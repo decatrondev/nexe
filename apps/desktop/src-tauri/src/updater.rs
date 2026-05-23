@@ -49,10 +49,32 @@ pub async fn check_for_update(app: AppHandle) -> Result<UpdateInfo, String> {
         .await
         .map_err(|e| format!("Network error: {}", e))?;
 
-    let info: UpdateInfo = resp
+    let mut info: UpdateInfo = resp
         .json()
         .await
         .map_err(|e| format!("Parse error: {}", e))?;
+
+    // Skip version that previously failed to apply (anti-loop)
+    if info.update_available {
+        if let Ok(updates_dir) = get_updates_dir(&app) {
+            let skip_file = updates_dir.join(".skip_version");
+            if let Ok(skipped) = fs::read_to_string(&skip_file) {
+                let skipped = skipped.trim();
+                if skipped == info.version || skipped == "any" {
+                    log::info!("Skipping update {} — previously failed to apply", info.version);
+                    info.update_available = false;
+                    info.download_url = None;
+                    // Clear "any" skip after one cycle so future versions can be tried
+                    if skipped == "any" {
+                        let _ = fs::remove_file(&skip_file);
+                    }
+                } else {
+                    // New version available, clear the skip
+                    let _ = fs::remove_file(&skip_file);
+                }
+            }
+        }
+    }
 
     Ok(info)
 }
@@ -62,6 +84,7 @@ pub async fn download_update(
     app: AppHandle,
     download_url: String,
     expected_sha256: String,
+    target_version: String,
 ) -> Result<(), String> {
     let updates_dir = get_updates_dir(&app)?;
     let download_dir = updates_dir.join("download");
@@ -119,9 +142,15 @@ pub async fn download_update(
     // Extract zip to staged
     extract_zip(&zip_path, &staged_dir)?;
 
-    // Write completion marker with version info
+    // Write completion marker and target version
     fs::write(staged_dir.join(".complete"), "ok")
         .map_err(|e| format!("Write marker: {}", e))?;
+    fs::write(staged_dir.join(".version"), &target_version)
+        .map_err(|e| format!("Write version: {}", e))?;
+
+    // Clear any previous skip (we're downloading a new update)
+    let skip_file = updates_dir.join(".skip_version");
+    let _ = fs::remove_file(&skip_file);
 
     // Clean download
     let _ = fs::remove_dir_all(&download_dir);
@@ -154,6 +183,18 @@ pub fn apply_staged_update(app: &AppHandle) -> bool {
         log::error!("Staged update failed {} times — removing to break loop", attempts);
         let _ = fs::remove_dir_all(&staged_dir);
         let _ = fs::remove_file(&attempts_file);
+        // Remember the target version so we don't re-download it.
+        // Read it from the staged .version file if available.
+        let skip_file = updates_dir.join(".skip_version");
+        let version_file = staged_dir.join(".version");
+        if let Ok(target_version) = fs::read_to_string(&version_file) {
+            let _ = fs::write(&skip_file, target_version.trim());
+            log::info!("Skipping future updates for version {}", target_version.trim());
+        } else {
+            // Fallback: skip any update for 24 hours
+            let _ = fs::write(&skip_file, "any");
+            log::info!("Skipping all updates temporarily (failed version unknown)");
+        }
         return false;
     }
     let _ = fs::write(&attempts_file, (attempts + 1).to_string());

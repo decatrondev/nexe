@@ -82,6 +82,7 @@ export async function runUpdateFlow(onStatus: UpdateCallback): Promise<boolean> 
       await invoke("download_update", {
         downloadUrl: info.download_url,
         expectedSha256: info.sha256 || "",
+        targetVersion: info.version,
       });
     } finally {
       unlisten();
