@@ -34,7 +34,7 @@ func main() {
 		if err := sentry.Init(sentry.ClientOptions{
 			Dsn:              cfg.SentryDSN,
 			Environment:      cfg.Env,
-			Release:          "nexe-gateway@0.5.9",
+			Release:          "nexe-gateway@0.5.10",
 			TracesSampleRate: 0.1,
 		}); err != nil {
 			slog.Error("sentry init failed", "error", err)
@@ -522,6 +522,7 @@ func corsMiddleware(next http.Handler, frontendURL string) http.Handler {
 		"http://localhost:3013":              true,
 		"https://tauri.localhost":            true,
 		"http://tauri.localhost":             true,
+		"tauri://localhost":                  true,
 		"https://statusnexe.decatron.net":   true,
 		"null":                              true, // WebKitGTK (Linux Tauri) sends "null" origin
 	}
