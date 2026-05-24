@@ -20,6 +20,7 @@ pub struct UpdateInfo {
     pub sha256: Option<String>,
     pub size: Option<i64>,
     pub notes: Option<String>,
+    pub deb_url: Option<String>,
 }
 
 #[derive(Clone, Serialize)]
@@ -154,6 +155,66 @@ pub async fn download_update(
 
     // Clean download
     let _ = fs::remove_dir_all(&download_dir);
+
+    Ok(())
+}
+
+/// Download a .deb file and install it via pkexec dpkg -i (Linux only).
+#[tauri::command]
+pub async fn install_deb_update(
+    app: AppHandle,
+    deb_url: String,
+) -> Result<(), String> {
+    let updates_dir = get_updates_dir(&app)?;
+    let download_dir = updates_dir.join("download");
+
+    let _ = fs::remove_dir_all(&download_dir);
+    fs::create_dir_all(&download_dir).map_err(|e| format!("Create dir: {}", e))?;
+
+    let deb_path = download_dir.join("nexe-update.deb");
+
+    // Download with progress
+    let client = Client::new();
+    let resp = client
+        .get(&deb_url)
+        .send()
+        .await
+        .map_err(|e| format!("Download failed: {}", e))?;
+
+    let total = resp.content_length().unwrap_or(0);
+    let mut downloaded: u64 = 0;
+
+    let mut file = fs::File::create(&deb_path).map_err(|e| format!("Create file: {}", e))?;
+
+    let mut stream = resp.bytes_stream();
+    use futures_util::StreamExt;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("Download error: {}", e))?;
+        file.write_all(&chunk).map_err(|e| format!("Write error: {}", e))?;
+        downloaded += chunk.len() as u64;
+
+        let percent = if total > 0 {
+            (downloaded as f64 / total as f64) * 100.0
+        } else {
+            0.0
+        };
+        let _ = app.emit("update-progress", DownloadProgress { downloaded, total, percent });
+    }
+    drop(file);
+
+    // Install via pkexec (prompts for admin password)
+    let output = std::process::Command::new("pkexec")
+        .args(["dpkg", "-i", &deb_path.to_string_lossy()])
+        .output()
+        .map_err(|e| format!("Failed to run pkexec: {}", e))?;
+
+    // Clean up
+    let _ = fs::remove_dir_all(&download_dir);
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("dpkg install failed: {}", stderr));
+    }
 
     Ok(())
 }

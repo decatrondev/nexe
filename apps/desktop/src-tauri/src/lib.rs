@@ -38,6 +38,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             updater::check_for_update,
             updater::download_update,
+            updater::install_deb_update,
             installer::check_install_status,
             installer::self_install,
         ])

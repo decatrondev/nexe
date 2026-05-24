@@ -31,6 +31,7 @@ type updateCheckResponse struct {
 	SHA256          string `json:"sha256,omitempty"`
 	Size            int64  `json:"size,omitempty"`
 	Notes           string `json:"notes,omitempty"`
+	DebURL          string `json:"deb_url,omitempty"`
 }
 
 type githubRelease struct {
@@ -97,7 +98,7 @@ func (h *UpdateHandler) Check(w http.ResponseWriter, r *http.Request) {
 	// Get SHA256 hash (from .sha256 file or cached)
 	sha := h.getAssetSHA256(r.Context(), asset.Name, release)
 
-	writeJSON(w, http.StatusOK, updateCheckResponse{
+	resp := updateCheckResponse{
 		UpdateAvailable: true,
 		Version:         latestVersion,
 		CurrentVersion:  currentVersion,
@@ -105,7 +106,19 @@ func (h *UpdateHandler) Check(w http.ResponseWriter, r *http.Request) {
 		SHA256:          sha,
 		Size:            asset.Size,
 		Notes:           release.Body,
-	})
+	}
+
+	// For Linux: also provide .deb URL for package-based updates
+	if platform == "linux-x86_64" {
+		for _, a := range release.Assets {
+			if strings.HasSuffix(a.Name, ".deb") {
+				resp.DebURL = a.BrowserDownloadURL
+				break
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // getAssetSHA256 finds the .sha256 file for an asset and returns its content.
