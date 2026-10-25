@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.5.21"
+version = "0.5.22"
 description = "Nexe desktop client"
 authors = ["Decatron"]
 license = "AGPL-3.0-only"
