@@ -51,6 +51,11 @@
     <category>Chat</category>
   </categories>
   <releases>
+    <release version="0.5.20" date="2026-10-25">
+      <description>
+        <p>Version bump to validate that Nexe updates itself on startup.</p>
+      </description>
+    </release>
     <release version="0.5.19" date="2026-10-25">
       <description>
         <p>Nexe now installs new versions by itself when it starts, like on Windows.</p>
