@@ -63,3 +63,9 @@ uploads/
 services/guilds/guilds
 services/messaging/messaging
 infra/pgbouncer/userlist.txt
+
+# Flatpak build artifacts
+apps/desktop/flatpak/.flatpak-builder/
+apps/desktop/flatpak/build/
+apps/desktop/flatpak/repo/
+apps/desktop/flatpak/build-offline/

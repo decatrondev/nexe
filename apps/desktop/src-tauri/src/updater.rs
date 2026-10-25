@@ -32,9 +32,29 @@ pub struct DownloadProgress {
 
 // ── Tauri Commands ──
 
+/// True when running inside a Flatpak sandbox. Flatpak owns updates there, so the
+/// built-in updater must stay out of the way.
+fn is_flatpak() -> bool {
+    std::env::var_os("FLATPAK_ID").is_some() || Path::new("/.flatpak-info").exists()
+}
+
 #[tauri::command]
 pub async fn check_for_update(app: AppHandle) -> Result<UpdateInfo, String> {
     let version = app.package_info().version.to_string();
+
+    if is_flatpak() {
+        return Ok(UpdateInfo {
+            update_available: false,
+            version: version.clone(),
+            current_version: version,
+            download_url: None,
+            sha256: None,
+            size: None,
+            notes: None,
+            deb_url: None,
+        });
+    }
+
     let platform = get_platform();
 
     let url = format!(
@@ -223,6 +243,10 @@ pub async fn install_deb_update(
 
 /// Returns true if an update was applied (caller should restart the process).
 pub fn apply_staged_update(app: &AppHandle) -> bool {
+    if is_flatpak() {
+        return false;
+    }
+
     let updates_dir = match get_updates_dir(app) {
         Ok(d) => d,
         Err(_) => return false,

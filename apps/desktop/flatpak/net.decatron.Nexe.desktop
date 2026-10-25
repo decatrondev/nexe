@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Nexe
+Comment=Chat and voice for streamers and gaming communities
+Exec=nexe
+Icon=net.decatron.Nexe
+Terminal=false
+Categories=Network;InstantMessaging;Chat;
+StartupWMClass=nexe

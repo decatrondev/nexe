@@ -1,0 +1,125 @@
+# Manifest for the Flathub submission. Builds from a pinned git tag instead of the local checkout.
+# Before submitting: push the tag, set `commit` to its SHA, and copy this file as net.decatron.Nexe.yml
+# together with cargo-sources.json and node-sources.json.
+app-id: net.decatron.Nexe
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.node22
+command: nexe
+
+finish-args:
+  - --share=network
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  - --device=all
+  # Tray icon + notifications + single instance
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --talk-name=org.freedesktop.Notifications
+  - --own-name=org.net_decatron_nexe.SingleInstance
+
+modules:
+  # ── Tray icon support (not part of the GNOME runtime) ──
+  - name: ayatana-ido
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_INSTALL_LIBDIR=lib
+      - -DENABLE_TESTS=OFF
+      - -DENABLE_BINDINGS_MONO=OFF
+      - -DENABLE_INTROSPECTION=OFF
+    sources:
+      - type: archive
+        url: https://github.com/AyatanaIndicators/ayatana-ido/archive/refs/tags/0.10.4.tar.gz
+        sha256: bd59abd5f1314e411d0d55ce3643e91cef633271f58126be529de5fb71c5ab38
+
+  - name: libayatana-indicator
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_INSTALL_LIBDIR=lib
+      - -DENABLE_TESTS=OFF
+      - -DENABLE_LOADERS=OFF
+    sources:
+      - type: archive
+        url: https://github.com/AyatanaIndicators/libayatana-indicator/archive/refs/tags/0.9.4.tar.gz
+        sha256: a18d3c682e29afd77db24366f8475b26bda22b0e16ff569a2ec71cd6eb4eac95
+
+  - name: intltool
+    sources:
+      - type: archive
+        url: https://launchpad.net/intltool/trunk/0.51.0/+download/intltool-0.51.0.tar.gz
+        sha256: 67c74d94196b153b774ab9f89b2fa6c6ba79352407037c8c14d5aeb334e959cd
+    cleanup:
+      - '*'
+
+  - name: libdbusmenu
+    build-options:
+      cflags: -Wno-error
+      env:
+        HAVE_VALGRIND_TRUE: '#'
+        HAVE_VALGRIND_FALSE: ''
+    config-opts:
+      - --with-gtk=3
+      - --disable-dumper
+      - --disable-static
+      - --disable-tests
+      - --disable-gtk-doc
+      - --disable-vala
+      - --enable-introspection=no
+    sources:
+      - type: archive
+        url: https://launchpad.net/libdbusmenu/16.04/16.04.0/+download/libdbusmenu-16.04.0.tar.gz
+        sha256: b9cc4a2acd74509435892823607d966d424bd9ad5d0b00938f27240a1bfa878a
+    cleanup:
+      - /include
+      - /lib/pkgconfig
+      - '*.la'
+
+  - name: libayatana-appindicator
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_INSTALL_LIBDIR=lib
+      - -DENABLE_BINDINGS_MONO=OFF
+      - -DENABLE_BINDINGS_VALA=OFF
+      - -DENABLE_GTKDOC=OFF
+      - -DENABLE_TESTS=OFF
+    sources:
+      - type: archive
+        url: https://github.com/AyatanaIndicators/libayatana-appindicator/archive/refs/tags/0.5.93.tar.gz
+        sha256: cbefed7a918a227bf71286246e237fcd3a9c8499b3eaac4897811a869409edf0
+
+  # ── Nexe desktop (Tauri) — offline build (cargo/node deps pinned in *-sources.json) ──
+  - name: nexe
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node22/bin:/run/build/nexe/bin
+      env:
+        CARGO_HOME: /run/build/nexe/cargo
+        CARGO_NET_OFFLINE: 'true'
+        XDG_CACHE_HOME: /run/build/nexe/flatpak-node/cache
+        npm_config_offline: 'true'
+        CI: 'true'
+    build-commands:
+      # pnpm is pinned as a source and wrapped so `pnpm ...` works offline
+      - mkdir -p bin && printf '#!/bin/sh\nexec node /run/build/nexe/pnpm-dist/bin/pnpm.cjs "$@"\n' > bin/pnpm && chmod +x bin/pnpm
+      - pnpm install --offline --frozen-lockfile --filter "desktop..."
+      - cd apps/desktop && pnpm tauri build --no-bundle
+      - install -Dm755 apps/desktop/src-tauri/target/release/app /app/bin/nexe
+      - install -Dm644 apps/desktop/flatpak/net.decatron.Nexe.desktop /app/share/applications/net.decatron.Nexe.desktop
+      - install -Dm644 apps/desktop/flatpak/net.decatron.Nexe.metainfo.xml /app/share/metainfo/net.decatron.Nexe.metainfo.xml
+      - install -Dm644 apps/desktop/src-tauri/icons/icon.png /app/share/icons/hicolor/512x512/apps/net.decatron.Nexe.png
+    sources:
+      - type: git
+        url: https://github.com/decatrondev/nexe.git
+        tag: v0.5.10
+        commit: REPLACE_WITH_TAG_COMMIT_SHA
+      - type: archive
+        url: https://registry.npmjs.org/pnpm/-/pnpm-10.33.4.tgz
+        sha256: 8e70ddc6649b18bc3d895cf3a908c0291ea4c38039ad8722c47e018daf1e9cfc
+        strip-components: 1
+        dest: pnpm-dist
+      - cargo-sources.json
+      - node-sources.json
