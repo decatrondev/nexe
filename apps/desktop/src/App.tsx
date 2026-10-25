@@ -8,6 +8,7 @@ import HomePage from "./pages/HomePage";
 import { useAuthStore } from "./stores/auth";
 import { runUpdateFlow, type UpdateStatus } from "./lib/updater";
 import { ToastContainer } from "@nexe/ui";
+import FlatpakUpdateBanner from "./components/FlatpakUpdateBanner";
 import { getVersion } from "@tauri-apps/api/app";
 const API_URL =
   typeof window !== "undefined" &&
@@ -197,6 +198,7 @@ function MainApp() {
   return (
     <BrowserRouter>
       <ToastContainer />
+      <FlatpakUpdateBanner />
       <Routes>
         <Route
           path="/login"

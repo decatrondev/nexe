@@ -6,6 +6,7 @@ use tauri::{
 };
 use tauri_plugin_autostart::ManagerExt;
 
+mod flatpak_update;
 mod installer;
 mod updater;
 
@@ -39,6 +40,9 @@ pub fn run() {
             updater::check_for_update,
             updater::download_update,
             updater::install_deb_update,
+            flatpak_update::flatpak_update_apply,
+            flatpak_update::flatpak_restart,
+            flatpak_update::flatpak_pending_update,
             installer::check_install_status,
             installer::self_install,
         ])
@@ -61,6 +65,11 @@ pub fn run() {
             }
 
             updater::cleanup_old_files();
+
+            // Flatpak: updates come from the portal, not from the built-in updater
+            if updater::is_flatpak() {
+                flatpak_update::start(app.handle());
+            }
 
             // Enable autostart by default (like Discord)
             {

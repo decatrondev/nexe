@@ -99,6 +99,8 @@ modules:
         XDG_CACHE_HOME: /run/build/nexe/flatpak-node/cache
         npm_config_offline: 'true'
         CI: 'true'
+        # Self-hosted repo only: poll nexe.decatron.net for new commits (not for Flathub)
+        NEXE_SELF_HOSTED_REPO: '1'
     build-commands:
       # pnpm is pinned as a source and wrapped so `pnpm ...` works offline
       - mkdir -p bin && printf '#!/bin/sh\nexec node /run/build/nexe/pnpm-dist/bin/pnpm.cjs "$@"\n' > bin/pnpm && chmod +x bin/pnpm

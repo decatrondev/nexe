@@ -34,7 +34,7 @@ pub struct DownloadProgress {
 
 /// True when running inside a Flatpak sandbox. Flatpak owns updates there, so the
 /// built-in updater must stay out of the way.
-fn is_flatpak() -> bool {
+pub(crate) fn is_flatpak() -> bool {
     std::env::var_os("FLATPAK_ID").is_some() || Path::new("/.flatpak-info").exists()
 }
 

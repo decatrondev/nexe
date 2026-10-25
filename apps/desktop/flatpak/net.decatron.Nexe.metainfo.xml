@@ -51,6 +51,36 @@
     <category>Chat</category>
   </categories>
   <releases>
+    <release version="0.5.17" date="2026-10-25">
+      <description>
+        <p>Version bump to validate updating and restarting from the in-app notice.</p>
+      </description>
+    </release>
+    <release version="0.5.16" date="2026-10-25">
+      <description>
+        <p>Fix: the in-app update notice could be missed when the update was found during startup.</p>
+      </description>
+    </release>
+    <release version="0.5.15" date="2026-10-25">
+      <description>
+        <p>Version bump to validate the in-app update notice.</p>
+      </description>
+    </release>
+    <release version="0.5.14" date="2026-10-25">
+      <description>
+        <p>Nexe now checks for new versions by itself every few minutes and can update from the in-app notice.</p>
+      </description>
+    </release>
+    <release version="0.5.13" date="2026-10-25">
+      <description>
+        <p>Version bump to validate in-app Flatpak updates.</p>
+      </description>
+    </release>
+    <release version="0.5.12" date="2026-10-25">
+      <description>
+        <p>In-app updates for the Flatpak build: Nexe now tells you when a new version is available and can update and restart itself.</p>
+      </description>
+    </release>
     <release version="0.5.11" date="2026-10-25">
       <description>
         <p>Flatpak packaging for Linux, with updates delivered through Flatpak.</p>
