@@ -36,6 +36,8 @@ type updateCheckResponse struct {
 
 type githubRelease struct {
 	TagName     string        `json:"tag_name"`
+	Draft       bool          `json:"draft"`
+	Prerelease  bool          `json:"prerelease"`
 	Body        string        `json:"body"`
 	PublishedAt string        `json:"published_at"`
 	Assets      []githubAsset `json:"assets"`
@@ -58,7 +60,7 @@ func (h *UpdateHandler) Check(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	release, err := h.getLatestRelease(r.Context())
+	release, err := h.getLatestRelease(r.Context(), platform)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, "github_error", "failed to check for updates")
 		return
@@ -177,19 +179,58 @@ func computeSHA256(data []byte) string {
 	return fmt.Sprintf("%x", h)
 }
 
-const redisCacheKey = "nexe:update:latest_release"
+const redisCacheKey = "nexe:update:releases"
 const cacheTTL = 5 * time.Minute
 
-func (h *UpdateHandler) getLatestRelease(ctx context.Context) (*githubRelease, error) {
-	cached, err := h.rdb.Get(ctx, redisCacheKey).Result()
-	if err == nil && cached != "" {
-		var release githubRelease
-		if json.Unmarshal([]byte(cached), &release) == nil {
-			return &release, nil
+// hasUpdateAsset reports whether a release already carries the portable update zip for a platform.
+func hasUpdateAsset(release *githubRelease, platform string) bool {
+	for _, a := range release.Assets {
+		if strings.HasPrefix(a.Name, "nexe-update-") && strings.Contains(a.Name, platform) && strings.HasSuffix(a.Name, ".zip") {
+			return true
+		}
+	}
+	return false
+}
+
+// getLatestRelease returns the newest published release that already has an update zip for the
+// platform. A release is created at the start of the CI run and its assets are uploaded as each
+// build finishes, so the newest release alone can be empty for several minutes.
+func (h *UpdateHandler) getLatestRelease(ctx context.Context, platform string) (*githubRelease, error) {
+	releases, err := h.getReleases(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var newest *githubRelease
+	for i := range releases {
+		rel := &releases[i]
+		if rel.Draft || rel.Prerelease {
+			continue
+		}
+		if newest == nil {
+			newest = rel
+		}
+		if hasUpdateAsset(rel, platform) {
+			return rel, nil
 		}
 	}
 
-	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", h.githubOwner, h.githubRepo)
+	if newest == nil {
+		return nil, fmt.Errorf("no published releases")
+	}
+	return newest, nil
+}
+
+func (h *UpdateHandler) getReleases(ctx context.Context) ([]githubRelease, error) {
+	cached, err := h.rdb.Get(ctx, redisCacheKey).Result()
+	if err == nil && cached != "" {
+		var releases []githubRelease
+		if json.Unmarshal([]byte(cached), &releases) == nil {
+			return releases, nil
+		}
+	}
+
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases?per_page=10", h.githubOwner, h.githubRepo)
 
 	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -212,16 +253,16 @@ func (h *UpdateHandler) getLatestRelease(ctx context.Context) (*githubRelease, e
 		return nil, fmt.Errorf("github returned %d: %s", resp.StatusCode, string(body))
 	}
 
-	var release githubRelease
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return nil, fmt.Errorf("decode release: %w", err)
+	var releases []githubRelease
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return nil, fmt.Errorf("decode releases: %w", err)
 	}
 
-	if data, err := json.Marshal(release); err == nil {
+	if data, err := json.Marshal(releases); err == nil {
 		h.rdb.Set(ctx, redisCacheKey, string(data), cacheTTL)
 	}
 
-	return &release, nil
+	return releases, nil
 }
 
 func isNewer(latest, current string) bool {
