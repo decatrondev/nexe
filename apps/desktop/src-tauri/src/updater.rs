@@ -21,6 +21,9 @@ pub struct UpdateInfo {
     pub size: Option<i64>,
     pub notes: Option<String>,
     pub deb_url: Option<String>,
+    /// True when the update must be installed through Flatpak instead of the built-in updater.
+    #[serde(default)]
+    pub flatpak: bool,
 }
 
 #[derive(Clone, Serialize)]
@@ -43,15 +46,17 @@ pub async fn check_for_update(app: AppHandle) -> Result<UpdateInfo, String> {
     let version = app.package_info().version.to_string();
 
     if is_flatpak() {
+        let newer = crate::flatpak_update::check_startup().await;
         return Ok(UpdateInfo {
-            update_available: false,
-            version: version.clone(),
+            update_available: newer.is_some(),
+            version: newer.map(|u| u.remote_commit).unwrap_or_else(|| version.clone()),
             current_version: version,
             download_url: None,
             sha256: None,
             size: None,
             notes: None,
             deb_url: None,
+            flatpak: true,
         });
     }
 

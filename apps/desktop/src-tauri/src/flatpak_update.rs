@@ -137,37 +137,41 @@ mod imp {
         }
     }
 
-    /// Compare the commit we are running with the one published in our repo. This does not
-    /// depend on when the portal decides to poll.
+    /// Ask our repo which commit is current and compare it with the one we are running.
+    /// Returns None when up to date, offline, or when this is not a self-hosted build.
+    pub async fn check_remote() -> Option<super::UpdateAvailable> {
+        if !SELF_HOSTED {
+            return None;
+        }
+        let running = running_commit()?;
+        let resp = reqwest::Client::new()
+            .get(repo_ref_url())
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await
+            .ok()?;
+        if !resp.status().is_success() {
+            return None;
+        }
+        let remote = resp.text().await.ok()?.trim().to_string();
+        (remote.len() == 64 && remote != running).then(|| super::UpdateAvailable {
+            running_commit: running,
+            remote_commit: remote,
+        })
+    }
+
+    /// Poll in the background so a new version found while the app is running reaches the UI.
     async fn poll_repo(app: AppHandle) {
-        let Some(running) = running_commit() else {
+        if running_commit().is_none() {
             log::warn!("Cannot read app-commit from /.flatpak-info; repo polling disabled");
             return;
-        };
-        let client = reqwest::Client::new();
+        }
         let mut notified = String::new();
-
         loop {
-            if let Ok(resp) = client
-                .get(repo_ref_url())
-                .timeout(std::time::Duration::from_secs(10))
-                .send()
-                .await
-            {
-                if resp.status().is_success() {
-                    if let Ok(text) = resp.text().await {
-                        let remote = text.trim().to_string();
-                        if remote.len() == 64 && remote != running && remote != notified {
-                            announce(
-                                &app,
-                                super::UpdateAvailable {
-                                    running_commit: running.clone(),
-                                    remote_commit: remote.clone(),
-                                },
-                            );
-                            notified = remote;
-                        }
-                    }
+            if let Some(update) = check_remote().await {
+                if update.remote_commit != notified {
+                    notified = update.remote_commit.clone();
+                    announce(&app, update);
                 }
             }
             tokio::time::sleep(std::time::Duration::from_secs(POLL_SECS)).await;
@@ -235,6 +239,10 @@ mod imp {
     }
 
     pub async fn apply(app: &AppHandle) -> Result<(), String> {
+        // The splash is always-on-top and would cover the system permission dialog.
+        if let Some(splash) = app.get_webview_window("splash") {
+            let _ = splash.set_always_on_top(false);
+        }
         let monitor = ensure_monitor(app).await.map_err(|e| e.to_string())?;
         monitor
             .update("", HashMap::new())
@@ -312,4 +320,12 @@ pub fn flatpak_pending_update(app: AppHandle) -> Option<UpdateAvailable> {
         let _ = app;
         None
     }
+}
+
+/// Used by the startup flow: is there a newer version in our repo? (self-hosted Flatpak only)
+pub async fn check_startup() -> Option<UpdateAvailable> {
+    #[cfg(target_os = "linux")]
+    return imp::check_remote().await;
+    #[cfg(not(target_os = "linux"))]
+    None
 }

@@ -11,6 +11,7 @@ export interface UpdateInfo {
   size?: number;
   notes?: string;
   deb_url?: string;
+  flatpak?: boolean;
 }
 
 export interface DownloadProgress {
@@ -29,6 +30,39 @@ export type UpdateStatus =
   | { stage: "error"; message: string };
 
 export type UpdateCallback = (status: UpdateStatus) => void;
+
+/**
+ * Flatpak builds update through the Flatpak portal. Resolves true when the new version is
+ * installed and the app should restart; false when nothing happened (denied, error, timeout).
+ */
+async function applyFlatpakUpdate(onProgress: (percent: number) => void): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    let unlisten: (() => void) | null = null;
+    let settled = false;
+
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      unlisten?.();
+      resolve(ok);
+    };
+
+    const timer = setTimeout(() => finish(false), 180_000);
+
+    listen<{ status: string; progress: number }>("flatpak-update-progress", (event) => {
+      const { status, progress } = event.payload;
+      if (status === "running") onProgress(progress);
+      else if (status === "done") { clearTimeout(timer); finish(true); }
+      else { clearTimeout(timer); finish(false); }
+    })
+      .then((fn) => {
+        unlisten = fn;
+        if (settled) fn();
+        return invoke("flatpak_update_apply");
+      })
+      .catch(() => { clearTimeout(timer); finish(false); });
+  });
+}
 
 function isLinux(): boolean {
   return navigator.userAgent.includes("Linux") && !navigator.userAgent.includes("Android");
@@ -76,6 +110,22 @@ export async function runUpdateFlow(onStatus: UpdateCallback): Promise<boolean> 
     }
 
     // Step 3: Download and apply update
+
+    // Flatpak: install through the portal, then restart into the new version
+    if (info.flatpak) {
+      onStatus({ stage: "downloading", progress: 0 });
+      const installed = await applyFlatpakUpdate((percent) =>
+        onStatus({ stage: "downloading", progress: percent }),
+      );
+      if (!installed) {
+        onStatus({ stage: "no-update" });
+        return false;
+      }
+      onStatus({ stage: "restarting" });
+      await new Promise((r) => setTimeout(r, 500));
+      await invoke("flatpak_restart");
+      return true;
+    }
 
     // Linux with .deb: download deb and install via pkexec
     if (isLinux() && info.deb_url) {
