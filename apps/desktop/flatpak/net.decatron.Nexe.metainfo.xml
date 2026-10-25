@@ -51,6 +51,11 @@
     <category>Chat</category>
   </categories>
   <releases>
+    <release version="0.5.11" date="2026-10-25">
+      <description>
+        <p>Flatpak packaging for Linux, with updates delivered through Flatpak.</p>
+      </description>
+    </release>
     <release version="0.5.10" date="2026-05-23">
       <description>
         <p>Linux fixes, Twitch device-code login and improved voice and video.</p>
