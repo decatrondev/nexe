@@ -44,6 +44,10 @@ function SplashWindow() {
         setStatusText("Checking for updates...");
         setProgress(30);
         break;
+      case "permission":
+        setStatusText("Allow the update to continue...");
+        setProgress(35);
+        break;
       case "downloading":
         setStatusText(`Downloading update... ${Math.round(status.progress)}%`);
         setProgress(30 + (status.progress / 100) * 50);

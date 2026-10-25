@@ -23,6 +23,7 @@ export interface DownloadProgress {
 export type UpdateStatus =
   | { stage: "checking" }
   | { stage: "installing-app" }
+  | { stage: "permission" }
   | { stage: "downloading"; progress: number }
   | { stage: "installing" }
   | { stage: "restarting" }
@@ -35,7 +36,10 @@ export type UpdateCallback = (status: UpdateStatus) => void;
  * Flatpak builds update through the Flatpak portal. Resolves true when the new version is
  * installed and the app should restart; false when nothing happened (denied, error, timeout).
  */
-async function applyFlatpakUpdate(onProgress: (percent: number) => void): Promise<boolean> {
+async function applyFlatpakUpdate(
+  onWaitingPermission: () => void,
+  onProgress: (percent: number) => void,
+): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     let unlisten: (() => void) | null = null;
     let settled = false;
@@ -47,7 +51,8 @@ async function applyFlatpakUpdate(onProgress: (percent: number) => void): Promis
       resolve(ok);
     };
 
-    const timer = setTimeout(() => finish(false), 180_000);
+    // The first time, the system asks the user to allow updates; give it room to answer.
+    const timer = setTimeout(() => finish(false), 300_000);
 
     listen<{ status: string; progress: number }>("flatpak-update-progress", (event) => {
       const { status, progress } = event.payload;
@@ -58,6 +63,7 @@ async function applyFlatpakUpdate(onProgress: (percent: number) => void): Promis
       .then((fn) => {
         unlisten = fn;
         if (settled) fn();
+        onWaitingPermission();
         return invoke("flatpak_update_apply");
       })
       .catch(() => { clearTimeout(timer); finish(false); });
@@ -113,9 +119,9 @@ export async function runUpdateFlow(onStatus: UpdateCallback): Promise<boolean> 
 
     // Flatpak: install through the portal, then restart into the new version
     if (info.flatpak) {
-      onStatus({ stage: "downloading", progress: 0 });
-      const installed = await applyFlatpakUpdate((percent) =>
-        onStatus({ stage: "downloading", progress: percent }),
+      const installed = await applyFlatpakUpdate(
+        () => onStatus({ stage: "permission" }),
+        (percent) => onStatus({ stage: "downloading", progress: percent }),
       );
       if (!installed) {
         onStatus({ stage: "no-update" });

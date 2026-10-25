@@ -256,7 +256,15 @@ mod imp {
         let conn = Connection::session().await.map_err(|e| e.to_string())?;
         let portal = PortalProxy::new(&conn).await.map_err(|e| e.to_string())?;
 
-        let argv: Vec<Vec<u8>> = ["sh", "-c", "sleep 2; exec nexe"]
+        // Start the new instance after this one is gone. If single-instance rejects it because
+        // the old process has not released its D-Bus name yet, it exits within a second or two:
+        // retry. A real session lasts far longer than 4 s, so that ends the loop.
+        const RESTART_SCRIPT: &str = "sleep 2; for i in 1 2 3 4 5; do \
+            s=$(date +%s); nexe; \
+            if [ $(( $(date +%s) - s )) -ge 4 ]; then exit 0; fi; \
+            sleep 2; done";
+
+        let argv: Vec<Vec<u8>> = ["sh", "-c", RESTART_SCRIPT]
             .iter()
             .map(|a| {
                 let mut b = a.as_bytes().to_vec();
@@ -277,8 +285,10 @@ mod imp {
             .await
             .map_err(|e| e.to_string())?;
 
-        app.exit(0);
-        Ok(())
+        // Leave immediately: a graceful shutdown can take seconds on slow machines, and the
+        // new instance must not find this one still holding the single-instance lock.
+        let _ = app;
+        std::process::exit(0);
     }
 }
 
