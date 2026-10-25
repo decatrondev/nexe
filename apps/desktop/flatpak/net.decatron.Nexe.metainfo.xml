@@ -51,6 +51,11 @@
     <category>Chat</category>
   </categories>
   <releases>
+    <release version="0.5.18" date="2026-10-25">
+      <description>
+        <p>Version bump to validate automatic updates on every platform.</p>
+      </description>
+    </release>
     <release version="0.5.17" date="2026-10-25">
       <description>
         <p>Version bump to validate updating and restarting from the in-app notice.</p>
