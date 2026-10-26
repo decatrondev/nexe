@@ -51,6 +51,11 @@
     <category>Chat</category>
   </categories>
   <releases>
+    <release version="0.5.24" date="2026-10-26">
+      <description>
+        <p>Version bump to collect the restart report from an update.</p>
+      </description>
+    </release>
     <release version="0.5.23" date="2026-10-26">
       <description>
         <p>After an update, Nexe now records how the restart went so a failed reopen can be diagnosed.</p>
