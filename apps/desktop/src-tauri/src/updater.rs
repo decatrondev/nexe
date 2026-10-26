@@ -6,7 +6,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, Manager};
 
-const API_URL: &str = "https://nexeapi.decatron.net";
+pub(crate) const API_URL: &str = "https://nexeapi.decatron.net";
 const MAX_APPLY_ATTEMPTS: u32 = 2;
 
 // ── Types ──

@@ -142,6 +142,11 @@ func main() {
 	updateHandler := handler.NewUpdateHandler(rdb, "decatrondev", "nexe")
 	mux.Handle("GET /update/check", apiRateLimiter.Middleware(http.HandlerFunc(updateHandler.Check)))
 
+	// Desktop restart diagnostics (public, 10 reports/hour per IP)
+	diagnosticsHandler := handler.NewDiagnosticsHandler(rdb)
+	diagnosticsRateLimiter := middleware.NewRateLimiter(rdb, 10, time.Hour)
+	mux.Handle("POST /diagnostics/restart", diagnosticsRateLimiter.Middleware(http.HandlerFunc(diagnosticsHandler.RestartReport)))
+
 	// Auth routes (rate limited, no auth required)
 	mux.Handle("POST /auth/register", authRateLimiter.Middleware(http.HandlerFunc(authHandler.Register)))
 	mux.Handle("POST /auth/verify-email", authRateLimiter.Middleware(http.HandlerFunc(authHandler.VerifyEmail)))

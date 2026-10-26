@@ -134,6 +134,46 @@ mod imp {
 
         if SELF_HOSTED {
             tauri::async_runtime::spawn(poll_repo(app.clone()));
+            tauri::async_runtime::spawn(upload_restart_report(app.clone()));
+        }
+    }
+
+    /// Cap on what we send, well under the 32 KB the gateway accepts.
+    const REPORT_MAX_BYTES: usize = 24_000;
+
+    fn restart_report_path() -> Option<std::path::PathBuf> {
+        let base = std::env::var_os("XDG_DATA_HOME")
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/share"))
+            })?;
+        Some(base.join("restart-report.log"))
+    }
+
+    /// The restart script leaves a report of how the new instance started. Send it once, a few
+    /// seconds in so it also holds the early output of a healthy start, then delete it.
+    async fn upload_restart_report(app: AppHandle) {
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        let Some(path) = restart_report_path() else { return };
+        let Ok(bytes) = std::fs::read(&path) else { return };
+        let _ = std::fs::remove_file(&path);
+
+        let tail = &bytes[bytes.len().saturating_sub(REPORT_MAX_BYTES)..];
+        let body = serde_json::json!({
+            "version": app.package_info().version.to_string(),
+            "commit": running_commit().unwrap_or_default(),
+            "log": String::from_utf8_lossy(tail),
+        });
+        let sent = reqwest::Client::new()
+            .post(format!("{}/diagnostics/restart", crate::updater::API_URL))
+            .timeout(std::time::Duration::from_secs(10))
+            .json(&body)
+            .send()
+            .await;
+        match sent {
+            Ok(r) if r.status().is_success() => log::info!("Restart report uploaded"),
+            Ok(r) => log::warn!("Restart report rejected: {}", r.status()),
+            Err(e) => log::warn!("Restart report not sent: {}", e),
         }
     }
 
@@ -259,10 +299,26 @@ mod imp {
         // Start the new instance after this one is gone. If single-instance rejects it because
         // the old process has not released its D-Bus name yet, it exits within a second or two:
         // retry. A real session lasts far longer than 4 s, so that ends the loop.
-        const RESTART_SCRIPT: &str = "sleep 2; for i in 1 2 3 4 5; do \
-            s=$(date +%s); nexe; \
-            if [ $(( $(date +%s) - s )) -ge 4 ]; then exit 0; fi; \
-            sleep 2; done";
+        // Everything the new instance prints goes to a short report that it uploads on startup
+        // (see upload_restart_report), so a restart that fails on a machine we cannot reach
+        // can still be diagnosed.
+        const RESTART_SCRIPT: &str = r#"
+L="${XDG_DATA_HOME:-$HOME/.local/share}/restart-report.log"
+{
+  echo "when=$(date -u +%FT%TZ)"
+  echo "desktop=$XDG_CURRENT_DESKTOP session=$XDG_SESSION_TYPE display=$DISPLAY wayland=$WAYLAND_DISPLAY"
+  ls /tmp/.X11-unix 2>&1 | sed 's/^/x11-socket: /'
+  ls "$XDG_RUNTIME_DIR" 2>&1 | grep -i wayland | sed 's/^/runtime: /'
+} > "$L" 2>&1
+sleep 2
+for i in 1 2 3 4 5; do
+  s=$(date +%s)
+  echo "-- attempt $i" >> "$L"
+  nexe 2>&1 | { head -c 6144 >> "$L"; cat > /dev/null; }
+  if [ $(( $(date +%s) - s )) -ge 4 ]; then exit 0; fi
+  sleep 2
+done
+"#;
 
         let argv: Vec<Vec<u8>> = ["sh", "-c", RESTART_SCRIPT]
             .iter()
