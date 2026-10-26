@@ -6,6 +6,7 @@ import {
   type RemoteParticipant,
   type RemoteTrackPublication,
 } from "livekit-client";
+import { createNativeRoom, isNativeRoom, needsNativeVoice } from "../lib/nativeRoom";
 import { api, type VoiceState, type TierLimits, type DMCallSignal } from "../lib/api";
 
 // ── Screen share resolution presets ──
@@ -154,6 +155,9 @@ function cleanupAudio() {
 }
 
 function createRoom(): Room {
+  // Webviews without WebRTC (Linux Flatpak) use the Rust voice engine; every other platform is unchanged.
+  if (needsNativeVoice()) return createNativeRoom();
+
   const noiseSupp = localStorage.getItem("nexe:voice:noiseSuppression") !== "false";
   const echoCancellation = localStorage.getItem("nexe:voice:echoCancellation") !== "false";
   const autoGain = localStorage.getItem("nexe:voice:autoGain") !== "false";
@@ -301,6 +305,7 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
     if (!newMute && selfDeaf) {
       set({ selfDeaf: false });
       document.querySelectorAll<HTMLAudioElement>("[id^='voice-audio-']").forEach((el) => { el.muted = false; });
+      if (isNativeRoom(room)) room.setDeafened(false);
     }
 
     // Only report to guild voice API (DM calls don't track mute server-side)
@@ -314,6 +319,7 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
     const newDeaf = !selfDeaf;
 
     document.querySelectorAll<HTMLAudioElement>("[id^='voice-audio-']").forEach((el) => { el.muted = newDeaf; });
+    if (isNativeRoom(room)) room.setDeafened(newDeaf);
 
     if (room) {
       try { await room.localParticipant.setMicrophoneEnabled(!newDeaf); } catch { /* */ }
@@ -412,14 +418,17 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
   cancelScreenShare: () => set({ screenSharePending: false }),
 
   toggleLocalMute: (userId: string) => {
+    const nativeRoom = get().room;
     set((s) => {
       const next = new Set(s.localMutes);
       if (next.has(userId)) {
         next.delete(userId);
+        if (isNativeRoom(nativeRoom)) nativeRoom.setUserVolume(userId, 1);
         // Restore volume
         document.querySelectorAll<HTMLAudioElement>(`.voice-audio-user-${userId}`).forEach((el) => { el.volume = 1; });
       } else {
         next.add(userId);
+        if (isNativeRoom(nativeRoom)) nativeRoom.setUserVolume(userId, 0);
         // Mute
         document.querySelectorAll<HTMLAudioElement>(`.voice-audio-user-${userId}`).forEach((el) => { el.volume = 0; });
       }

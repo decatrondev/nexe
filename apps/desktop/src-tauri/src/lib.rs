@@ -9,6 +9,7 @@ use tauri_plugin_autostart::ManagerExt;
 mod flatpak_update;
 mod installer;
 mod updater;
+mod voice;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -23,6 +24,7 @@ pub fn run() {
     }
 
     tauri::Builder::default()
+        .manage(voice::VoiceState::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(w) = app.get_webview_window("main") {
@@ -45,6 +47,14 @@ pub fn run() {
             flatpak_update::flatpak_pending_update,
             installer::check_install_status,
             installer::self_install,
+            voice::voice_connect,
+            voice::voice_disconnect,
+            voice::voice_set_mic,
+            voice::voice_set_deafen,
+            voice::voice_set_volume,
+            voice::voice_list_devices,
+            voice::voice_set_input,
+            voice::voice_set_output,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

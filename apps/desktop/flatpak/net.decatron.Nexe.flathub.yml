@@ -8,6 +8,7 @@ sdk: org.gnome.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
   - org.freedesktop.Sdk.Extension.node22
+  - org.freedesktop.Sdk.Extension.llvm21
 command: nexe
 
 finish-args:
@@ -95,10 +96,14 @@ modules:
   - name: nexe
     buildsystem: simple
     build-options:
-      append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node22/bin:/run/build/nexe/bin
+      append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node22/bin:/usr/lib/sdk/llvm21/bin:/run/build/nexe/bin
       env:
         CARGO_HOME: /run/build/nexe/cargo
         CARGO_NET_OFFLINE: 'true'
+        # Voice engine (LiveKit Rust SDK): libwebrtc needs clang and is shipped as a pinned source below
+        CC: clang
+        CXX: clang++
+        LK_CUSTOM_WEBRTC: /run/build/nexe/webrtc
         XDG_CACHE_HOME: /run/build/nexe/flatpak-node/cache
         npm_config_offline: 'true'
         CI: 'true'
@@ -115,12 +120,17 @@ modules:
     sources:
       - type: git
         url: https://github.com/decatrondev/nexe.git
-        tag: v0.5.32
+        tag: v0.5.33
         commit: REPLACE_WITH_TAG_COMMIT_SHA
       - type: archive
         url: https://registry.npmjs.org/pnpm/-/pnpm-10.33.4.tgz
         sha256: 8e70ddc6649b18bc3d895cf3a908c0291ea4c38039ad8722c47e018daf1e9cfc
         strip-components: 1
         dest: pnpm-dist
+      - type: archive
+        archive-type: zip
+        url: https://github.com/livekit/rust-sdks/releases/download/webrtc-a545de4/webrtc-linux-x64-release.zip
+        sha256: 2ece73b9a72a2cacd73d0c62ac3a414e202f37885c3c8f49dddb43c1443ac0bd
+        dest: webrtc
       - cargo-sources.json
       - node-sources.json

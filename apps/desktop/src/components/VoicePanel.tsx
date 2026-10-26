@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { ConnectionQuality } from "livekit-client";
+import { listNativeDevices, needsNativeVoice } from "../lib/nativeRoom";
 import { useVoiceStore } from "../stores/voice";
 import { useGuildStore } from "../stores/guild";
 import { useDMStore } from "../stores/dm";
@@ -46,6 +47,12 @@ export default function VoicePanel() {
   useEffect(() => {
     if (!showSettings) return;
     (async () => {
+      if (needsNativeVoice()) {
+        const { inputs, outputs } = await listNativeDevices();
+        setAudioDevices(inputs.map((d) => ({ deviceId: d.deviceId, label: d.label })) as MediaDeviceInfo[]);
+        setOutputDevices(outputs.map((d) => ({ deviceId: d.deviceId, label: d.label })) as MediaDeviceInfo[]);
+        return;
+      }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         stream.getTracks().forEach((t) => t.stop());
