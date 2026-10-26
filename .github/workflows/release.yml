@@ -152,10 +152,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev libjavascriptcoregtk-4.1-dev \
-            clang libasound2-dev libpulse-dev libx11-dev libxext-dev libxdamage-dev libxfixes-dev libxcomposite-dev libxrandr-dev libgbm-dev libdrm-dev libxtst-dev
-          # The voice engine (libwebrtc) must be built with clang, not gcc
-          echo "CC=clang" >> "$GITHUB_ENV"
-          echo "CXX=clang++" >> "$GITHUB_ENV"
+            clang libasound2-dev libpulse-dev libx11-dev libxext-dev libxdamage-dev libxfixes-dev libxcomposite-dev libxrandr-dev libgbm-dev libdrm-dev libxtst-dev wget lsb-release software-properties-common gnupg
+          # The voice engine (libwebrtc) must be built with clang 21 or newer, not gcc
+          wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          chmod +x /tmp/llvm.sh
+          sudo /tmp/llvm.sh 21
+          echo "CC=clang-21" >> "$GITHUB_ENV"
+          echo "CXX=clang++-21" >> "$GITHUB_ENV"
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5
