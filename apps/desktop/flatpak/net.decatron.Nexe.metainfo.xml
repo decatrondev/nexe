@@ -51,6 +51,11 @@
     <category>Chat</category>
   </categories>
   <releases>
+    <release version="0.5.35" date="2026-10-26">
+      <description>
+        <p>Fix: the Linux release build installs the compiler the voice engine requires without prompts.</p>
+      </description>
+    </release>
     <release version="0.5.34" date="2026-10-26">
       <description>
         <p>Fix: the Linux release build now uses the compiler the voice engine requires.</p>
