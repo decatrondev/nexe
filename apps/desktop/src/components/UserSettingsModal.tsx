@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAuthStore } from "../stores/auth";
 import { api, type SocialLink, type TierLimits } from "../lib/api";
 import ImageCropModal from "./ImageCropModal";
+import { listNativeDevices, needsNativeVoice } from "../lib/nativeRoom";
+import { useMicTest } from "../lib/micTest";
 import { Tabs, TabList, TabPanel, Select, ColorPicker, Toggle, type TabItem } from "@nexe/ui";
 
 interface Props { onClose: () => void }
@@ -1310,8 +1312,8 @@ function NotificationsTab() {
 
 /* ─── Voice & Video Tab ─── */
 function VoiceVideoTab() {
-  const [inputDevice, setInputDevice] = useState("");
-  const [outputDevice, setOutputDevice] = useState("");
+  const [inputDevice, setInputDevice] = useState(() => localStorage.getItem("nexe:voice:inputDevice") ?? "");
+  const [outputDevice, setOutputDevice] = useState(() => localStorage.getItem("nexe:voice:outputDevice") ?? "");
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
   const [outputDevices, setOutputDevices] = useState<MediaDeviceInfo[]>([]);
   const [noiseSupp, setNoiseSupp] = useState(() => localStorage.getItem("nexe:voice:noiseSuppression") !== "false");
@@ -1319,8 +1321,18 @@ function VoiceVideoTab() {
   const [autoGain, setAutoGain] = useState(() => localStorage.getItem("nexe:voice:autoGain") !== "false");
   const [tierLimits, setTierLimits] = useState<import("../lib/api").TierLimits | null>(null);
 
+  const micTest = useMicTest({ input: inputDevice, output: outputDevice, echoCancellation, noiseSuppression: noiseSupp, autoGain });
+
   useEffect(() => {
     (async () => {
+      if (needsNativeVoice()) {
+        // The Linux webview has no WebRTC, so the devices come from the native voice engine.
+        const { inputs, outputs } = await listNativeDevices();
+        // The list starts with a "Default" entry, which the select below already provides.
+        setAudioDevices(inputs.filter((d) => d.deviceId) as MediaDeviceInfo[]);
+        setOutputDevices(outputs.filter((d) => d.deviceId) as MediaDeviceInfo[]);
+        return;
+      }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         stream.getTracks().forEach((t) => t.stop());
@@ -1403,6 +1415,37 @@ function VoiceVideoTab() {
               <option key={d.deviceId} value={d.deviceId}>{d.label || `Speaker ${d.deviceId.slice(0, 8)}`}</option>
             ))}
           </select>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Microphone Test</p>
+        <div className="rounded-lg border border-dark-700 bg-dark-800 p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-slate-200">Check your microphone</p>
+              <p className="text-xs text-slate-500">
+                Speak and you will hear yourself with the settings below. Use headphones to avoid echo.
+              </p>
+            </div>
+            <button
+              onClick={() => (micTest.running ? micTest.stop() : void micTest.start())}
+              className={`shrink-0 rounded-lg px-4 py-2 text-sm font-medium text-white transition-colors ${
+                micTest.running ? "bg-red-600 hover:bg-red-500" : "bg-nexe-600 hover:bg-nexe-500"
+              }`}
+            >
+              {micTest.running ? "Stop test" : "Test microphone"}
+            </button>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-dark-900" role="meter" aria-label="Microphone level" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(micTest.level * 100)}>
+            <div
+              className={`h-full rounded-full transition-[width] duration-75 ${
+                micTest.level > 0.9 ? "bg-red-500" : micTest.level > 0.75 ? "bg-amber-400" : "bg-green-500"
+              }`}
+              style={{ width: `${Math.round(micTest.level * 100)}%` }}
+            />
+          </div>
+          {micTest.error && <p className="mt-2 text-xs text-red-400">{micTest.error}</p>}
         </div>
       </div>
 

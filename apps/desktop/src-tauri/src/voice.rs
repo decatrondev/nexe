@@ -253,22 +253,48 @@ mod imp {
         Ok(PlatformAudio::new().map(|a| list_with(&a)).unwrap_or_default())
     }
 
+    /// The settings list real sound-server devices; the call engine numbers them its own way, so
+    /// match by name. An empty id means "system default", which is always the first entry.
     #[tauri::command]
-    pub async fn voice_set_input(state: State<'_, VoiceState>, device_id: String) -> Result<(), String> {
+    pub async fn voice_set_input(
+        state: State<'_, VoiceState>,
+        device_id: String,
+        label: Option<String>,
+    ) -> Result<(), String> {
         let slot = state.session.lock().await;
         let s = slot.as_ref().ok_or("Not in a call")?;
-        s.audio
-            .switch_recording_device(&RecordingDeviceId::from_unchecked_guid(&device_id))
-            .map_err(|e| format!("Input device: {e}"))
+        let id = if device_id.is_empty() {
+            RecordingDeviceId::from_index(0)
+        } else {
+            let label = label.unwrap_or_default();
+            s.audio
+                .recording_devices()
+                .find(|d| d.name.contains(&device_id) || (!label.is_empty() && d.name.contains(&label)))
+                .map(|d| d.id)
+                .ok_or("That microphone is not available to the call engine")?
+        };
+        s.audio.switch_recording_device(&id).map_err(|e| format!("Input device: {e}"))
     }
 
     #[tauri::command]
-    pub async fn voice_set_output(state: State<'_, VoiceState>, device_id: String) -> Result<(), String> {
+    pub async fn voice_set_output(
+        state: State<'_, VoiceState>,
+        device_id: String,
+        label: Option<String>,
+    ) -> Result<(), String> {
         let slot = state.session.lock().await;
         let s = slot.as_ref().ok_or("Not in a call")?;
-        s.audio
-            .switch_playout_device(&PlayoutDeviceId::from_unchecked_guid(&device_id))
-            .map_err(|e| format!("Output device: {e}"))
+        let id = if device_id.is_empty() {
+            PlayoutDeviceId::from_index(0)
+        } else {
+            let label = label.unwrap_or_default();
+            s.audio
+                .playout_devices()
+                .find(|d| d.name.contains(&device_id) || (!label.is_empty() && d.name.contains(&label)))
+                .map(|d| d.id)
+                .ok_or("That speaker is not available to the call engine")?
+        };
+        s.audio.switch_playout_device(&id).map_err(|e| format!("Output device: {e}"))
     }
 }
 
@@ -304,9 +330,9 @@ mod imp {
     #[tauri::command]
     pub async fn voice_list_devices() -> Result<AudioDevices, String> { Ok(AudioDevices::default()) }
     #[tauri::command]
-    pub async fn voice_set_input(_device_id: String) -> Result<(), String> { Err(NO.into()) }
+    pub async fn voice_set_input(_device_id: String, _label: Option<String>) -> Result<(), String> { Err(NO.into()) }
     #[tauri::command]
-    pub async fn voice_set_output(_device_id: String) -> Result<(), String> { Err(NO.into()) }
+    pub async fn voice_set_output(_device_id: String, _label: Option<String>) -> Result<(), String> { Err(NO.into()) }
 }
 
 pub use imp::*;

@@ -51,6 +51,11 @@
     <category>Chat</category>
   </categories>
   <releases>
+    <release version="0.5.36" date="2026-10-26">
+      <description>
+        <p>New microphone test in Voice &amp; Video settings: a live level meter and a button to hear yourself with your current settings. On Linux the device list now shows your real microphones and speakers.</p>
+      </description>
+    </release>
     <release version="0.5.35" date="2026-10-26">
       <description>
         <p>Fix: the Linux release build installs the compiler the voice engine requires without prompts.</p>

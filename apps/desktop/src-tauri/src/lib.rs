@@ -9,6 +9,7 @@ use tauri_plugin_autostart::ManagerExt;
 mod flatpak_update;
 mod installer;
 mod updater;
+mod mic_test;
 mod voice;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -23,8 +24,14 @@ pub fn run() {
         }
     }
 
+    if std::env::var_os("NEXE_MIC_SELFTEST").is_some() {
+        mic_test::selftest();
+        return;
+    }
+
     tauri::Builder::default()
         .manage(voice::VoiceState::default())
+        .manage(mic_test::MicTestState::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(w) = app.get_webview_window("main") {
@@ -55,6 +62,9 @@ pub fn run() {
             voice::voice_list_devices,
             voice::voice_set_input,
             voice::voice_set_output,
+            mic_test::mic_test_list_devices,
+            mic_test::mic_test_start,
+            mic_test::mic_test_stop,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

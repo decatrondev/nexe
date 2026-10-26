@@ -22,9 +22,14 @@ export interface NativeDevice {
   label: string;
 }
 
+// Device names by id, so the call engine can match a device the settings picked (it numbers them differently).
+const deviceLabels = new Map<string, string>();
+
 export async function listNativeDevices(): Promise<{ inputs: NativeDevice[]; outputs: NativeDevice[] }> {
   try {
-    return await invoke("voice_list_devices");
+    const res = await invoke<{ inputs: NativeDevice[]; outputs: NativeDevice[] }>("mic_test_list_devices");
+    for (const d of [...res.inputs, ...res.outputs]) deviceLabels.set(d.deviceId, d.label);
+    return res;
   } catch {
     return { inputs: [], outputs: [] };
   }
@@ -134,7 +139,10 @@ export class NativeRoom {
   }
 
   async switchActiveDevice(kind: "audioinput" | "audiooutput", deviceId: string): Promise<void> {
-    await invoke(kind === "audioinput" ? "voice_set_input" : "voice_set_output", { deviceId });
+    await invoke(kind === "audioinput" ? "voice_set_input" : "voice_set_output", {
+      deviceId,
+      label: deviceLabels.get(deviceId) ?? null,
+    });
   }
 
   /** Deafen: stop playing everybody. */
