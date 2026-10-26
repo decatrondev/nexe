@@ -437,6 +437,21 @@ echo "ran" > "$1""#;
         }
     }
 
+    /// Wait until the restart report contains a line starting with `prefix`.
+    async fn wait_for_report_line(prefix: &str, timeout: std::time::Duration) -> bool {
+        let Some(path) = restart_report_path() else { return false };
+        let deadline = std::time::Instant::now() + timeout;
+        while std::time::Instant::now() < deadline {
+            if let Ok(text) = std::fs::read_to_string(&path) {
+                if text.lines().any(|l| l.starts_with(prefix)) {
+                    return true;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        false
+    }
+
     /// Start the latest installed version in a fresh sandbox, then quit this instance.
     /// The short delay lets this process release the single-instance lock first.
     pub async fn restart(app: &AppHandle) -> Result<(), String> {
@@ -482,9 +497,15 @@ done
             }
         }
 
-        // Leave immediately: a graceful shutdown can take seconds on slow machines, and the
+        // The portal needs this process alive until the new sandbox is up: on Flatpak 1.18 a
+        // caller that exits right after Spawn aborts the launch before the script runs (seen on
+        // Nobara/KDE). The script's first line is the signal; the script itself waits 2 s before
+        // starting Nexe, so this process is gone well before that.
+        let started = wait_for_report_line("script-started", std::time::Duration::from_secs(15)).await;
+        report_note(&format!("script-seen={} exiting at={}", started, unix_now()));
+
+        // Then leave at once: a graceful shutdown can take seconds on slow machines, and the
         // new instance must not find this one still holding the single-instance lock.
-        report_note(&format!("exiting at={}", unix_now()));
         std::process::exit(0);
     }
 }
