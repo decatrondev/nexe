@@ -51,6 +51,11 @@
     <category>Chat</category>
   </categories>
   <releases>
+    <release version="0.5.26" date="2026-10-26">
+      <description>
+        <p>Startup check now measures how the system launches a new Nexe after an update, to fix machines where it does not reopen.</p>
+      </description>
+    </release>
     <release version="0.5.25" date="2026-10-26">
       <description>
         <p>Restart after an update now records more detail, and a short startup check helps diagnose machines where Nexe does not reopen.</p>

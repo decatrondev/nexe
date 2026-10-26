@@ -52,6 +52,9 @@ mod imp {
             flags: u32,
             options: HashMap<&str, Value<'_>>,
         ) -> zbus::Result<u32>;
+
+        #[zbus(signal)]
+        fn spawn_exited(&self, pid: u32, exit_status: u32) -> zbus::Result<()>;
     }
 
     #[proxy(
@@ -180,17 +183,6 @@ mod imp {
     ///    restart relies on, so a machine where restarting fails can be told apart from one
     ///    where it works.
     async fn upload_diagnostics(app: AppHandle) {
-        const PROBE_SCRIPT: &str = r#"
-L="${XDG_DATA_HOME:-$HOME/.local/share}/spawn-probe.log"
-{
-  echo "probe-started=$(date -u +%s) pid=$$"
-  echo "desktop=$XDG_CURRENT_DESKTOP session=$XDG_SESSION_TYPE display=$DISPLAY wayland=$WAYLAND_DISPLAY"
-  echo "data=$XDG_DATA_HOME home=$HOME"
-  ls /tmp/.X11-unix 2>&1 | sed 's/^/x11-socket: /'
-  ls "$XDG_RUNTIME_DIR" 2>&1 | grep -i wayland | sed 's/^/runtime: /'
-} > "$L" 2>&1
-"#;
-
         tokio::time::sleep(std::time::Duration::from_secs(10)).await;
         let Some(path) = restart_report_path() else { return };
         let dir = path.parent().map(std::path::Path::to_path_buf).unwrap_or_default();
@@ -206,14 +198,13 @@ L="${XDG_DATA_HOME:-$HOME/.local/share}/spawn-probe.log"
         }
         let _ = std::fs::write(&marker, "");
 
-        let probe_path = dir.join("spawn-probe.log");
-        let _ = std::fs::remove_file(&probe_path);
-        let spawned = spawn_script(PROBE_SCRIPT).await;
-        tokio::time::sleep(std::time::Duration::from_secs(8)).await;
-        let probe = std::fs::read(&probe_path)
-            .map(|b| tail_lossy(&b))
-            .unwrap_or_else(|e| format!("(probe file not created: {})", e));
-        let _ = std::fs::remove_file(&probe_path);
+        // Same call as the restart (latest version) and the plain one, side by side.
+        let (latest, plain) = futures_util::future::join(
+            probe_spawn("latest", SPAWN_FLAG_LATEST_VERSION, &dir),
+            probe_spawn("plain", 0, &dir),
+        )
+        .await;
+        let probe = format!("{}\n\n{}", latest, plain);
 
         let env = [
             "HOME", "XDG_DATA_HOME", "XDG_RUNTIME_DIR", "XDG_CURRENT_DESKTOP", "XDG_SESSION_TYPE",
@@ -228,8 +219,8 @@ L="${XDG_DATA_HOME:-$HOME/.local/share}/spawn-probe.log"
         send_report(
             &app,
             format!(
-                "[startup-diagnostics]\nspawn={:?}\n--- probe\n{}\n--- env\n{}\n--- flatpak-info\n{}",
-                spawned, probe, env, info
+                "[startup-diagnostics]\n{}\n--- env\n{}\n--- flatpak-info\n{}",
+                probe, env, info
             ),
         )
         .await;
@@ -353,8 +344,16 @@ L="${XDG_DATA_HOME:-$HOME/.local/share}/spawn-probe.log"
     async fn spawn_script(script: &str) -> Result<u32, String> {
         let conn = Connection::session().await.map_err(|e| e.to_string())?;
         let portal = PortalProxy::new(&conn).await.map_err(|e| e.to_string())?;
+        spawn_with(&portal, &["sh", "-c", script], SPAWN_FLAG_LATEST_VERSION, HashMap::new()).await
+    }
 
-        let argv: Vec<Vec<u8>> = ["sh", "-c", script]
+    async fn spawn_with(
+        portal: &PortalProxy<'_>,
+        args: &[&str],
+        flags: u32,
+        fds: HashMap<u32, Fd<'_>>,
+    ) -> Result<u32, String> {
+        let argv: Vec<Vec<u8>> = args
             .iter()
             .map(|a| {
                 let mut b = a.as_bytes().to_vec();
@@ -364,16 +363,62 @@ L="${XDG_DATA_HOME:-$HOME/.local/share}/spawn-probe.log"
             .collect();
 
         portal
-            .spawn(
-                b"/\0".to_vec(),
-                argv,
-                HashMap::new(),
-                HashMap::new(),
-                SPAWN_FLAG_LATEST_VERSION,
-                HashMap::new(),
-            )
+            .spawn(b"/\0".to_vec(), argv, fds, HashMap::new(), flags, HashMap::new())
             .await
             .map_err(|e| e.to_string())
+    }
+
+    /// Spawn a tiny script through the portal and report what happened: the pid, how it exited
+    /// (the portal's SpawnExited signal), everything it and `flatpak run` printed, and the file
+    /// the script was asked to create. Waits up to 45 s, since a VM can be slow to start a sandbox.
+    async fn probe_spawn(label: &str, flags: u32, dir: &std::path::Path) -> String {
+        const SCRIPT: &str = r#"echo "probe-ran at=$(date -u +%s) pid=$$"
+echo "desktop=$XDG_CURRENT_DESKTOP session=$XDG_SESSION_TYPE display=$DISPLAY wayland=$WAYLAND_DISPLAY"
+echo "ran" > "$1""#;
+
+        let out_path = dir.join(format!("probe-{}.out", label));
+        let file_path = dir.join(format!("probe-{}.log", label));
+        let _ = std::fs::remove_file(&out_path);
+        let _ = std::fs::remove_file(&file_path);
+
+        let header = format!("[probe {} flags={}]", label, flags);
+        let run = async {
+            let conn = Connection::session().await.map_err(|e| e.to_string())?;
+            let portal = PortalProxy::new(&conn).await.map_err(|e| e.to_string())?;
+            let mut exited = portal.receive_spawn_exited().await.map_err(|e| e.to_string())?;
+            let out = std::fs::File::create(&out_path).map_err(|e| e.to_string())?;
+
+            let file_arg = file_path.to_string_lossy().into_owned();
+            let mut fds: HashMap<u32, Fd<'_>> = HashMap::new();
+            fds.insert(1, Fd::from(&out));
+            fds.insert(2, Fd::from(&out));
+            let pid = spawn_with(&portal, &["sh", "-c", SCRIPT, "sh", &file_arg], flags, fds).await?;
+
+            let status = tokio::time::timeout(std::time::Duration::from_secs(45), async {
+                while let Some(signal) = exited.next().await {
+                    if let Ok(args) = signal.args() {
+                        if args.pid == pid {
+                            return Some(args.exit_status);
+                        }
+                    }
+                }
+                None
+            })
+            .await;
+            Ok::<_, String>((pid, status))
+        };
+
+        let verdict = match run.await {
+            Ok((pid, Ok(Some(code)))) => format!("spawn=Ok({}) exit_status={}", pid, code),
+            Ok((pid, Ok(None))) => format!("spawn=Ok({}) signal stream ended", pid),
+            Ok((pid, Err(_))) => format!("spawn=Ok({}) did not exit within 45 s", pid),
+            Err(e) => format!("spawn failed: {}", e),
+        };
+        let out = std::fs::read(&out_path).map(|b| tail_lossy(&b)).unwrap_or_default();
+        let created = std::fs::read_to_string(&file_path).unwrap_or_else(|_| "(file not created)".into());
+        let _ = std::fs::remove_file(&out_path);
+        let _ = std::fs::remove_file(&file_path);
+        format!("{}\n{}\nprinted: {}\nfile: {}", header, verdict, out.trim(), created.trim())
     }
 
     fn unix_now() -> u64 {
