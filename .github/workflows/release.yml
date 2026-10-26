@@ -29,7 +29,7 @@ jobs:
             Download for your platform:
             - **Windows:** `Nexe.exe` (run to install)
             - **macOS:** `.dmg` (Universal)
-            - **Linux:** `.AppImage` or `.deb`
+            - **Linux:** Flatpak — `flatpak install --user https://nexe.decatron.net/flatpak/net.decatron.Nexe.flatpakref`
           draft: false
           prerelease: false
         env:
@@ -118,7 +118,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # macOS + Linux: use tauri-action (works fine on these platforms)
+  # macOS: use tauri-action. Linux is not built here: it ships as a Flatpak built on our server
+  # (apps/desktop/flatpak/publish.sh), which updates itself from nexe.decatron.net/flatpak.
   build-unix:
     name: Build — ${{ matrix.platform }}
     needs: create-release
@@ -129,9 +130,6 @@ jobs:
           - platform: macos
             os: macos-latest
             args: "--target universal-apple-darwin"
-          - platform: linux
-            os: ubuntu-24.04
-            args: ""
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
@@ -146,19 +144,6 @@ jobs:
         continue-on-error: true
         with:
           workspaces: apps/desktop/src-tauri
-
-      - name: Install Linux deps
-        if: matrix.platform == 'linux'
-        run: |
-          # The voice engine (libwebrtc) must be built with clang 21 or newer, not gcc.
-          # Ubuntu 24.04 ships clang 18, so add the official LLVM repository (non-interactive).
-          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc > /dev/null
-          echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-21 main" | sudo tee /etc/apt/sources.list.d/llvm21.list
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libsoup-3.0-dev libjavascriptcoregtk-4.1-dev \
-            clang-21 libasound2-dev libpulse-dev libx11-dev libxext-dev libxdamage-dev libxfixes-dev libxcomposite-dev libxrandr-dev libgbm-dev libdrm-dev libxtst-dev
-          echo "CC=clang-21" >> "$GITHUB_ENV"
-          echo "CXX=clang++-21" >> "$GITHUB_ENV"
 
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5
@@ -200,36 +185,6 @@ jobs:
             zip -r "$GITHUB_WORKSPACE/$ZIP_NAME" "$(basename "$APP")"
             cd "$GITHUB_WORKSPACE"
             shasum -a 256 "$ZIP_NAME" | awk '{print $1}' > "${ZIP_NAME}.sha256"
-          fi
-
-      - name: Create portable update zip (Linux)
-        if: matrix.platform == 'linux'
-        run: |
-          VERSION="${{ github.ref_name }}"
-          BUNDLE_DIR="apps/desktop/src-tauri/target/release/bundle/appimage"
-          ZIP_NAME="nexe-update-${VERSION}-linux-x86_64.zip"
-          mkdir -p update-package
-
-          # Use the AppImage for updates (not the raw binary)
-          APPIMAGE=$(find "$BUNDLE_DIR" -maxdepth 1 -name "*.AppImage" -type f | head -1)
-          if [ -n "$APPIMAGE" ]; then
-            cp "$APPIMAGE" update-package/$(basename "$APPIMAGE")
-          else
-            # Fallback: raw binary (for deb installs)
-            RELEASE_DIR="apps/desktop/src-tauri/target/release"
-            for name in nexe Nexe app; do
-              if [ -f "$RELEASE_DIR/$name" ] && file "$RELEASE_DIR/$name" | grep -q ELF; then
-                cp "$RELEASE_DIR/$name" update-package/nexe
-                break
-              fi
-            done
-          fi
-
-          if [ "$(ls -A update-package)" ]; then
-            cd update-package
-            zip -r "$GITHUB_WORKSPACE/$ZIP_NAME" .
-            cd "$GITHUB_WORKSPACE"
-            sha256sum "$ZIP_NAME" | awk '{print $1}' > "${ZIP_NAME}.sha256"
           fi
 
       - name: Upload portable update zip
