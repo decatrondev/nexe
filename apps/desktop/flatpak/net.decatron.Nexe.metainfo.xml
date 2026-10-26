@@ -51,6 +51,11 @@
     <category>Chat</category>
   </categories>
   <releases>
+    <release version="0.5.31" date="2026-10-26">
+      <description>
+        <p>Fix: the restart after an update now starts Nexe by its full path, so it reopens on systems where the command is not found.</p>
+      </description>
+    </release>
     <release version="0.5.30" date="2026-10-26">
       <description>
         <p>Version bump to validate that Nexe reopens by itself after an update.</p>

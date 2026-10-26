@@ -461,6 +461,8 @@ echo "ran" > "$1""#;
         // Start the new instance after this one is gone. If single-instance rejects it because
         // the old process has not released its D-Bus name yet, it exits within a second or two:
         // retry. A real session lasts far longer than 4 s, so that ends the loop.
+        // The command is called by absolute path: the portal starts the script with the PATH of
+        // the user's session, which on Nobara/KDE does not include /app/bin ("nexe: not found").
         // This process notes what it did and the script adds what the new instance prints; the
         // new instance uploads that report on startup, so a restart that fails on a machine we
         // cannot reach can still be diagnosed.
@@ -469,6 +471,7 @@ L="${XDG_DATA_HOME:-$HOME/.local/share}/restart-report.log"
 {
   echo "script-started=$(date -u +%s)"
   echo "desktop=$XDG_CURRENT_DESKTOP session=$XDG_SESSION_TYPE display=$DISPLAY wayland=$WAYLAND_DISPLAY"
+  echo "path=$PATH"
   ls /tmp/.X11-unix 2>&1 | sed 's/^/x11-socket: /'
   ls "$XDG_RUNTIME_DIR" 2>&1 | grep -i wayland | sed 's/^/runtime: /'
 } >> "$L" 2>&1
@@ -476,7 +479,7 @@ sleep 2
 for i in 1 2 3 4 5; do
   s=$(date +%s)
   echo "-- attempt $i" >> "$L"
-  nexe 2>&1 | { head -c 6144 >> "$L"; cat > /dev/null; }
+  /app/bin/nexe 2>&1 | { head -c 6144 >> "$L"; cat > /dev/null; }
   if [ $(( $(date +%s) - s )) -ge 4 ]; then exit 0; fi
   sleep 2
 done
