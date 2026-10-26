@@ -51,6 +51,11 @@
     <category>Chat</category>
   </categories>
   <releases>
+    <release version="0.5.29" date="2026-10-26">
+      <description>
+        <p>Fix: if the system does not start the new version after an update, Nexe now asks the desktop to open it, and records why.</p>
+      </description>
+    </release>
     <release version="0.5.28" date="2026-10-26">
       <description>
         <p>Version bump to validate that Nexe reopens by itself after an update.</p>

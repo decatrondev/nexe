@@ -339,14 +339,6 @@ mod imp {
             .map_err(|e| e.to_string())
     }
 
-    /// Run a shell script in a fresh sandbox of the latest installed version, through the portal.
-    /// Returns the pid the portal reports.
-    async fn spawn_script(script: &str) -> Result<u32, String> {
-        let conn = Connection::session().await.map_err(|e| e.to_string())?;
-        let portal = PortalProxy::new(&conn).await.map_err(|e| e.to_string())?;
-        spawn_with(&portal, &["sh", "-c", script], SPAWN_FLAG_LATEST_VERSION, HashMap::new()).await
-    }
-
     async fn spawn_with(
         portal: &PortalProxy<'_>,
         args: &[&str],
@@ -437,6 +429,17 @@ echo "ran" > "$1""#;
         }
     }
 
+    /// Ask the session bus to start Nexe by name (see the service file shipped with the app).
+    /// Nexe never owns that name, so the call is sent without waiting for a reply.
+    async fn request_bus_activation(conn: &Connection) -> Result<(), String> {
+        let message = zbus::Message::method_call("/org/freedesktop/DBus", "StartServiceByName")
+            .and_then(|b| b.destination("org.freedesktop.DBus"))
+            .and_then(|b| b.interface("org.freedesktop.DBus"))
+            .and_then(|b| b.build(&("net.decatron.Nexe", 0u32)))
+            .map_err(|e| e.to_string())?;
+        conn.send(&message).await.map_err(|e| e.to_string())
+    }
+
     /// Wait until the restart report contains a line starting with `prefix`.
     async fn wait_for_report_line(prefix: &str, timeout: std::time::Duration) -> bool {
         let Some(path) = restart_report_path() else { return false };
@@ -489,23 +492,80 @@ done
                 ),
             );
         }
-        match spawn_script(RESTART_SCRIPT).await {
-            Ok(pid) => report_note(&format!("portal-spawn-ok pid={} at={}", pid, unix_now())),
-            Err(e) => {
-                report_note(&format!("portal-spawn-failed: {}", e));
-                return Err(e);
-            }
+
+        let conn = Connection::session().await.map_err(|e| e.to_string())?;
+        let portal = PortalProxy::new(&conn).await.map_err(|e| e.to_string())?;
+        let mut exited = portal.receive_spawn_exited().await.ok();
+
+        // What the spawned process and `flatpak run` print goes to a file, so a launch the
+        // portal accepts but never runs still leaves its error message behind.
+        let out_path = restart_report_path().map(|p| p.with_file_name("restart-spawn.out"));
+        let out = out_path.as_ref().and_then(|p| std::fs::File::create(p).ok());
+        let mut fds: HashMap<u32, Fd<'_>> = HashMap::new();
+        if let Some(f) = &out {
+            fds.insert(1, Fd::from(f));
+            fds.insert(2, Fd::from(f));
         }
 
-        // The portal needs this process alive until the new sandbox is up: on Flatpak 1.18 a
-        // caller that exits right after Spawn aborts the launch before the script runs (seen on
-        // Nobara/KDE). The script's first line is the signal; the script itself waits 2 s before
-        // starting Nexe, so this process is gone well before that.
-        let started = wait_for_report_line("script-started", std::time::Duration::from_secs(15)).await;
-        report_note(&format!("script-seen={} exiting at={}", started, unix_now()));
+        let spawned = spawn_with(
+            &portal,
+            &["sh", "-c", RESTART_SCRIPT],
+            SPAWN_FLAG_LATEST_VERSION,
+            fds,
+        )
+        .await;
+
+        // The script's first line tells that the new sandbox really started. On some systems
+        // (seen on Nobara/KDE with Flatpak 1.18) the portal accepts the call and never runs it.
+        let mut started = false;
+        match &spawned {
+            Ok(pid) => {
+                report_note(&format!("portal-spawn-ok pid={} at={}", pid, unix_now()));
+                started = wait_for_report_line("script-started", std::time::Duration::from_secs(6)).await;
+            }
+            Err(e) => report_note(&format!("portal-spawn-failed: {}", e)),
+        }
+
+        if let (Ok(pid), Some(stream)) = (&spawned, exited.as_mut()) {
+            let signal = tokio::time::timeout(std::time::Duration::from_millis(50), stream.next()).await;
+            if let Ok(Some(signal)) = signal {
+                if let Ok(args) = signal.args() {
+                    if args.pid == *pid {
+                        report_note(&format!("spawn-exit-status={}", args.exit_status));
+                    }
+                }
+            }
+        }
+        if let Some(path) = &out_path {
+            if let Ok(bytes) = std::fs::read(path) {
+                let text = tail_lossy(&bytes);
+                if !text.trim().is_empty() {
+                    report_note(&format!("spawn-output: {}", text.trim()));
+                }
+            }
+            let _ = std::fs::remove_file(path);
+        }
+        report_note(&format!("script-seen={}", started));
+
+        // Second way to start the new version: ask the session bus to launch Nexe by name. The
+        // service file shipped with the app makes the system itself start the newest installed
+        // version, with the desktop's own environment and independent of this process.
+        if !started {
+            match request_bus_activation(&conn).await {
+                Ok(()) => report_note("bus-activation-requested"),
+                Err(e) => {
+                    report_note(&format!("bus-activation-failed: {}", e));
+                    if spawned.is_err() {
+                        return Err(e);
+                    }
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        }
 
         // Then leave at once: a graceful shutdown can take seconds on slow machines, and the
         // new instance must not find this one still holding the single-instance lock.
+        report_note(&format!("exiting at={}", unix_now()));
         std::process::exit(0);
     }
 }
