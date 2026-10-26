@@ -115,7 +115,7 @@ modules:
     sources:
       - type: git
         url: https://github.com/decatrondev/nexe.git
-        tag: v0.5.29
+        tag: v0.5.30
         commit: REPLACE_WITH_TAG_COMMIT_SHA
       - type: archive
         url: https://registry.npmjs.org/pnpm/-/pnpm-10.33.4.tgz
