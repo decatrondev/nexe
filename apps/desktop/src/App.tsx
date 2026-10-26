@@ -9,6 +9,7 @@ import { useAuthStore } from "./stores/auth";
 import { runUpdateFlow, type UpdateStatus } from "./lib/updater";
 import { ToastContainer } from "@nexe/ui";
 import FlatpakUpdateBanner from "./components/FlatpakUpdateBanner";
+import TitleBar, { usesCustomTitleBar } from "./components/TitleBar";
 import { getVersion } from "@tauri-apps/api/app";
 const API_URL =
   typeof window !== "undefined" &&
@@ -163,6 +164,12 @@ function MainApp() {
   const loadFromStorage = useAuthStore((s) => s.loadFromStorage);
   const authLoading = useAuthStore((s) => s.authLoading);
   const [ready, setReady] = useState(false);
+  const customTitleBar = usesCustomTitleBar();
+
+  useEffect(() => {
+    // index.css shrinks every full-height screen by the bar's height while this class is set.
+    document.documentElement.classList.toggle("has-titlebar", customTitleBar);
+  }, [customTitleBar]);
 
   useEffect(() => {
     let mounted = true;
@@ -193,14 +200,18 @@ function MainApp() {
 
   if (!ready || authLoading) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-dark-950">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-dark-600 border-t-nexe-500" />
-      </div>
+      <>
+        {customTitleBar && <TitleBar />}
+        <div className="flex h-screen w-screen items-center justify-center bg-dark-950">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-dark-600 border-t-nexe-500" />
+        </div>
+      </>
     );
   }
 
   return (
     <BrowserRouter>
+      {customTitleBar && <TitleBar />}
       <ToastContainer />
       <FlatpakUpdateBanner />
       <Routes>

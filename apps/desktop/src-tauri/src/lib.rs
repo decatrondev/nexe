@@ -86,6 +86,12 @@ pub fn run() {
 
             updater::cleanup_old_files();
 
+            // Linux: the system frame ignores the dark theme, so the app draws its own title bar.
+            #[cfg(target_os = "linux")]
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.set_decorations(false);
+            }
+
             // Flatpak: updates come from the portal, not from the built-in updater
             if updater::is_flatpak() {
                 flatpak_update::start(app.handle());

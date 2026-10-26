@@ -271,3 +271,9 @@ button {
 button:active:not(:disabled) {
   transform: scale(0.97);
 }
+
+/* Linux draws its own title bar (components/TitleBar.tsx): push the page down and make the
+   full-height screens a bar shorter so nothing slides under it. */
+html.has-titlebar body { padding-top: 32px; box-sizing: border-box; }
+html.has-titlebar .h-screen { height: calc(100vh - 32px); }
+html.has-titlebar .min-h-screen { min-height: calc(100vh - 32px); }

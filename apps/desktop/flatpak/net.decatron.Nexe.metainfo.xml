@@ -51,6 +51,11 @@
     <category>Chat</category>
   </categories>
   <releases>
+    <release version="0.5.37" date="2026-10-26">
+      <description>
+        <p>On Linux the window now has Nexe's own dark title bar with working minimize, maximize and close buttons, instead of the white system one.</p>
+      </description>
+    </release>
     <release version="0.5.36" date="2026-10-26">
       <description>
         <p>New microphone test in Voice &amp; Video settings: a live level meter and a button to hear yourself with your current settings. On Linux the device list now shows your real microphones and speakers.</p>
