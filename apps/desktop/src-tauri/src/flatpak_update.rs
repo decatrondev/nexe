@@ -134,7 +134,7 @@ mod imp {
 
         if SELF_HOSTED {
             tauri::async_runtime::spawn(poll_repo(app.clone()));
-            tauri::async_runtime::spawn(upload_restart_report(app.clone()));
+            tauri::async_runtime::spawn(upload_diagnostics(app.clone()));
         }
     }
 
@@ -150,19 +150,11 @@ mod imp {
         Some(base.join("restart-report.log"))
     }
 
-    /// The restart script leaves a report of how the new instance started. Send it once, a few
-    /// seconds in so it also holds the early output of a healthy start, then delete it.
-    async fn upload_restart_report(app: AppHandle) {
-        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
-        let Some(path) = restart_report_path() else { return };
-        let Ok(bytes) = std::fs::read(&path) else { return };
-        let _ = std::fs::remove_file(&path);
-
-        let tail = &bytes[bytes.len().saturating_sub(REPORT_MAX_BYTES)..];
+    async fn send_report(app: &AppHandle, log: String) {
         let body = serde_json::json!({
             "version": app.package_info().version.to_string(),
             "commit": running_commit().unwrap_or_default(),
-            "log": String::from_utf8_lossy(tail),
+            "log": log,
         });
         let sent = reqwest::Client::new()
             .post(format!("{}/diagnostics/restart", crate::updater::API_URL))
@@ -171,10 +163,76 @@ mod imp {
             .send()
             .await;
         match sent {
-            Ok(r) if r.status().is_success() => log::info!("Restart report uploaded"),
-            Ok(r) => log::warn!("Restart report rejected: {}", r.status()),
-            Err(e) => log::warn!("Restart report not sent: {}", e),
+            Ok(r) if r.status().is_success() => log::info!("Diagnostic report uploaded"),
+            Ok(r) => log::warn!("Diagnostic report rejected: {}", r.status()),
+            Err(e) => log::warn!("Diagnostic report not sent: {}", e),
         }
+    }
+
+    fn tail_lossy(bytes: &[u8]) -> String {
+        String::from_utf8_lossy(&bytes[bytes.len().saturating_sub(REPORT_MAX_BYTES / 2)..])
+            .into_owned()
+    }
+
+    /// Two reports, sent a few seconds after startup so they also hold early output:
+    /// 1. what the last restart left behind (written by restart() and its script), then deleted;
+    /// 2. once per version, this sandbox's environment plus a probe of the portal spawn that the
+    ///    restart relies on, so a machine where restarting fails can be told apart from one
+    ///    where it works.
+    async fn upload_diagnostics(app: AppHandle) {
+        const PROBE_SCRIPT: &str = r#"
+L="${XDG_DATA_HOME:-$HOME/.local/share}/spawn-probe.log"
+{
+  echo "probe-started=$(date -u +%s) pid=$$"
+  echo "desktop=$XDG_CURRENT_DESKTOP session=$XDG_SESSION_TYPE display=$DISPLAY wayland=$WAYLAND_DISPLAY"
+  echo "data=$XDG_DATA_HOME home=$HOME"
+  ls /tmp/.X11-unix 2>&1 | sed 's/^/x11-socket: /'
+  ls "$XDG_RUNTIME_DIR" 2>&1 | grep -i wayland | sed 's/^/runtime: /'
+} > "$L" 2>&1
+"#;
+
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        let Some(path) = restart_report_path() else { return };
+        let dir = path.parent().map(std::path::Path::to_path_buf).unwrap_or_default();
+
+        if let Ok(bytes) = std::fs::read(&path) {
+            let _ = std::fs::remove_file(&path);
+            send_report(&app, format!("[restart-report]\n{}", tail_lossy(&bytes))).await;
+        }
+
+        let marker = dir.join(format!("diag-{}", app.package_info().version));
+        if marker.exists() {
+            return;
+        }
+        let _ = std::fs::write(&marker, "");
+
+        let probe_path = dir.join("spawn-probe.log");
+        let _ = std::fs::remove_file(&probe_path);
+        let spawned = spawn_script(PROBE_SCRIPT).await;
+        tokio::time::sleep(std::time::Duration::from_secs(8)).await;
+        let probe = std::fs::read(&probe_path)
+            .map(|b| tail_lossy(&b))
+            .unwrap_or_else(|e| format!("(probe file not created: {})", e));
+        let _ = std::fs::remove_file(&probe_path);
+
+        let env = [
+            "HOME", "XDG_DATA_HOME", "XDG_RUNTIME_DIR", "XDG_CURRENT_DESKTOP", "XDG_SESSION_TYPE",
+            "DISPLAY", "WAYLAND_DISPLAY", "GDK_BACKEND", "LANG",
+        ]
+        .iter()
+        .map(|k| format!("{}={}", k, std::env::var(k).unwrap_or_default()))
+        .collect::<Vec<_>>()
+        .join("\n");
+        let info = std::fs::read_to_string("/.flatpak-info").unwrap_or_default();
+
+        send_report(
+            &app,
+            format!(
+                "[startup-diagnostics]\nspawn={:?}\n--- probe\n{}\n--- env\n{}\n--- flatpak-info\n{}",
+                spawned, probe, env, info
+            ),
+        )
+        .await;
     }
 
     /// Ask our repo which commit is current and compare it with the one we are running.
@@ -290,37 +348,13 @@ mod imp {
             .map_err(|e| e.to_string())
     }
 
-    /// Start the latest installed version in a fresh sandbox, then quit this instance.
-    /// The short delay lets this process release the single-instance lock first.
-    pub async fn restart(app: &AppHandle) -> Result<(), String> {
+    /// Run a shell script in a fresh sandbox of the latest installed version, through the portal.
+    /// Returns the pid the portal reports.
+    async fn spawn_script(script: &str) -> Result<u32, String> {
         let conn = Connection::session().await.map_err(|e| e.to_string())?;
         let portal = PortalProxy::new(&conn).await.map_err(|e| e.to_string())?;
 
-        // Start the new instance after this one is gone. If single-instance rejects it because
-        // the old process has not released its D-Bus name yet, it exits within a second or two:
-        // retry. A real session lasts far longer than 4 s, so that ends the loop.
-        // Everything the new instance prints goes to a short report that it uploads on startup
-        // (see upload_restart_report), so a restart that fails on a machine we cannot reach
-        // can still be diagnosed.
-        const RESTART_SCRIPT: &str = r#"
-L="${XDG_DATA_HOME:-$HOME/.local/share}/restart-report.log"
-{
-  echo "when=$(date -u +%FT%TZ)"
-  echo "desktop=$XDG_CURRENT_DESKTOP session=$XDG_SESSION_TYPE display=$DISPLAY wayland=$WAYLAND_DISPLAY"
-  ls /tmp/.X11-unix 2>&1 | sed 's/^/x11-socket: /'
-  ls "$XDG_RUNTIME_DIR" 2>&1 | grep -i wayland | sed 's/^/runtime: /'
-} > "$L" 2>&1
-sleep 2
-for i in 1 2 3 4 5; do
-  s=$(date +%s)
-  echo "-- attempt $i" >> "$L"
-  nexe 2>&1 | { head -c 6144 >> "$L"; cat > /dev/null; }
-  if [ $(( $(date +%s) - s )) -ge 4 ]; then exit 0; fi
-  sleep 2
-done
-"#;
-
-        let argv: Vec<Vec<u8>> = ["sh", "-c", RESTART_SCRIPT]
+        let argv: Vec<Vec<u8>> = ["sh", "-c", script]
             .iter()
             .map(|a| {
                 let mut b = a.as_bytes().to_vec();
@@ -339,11 +373,73 @@ done
                 HashMap::new(),
             )
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| e.to_string())
+    }
+
+    fn unix_now() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    }
+
+    /// Append one line to the restart report (see upload_diagnostics).
+    fn report_note(line: &str) {
+        use std::io::Write;
+        let Some(path) = restart_report_path() else { return };
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+            let _ = writeln!(f, "{}", line);
+        }
+    }
+
+    /// Start the latest installed version in a fresh sandbox, then quit this instance.
+    /// The short delay lets this process release the single-instance lock first.
+    pub async fn restart(app: &AppHandle) -> Result<(), String> {
+        // Start the new instance after this one is gone. If single-instance rejects it because
+        // the old process has not released its D-Bus name yet, it exits within a second or two:
+        // retry. A real session lasts far longer than 4 s, so that ends the loop.
+        // This process notes what it did and the script adds what the new instance prints; the
+        // new instance uploads that report on startup, so a restart that fails on a machine we
+        // cannot reach can still be diagnosed.
+        const RESTART_SCRIPT: &str = r#"
+L="${XDG_DATA_HOME:-$HOME/.local/share}/restart-report.log"
+{
+  echo "script-started=$(date -u +%s)"
+  echo "desktop=$XDG_CURRENT_DESKTOP session=$XDG_SESSION_TYPE display=$DISPLAY wayland=$WAYLAND_DISPLAY"
+  ls /tmp/.X11-unix 2>&1 | sed 's/^/x11-socket: /'
+  ls "$XDG_RUNTIME_DIR" 2>&1 | grep -i wayland | sed 's/^/runtime: /'
+} >> "$L" 2>&1
+sleep 2
+for i in 1 2 3 4 5; do
+  s=$(date +%s)
+  echo "-- attempt $i" >> "$L"
+  nexe 2>&1 | { head -c 6144 >> "$L"; cat > /dev/null; }
+  if [ $(( $(date +%s) - s )) -ge 4 ]; then exit 0; fi
+  sleep 2
+done
+"#;
+
+        if let Some(path) = restart_report_path() {
+            let _ = std::fs::write(
+                &path,
+                format!(
+                    "restart-requested={} from-version={}\n",
+                    unix_now(),
+                    app.package_info().version
+                ),
+            );
+        }
+        match spawn_script(RESTART_SCRIPT).await {
+            Ok(pid) => report_note(&format!("portal-spawn-ok pid={} at={}", pid, unix_now())),
+            Err(e) => {
+                report_note(&format!("portal-spawn-failed: {}", e));
+                return Err(e);
+            }
+        }
 
         // Leave immediately: a graceful shutdown can take seconds on slow machines, and the
         // new instance must not find this one still holding the single-instance lock.
-        let _ = app;
+        report_note(&format!("exiting at={}", unix_now()));
         std::process::exit(0);
     }
 }
