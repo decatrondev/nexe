@@ -39,12 +39,13 @@ export async function listNativeDevices(): Promise<{ inputs: NativeDevice[]; out
 type Handler = (...args: any[]) => void;
 
 interface NativeEvent {
-  kind: "speakers" | "participant_connected" | "participant_disconnected" | "quality" | "disconnected" | "video_track";
+  kind: "speakers" | "participant_connected" | "participant_disconnected" | "quality" | "disconnected" | "video_track" | "screen_error";
   identities?: string[];
   identity?: string;
   source?: "camera" | "screen";
   present?: boolean;
   sid?: string;
+  message?: string;
   quality?: "excellent" | "good" | "poor" | "lost";
 }
 
@@ -62,6 +63,8 @@ const QUALITY: Record<string, ConnectionQuality> = {
  */
 class NativeVideoTrack {
   readonly kind = Track.Kind.Video;
+  /** Local screen shares expose this so the store can learn when the share ended by itself. */
+  readonly mediaStreamTrack: { onended: (() => void) | null } = { onended: null };
   private views = new Map<HTMLVideoElement, HTMLCanvasElement>();
   private channel: Channel<ArrayBuffer> | null = null;
   private pending: ArrayBuffer | null = null;
@@ -198,11 +201,24 @@ export class NativeRoom {
     setCameraEnabled: async (_enabled: boolean): Promise<void> => {
       throw new Error("Camera is not available in the Linux voice engine yet");
     },
-    setScreenShareEnabled: async (_enabled: boolean, _opts?: unknown): Promise<void> => {
-      throw new Error("Screen sharing is not available in the Linux voice engine yet");
+    setScreenShareEnabled: async (
+      enabled: boolean,
+      opts?: { resolution?: { width: number; height: number; frameRate: number } },
+    ): Promise<void> => {
+      if (!enabled) {
+        await invoke("voice_screen_stop").catch(() => {});
+        this.screenPub?.track.detach();
+        this.screenPub = null;
+        return;
+      }
+      const r = opts?.resolution ?? { width: 1280, height: 720, frameRate: 30 };
+      await invoke("voice_screen_start", { width: r.width, height: r.height, fps: r.frameRate });
+      this.screenPub = new NativePublication(Track.Source.ScreenShare, new NativeVideoTrack("local-screen", "local", "screen"));
     },
-    getTrackPublication: (_source: unknown): undefined => undefined,
+    getTrackPublication: (source: Track.Source): NativePublication | undefined =>
+      source === Track.Source.ScreenShare ? (this.screenPub ?? undefined) : undefined,
   };
+  private screenPub: NativePublication | null = null;
 
   on(event: string, handler: Handler): this {
     let set = this.handlers.get(event);
@@ -283,6 +299,16 @@ export class NativeRoom {
       case "video_track":
         this.onVideoTrack(ev);
         break;
+      case "screen_error": {
+        // The share died on its own (permission refused, screen gone): tell the store like a browser would.
+        const pub = this.screenPub;
+        this.screenPub = null;
+        invoke("voice_screen_stop").catch(() => {});
+        pub?.track.detach();
+        pub?.track.mediaStreamTrack.onended?.();
+        console.warn("Screen share stopped:", ev.message);
+        break;
+      }
       case "quality":
         this.localParticipant.connectionQuality = QUALITY[ev.quality ?? "excellent"] ?? ConnectionQuality.Excellent;
         break;

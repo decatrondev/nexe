@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useVoiceStore } from "../stores/voice";
+import { needsNativeVoice } from "../lib/nativeRoom";
 
 const RESOLUTIONS = [
   { value: "720", label: "720p", pixels: "1280 x 720", tier: "free" },
@@ -36,6 +37,8 @@ export default function ScreenSharePicker() {
 
   const [resolution, setResolution] = useState(defaultRes);
   const [fps, setFps] = useState(defaultFps);
+  // The Linux engine cannot capture system audio yet, so the option is not offered there.
+  const canShareAudio = !needsNativeVoice();
   const [audio, setAudio] = useState(true);
 
   if (!pending) return null;
@@ -131,7 +134,7 @@ export default function ScreenSharePicker() {
           </div>
 
           {/* Audio toggle */}
-          <div className="flex items-center justify-between rounded-xl border border-dark-700 bg-dark-800/50 px-4 py-3">
+          {canShareAudio && <div className="flex items-center justify-between rounded-xl border border-dark-700 bg-dark-800/50 px-4 py-3">
             <div className="flex items-center gap-3">
               <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current text-slate-400">
                 <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z" />
@@ -147,7 +150,7 @@ export default function ScreenSharePicker() {
             >
               <div className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${audio ? "translate-x-[22px]" : "translate-x-0.5"}`} />
             </button>
-          </div>
+          </div>}
 
           {/* Summary */}
           <div className="flex items-center justify-between rounded-xl bg-dark-800/30 px-4 py-2.5">
@@ -156,7 +159,7 @@ export default function ScreenSharePicker() {
               <span className="rounded-md bg-dark-700 px-2 py-0.5 text-xs font-medium text-white">
                 {resolution}p {fps}fps
               </span>
-              {audio && (
+              {audio && canShareAudio && (
                 <span className="rounded-md bg-dark-700 px-2 py-0.5 text-xs font-medium text-slate-400">
                   + Audio
                 </span>
@@ -175,7 +178,7 @@ export default function ScreenSharePicker() {
             Cancel
           </button>
           <button
-            onClick={() => startScreenShare(qualityString, audio)}
+            onClick={() => startScreenShare(qualityString, audio && canShareAudio)}
             className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-nexe-500 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-nexe-600"
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current">

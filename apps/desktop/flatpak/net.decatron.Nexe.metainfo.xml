@@ -51,6 +51,11 @@
     <category>Chat</category>
   </categories>
   <releases>
+    <release version="0.5.41" date="2026-10-27">
+      <description>
+        <p>On Linux you can now share your screen in calls, with the quality your plan allows.</p>
+      </description>
+    </release>
     <release version="0.5.40" date="2026-10-27">
       <description>
         <p>On Linux you can now see other people's cameras and shared screens in calls.</p>

@@ -12,6 +12,7 @@ mod updater;
 #[cfg(target_os = "linux")]
 mod audio_pipeline;
 mod mic_test;
+mod capture;
 mod video;
 mod voice;
 
@@ -68,6 +69,8 @@ pub fn run() {
             voice::voice_connect,
             voice::voice_disconnect,
             voice::voice_video_attach,
+            voice::voice_screen_start,
+            voice::voice_screen_stop,
             voice::voice_video_detach,
             voice::voice_set_mic,
             voice::voice_set_deafen,

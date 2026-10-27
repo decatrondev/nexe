@@ -24,7 +24,11 @@ pub struct AudioDevices {
 #[cfg(target_os = "linux")]
 mod imp {
     use crate::audio_pipeline::{CallAudio, NoiseMode, Processing, RATE};
+    use crate::capture::imp::{CaptureSettings, ScreenCapture};
     use crate::video::imp::{read_track, FrameSink, VideoHub};
+    use livekit::options::VideoEncoding;
+    use livekit::webrtc::video_source::native::NativeVideoSource;
+    use livekit::webrtc::video_source::{RtcVideoSource, VideoResolution};
     use futures_util::StreamExt;
     use livekit::options::TrackPublishOptions;
     use livekit::prelude::*;
@@ -41,7 +45,15 @@ mod imp {
 
     const EVENT: &str = "voice://event";
 
+    /// The screen being shared: the capture thread and the track it feeds.
+    struct ScreenShare {
+        capture: ScreenCapture,
+        sid: TrackSid,
+    }
+
     struct Session {
+        emit: Emit,
+        screen: Option<ScreenShare>,
         room: Arc<Room>,
         audio: Arc<CallAudio>,
         mic: LocalAudioTrack,
@@ -249,8 +261,9 @@ mod imp {
                 }
             }
         });
+        let emit_for_session = emit.clone();
         let events = tauri::async_runtime::spawn(run_events(emit, room.clone(), audio.clone(), video, rx));
-        Ok(Session { room, audio, mic, events, sender })
+        Ok(Session { emit: emit_for_session, screen: None, room, audio, mic, events, sender })
     }
 
     #[tauri::command]
@@ -334,7 +347,34 @@ mod imp {
                 Err(e) => return println!("video: FAILED to connect: {e}"),
             };
             println!("video: connected as {role}");
-            if role == "pub" {
+            if role == "screen" {
+                // Shares this machine's screen the way the app does (quality 1280x720 at 30 fps unless
+                // NEXE_SCREEN_SIZE=WxH@F says otherwise) and prints any capture error.
+                let size = std::env::var("NEXE_SCREEN_SIZE").unwrap_or_else(|_| "1280x720@30".into());
+                let (wh, fps) = size.split_once('@').unwrap_or((&size, "30"));
+                let (w, h) = wh.split_once('x').unwrap_or(("1280", "720"));
+                let (w, h, fps): (u32, u32, u32) = (w.parse().unwrap_or(1280), h.parse().unwrap_or(720), fps.parse().unwrap_or(30));
+                let source = NativeVideoSource::new(VideoResolution { width: w, height: h }, true);
+                let track = LocalVideoTrack::create_video_track("screen", RtcVideoSource::Native(source.clone()));
+                let options = TrackPublishOptions {
+                    source: TrackSource::Screenshare,
+                    simulcast: false,
+                    video_encoding: Some(VideoEncoding { max_bitrate: (w as u64 * h as u64 * fps as u64 * 9 / 100).clamp(1_500_000, 9_000_000), max_framerate: fps as f64 }),
+                    ..Default::default()
+                };
+                if let Err(e) = room.local_participant().publish_track(LocalTrack::Video(track), options).await {
+                    return println!("video: FAILED to publish: {e}");
+                }
+                let mut capture = ScreenCapture::start(
+                    source,
+                    CaptureSettings { max_width: w, max_height: h, fps },
+                    Arc::new(VideoHub::default()),
+                    Arc::new(|m| println!("video: capture error: {m}")),
+                );
+                tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
+                capture.stop();
+                println!("video: screen share ended");
+            } else if role == "pub" {
                 let (w, h) = (1280u32, 720u32);
                 let source = NativeVideoSource::new(VideoResolution { width: w, height: h }, false);
                 let track = LocalVideoTrack::create_video_track("camera", RtcVideoSource::Native(source.clone()));
@@ -431,7 +471,10 @@ mod imp {
         });
     }
 
-    async fn shutdown(s: Session) {
+    async fn shutdown(mut s: Session) {
+        if let Some(mut screen) = s.screen.take() {
+            screen.capture.stop();
+        }
         s.events.abort();
         s.sender.abort();
         let _ = s.room.close().await;
@@ -463,6 +506,62 @@ mod imp {
     #[tauri::command]
     pub fn voice_video_detach(state: State<'_, VoiceState>, identity: String, source: String) {
         state.video.detach(&format!("{identity}|{source}"));
+    }
+
+    /// Starts sharing the screen: at most `width`x`height` pixels and `fps` frames a second, with a
+    /// bitrate that suits that quality. On Wayland the system asks what to share.
+    #[tauri::command]
+    pub async fn voice_screen_start(
+        state: State<'_, VoiceState>,
+        width: u32,
+        height: u32,
+        fps: u32,
+    ) -> Result<(), String> {
+        let mut slot = state.session.lock().await;
+        let s = slot.as_mut().ok_or("Not in a call")?;
+        if let Some(mut old) = s.screen.take() {
+            old.capture.stop();
+            let _ = s.room.local_participant().unpublish_track(&old.sid).await;
+        }
+        let source = NativeVideoSource::new(VideoResolution { width, height }, true);
+        let track = LocalVideoTrack::create_video_track("screen", RtcVideoSource::Native(source.clone()));
+        let pixels_per_sec = width as u64 * height as u64 * fps as u64;
+        let options = TrackPublishOptions {
+            source: TrackSource::Screenshare,
+            simulcast: false,
+            video_encoding: Some(VideoEncoding {
+                // About 0.09 bit per pixel suits text and motion; capped to what the plans allow.
+                max_bitrate: (pixels_per_sec * 9 / 100).clamp(1_500_000, 9_000_000),
+                max_framerate: fps as f64,
+            }),
+            ..Default::default()
+        };
+        let publication = s
+            .room
+            .local_participant()
+            .publish_track(LocalTrack::Video(track), options)
+            .await
+            .map_err(|e| format!("Could not share the screen: {e}"))?;
+        let emit = s.emit.clone();
+        let capture = ScreenCapture::start(
+            source,
+            CaptureSettings { max_width: width, max_height: height, fps },
+            state.video.clone(),
+            Arc::new(move |message| emit(json!({ "kind": "screen_error", "message": message }))),
+        );
+        s.screen = Some(ScreenShare { capture, sid: publication.sid() });
+        Ok(())
+    }
+
+    #[tauri::command]
+    pub async fn voice_screen_stop(state: State<'_, VoiceState>) -> Result<(), String> {
+        let mut slot = state.session.lock().await;
+        let s = slot.as_mut().ok_or("Not in a call")?;
+        if let Some(mut screen) = s.screen.take() {
+            screen.capture.stop();
+            let _ = s.room.local_participant().unpublish_track(&screen.sid).await;
+        }
+        Ok(())
     }
 
     #[tauri::command]
@@ -563,6 +662,10 @@ mod imp {
     pub async fn voice_disconnect() -> Result<(), String> { Ok(()) }
     #[tauri::command]
     pub fn voice_video_attach(_identity: String, _source: String, _on_frame: tauri::ipc::Channel<tauri::ipc::InvokeResponseBody>) {}
+    #[tauri::command]
+    pub async fn voice_screen_start(_width: u32, _height: u32, _fps: u32) -> Result<(), String> { Err(NO.into()) }
+    #[tauri::command]
+    pub async fn voice_screen_stop() -> Result<(), String> { Ok(()) }
     #[tauri::command]
     pub fn voice_video_detach(_identity: String, _source: String) {}
     #[tauri::command]

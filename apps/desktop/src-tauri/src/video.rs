@@ -61,7 +61,7 @@ pub mod imp {
         pub fn detach(&self, key: &str) {
             self.sinks.lock().unwrap().remove(key);
         }
-        fn get(&self, key: &str) -> Option<FrameSink> {
+        pub fn get(&self, key: &str) -> Option<FrameSink> {
             let sinks = self.sinks.lock().unwrap();
             // "*" watches every track (self-test).
             sinks.get(key).or_else(|| sinks.get("*")).cloned()
