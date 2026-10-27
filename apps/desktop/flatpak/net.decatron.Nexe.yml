@@ -144,5 +144,10 @@ modules:
         url: https://github.com/livekit/rust-sdks/releases/download/webrtc-a545de4/webrtc-linux-x64-release.zip
         sha256: 2ece73b9a72a2cacd73d0c62ac3a414e202f37885c3c8f49dddb43c1443ac0bd
         dest: webrtc
+      # DeepFilterNet's lib.rs embeds ../../models/*.tar.gz from the repo root, which the vendored crate does not include
+      - type: file
+        url: https://github.com/Rikorose/DeepFilterNet/raw/d375b2d8309e0935d165700c91da9de862a99c31/models/DeepFilterNet3_onnx.tar.gz
+        sha256: c94d91f70911001c946e0fabb4aa9adc37045f45a03b56008cb0c8244cb63616
+        dest: cargo/vendor/models
       - cargo-sources.json
       - node-sources.json
