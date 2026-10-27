@@ -23,8 +23,10 @@ const on = (key: string) => localStorage.getItem(key) !== "false";
 export function getEchoCancellation() { return on("nexe:voice:echoCancellation"); }
 export function getAutoGain() { return on("nexe:voice:autoGain"); }
 
-/** Applies the saved processing to a native call that is already running. No-op when not in one. */
+/** Applies the saved processing to a call that is already running. No-op when not in one. */
 export function applyNativeProcessing() {
+  // The web engine (Windows, macOS) listens for this to switch its DeepFilterNet filter.
+  window.dispatchEvent(new Event("nexe:voice-processing"));
   invoke("voice_set_processing", {
     echoCancellation: getEchoCancellation(),
     noiseMode: getNoiseMode(),

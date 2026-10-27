@@ -1,3 +1,4 @@
+import { denoiseStream, dfnWebSupported } from "./dfnWeb";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -96,12 +97,17 @@ async function startWeb(opts: MicTestOptions, setLevel: (v: number) => void): Pr
     audio: {
       deviceId: opts.input ? { exact: opts.input } : undefined,
       echoCancellation: opts.echoCancellation,
-      noiseSuppression: opts.noiseMode !== "off",
+      noiseSuppression: opts.noiseMode === "standard",
       autoGainControl: opts.autoGain,
     },
   });
+  // DeepFilterNet works on the microphone before anything else hears it.
+  let cleaned: { stream: MediaStream; stop: () => void } | null = null;
+  if (opts.noiseMode === "dfn" && dfnWebSupported()) {
+    cleaned = await denoiseStream(stream).catch(() => null);
+  }
   const ctx = new AudioContext();
-  const source = ctx.createMediaStreamSource(stream);
+  const source = ctx.createMediaStreamSource(cleaned?.stream ?? stream);
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 1024;
   source.connect(analyser);
@@ -130,6 +136,7 @@ async function startWeb(opts: MicTestOptions, setLevel: (v: number) => void): Pr
     player.pause();
     player.srcObject = null;
     stream.getTracks().forEach((t) => t.stop());
+    cleaned?.stop();
     void ctx.close();
   };
 }

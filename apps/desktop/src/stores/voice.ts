@@ -8,6 +8,7 @@ import {
 } from "livekit-client";
 import { createNativeRoom, isNativeRoom, needsNativeVoice } from "../lib/nativeRoom";
 import { getNoiseMode } from "../lib/voicePrefs";
+import { applyWebNoiseMode } from "../lib/dfnWeb";
 import { api, type VoiceState, type TierLimits, type DMCallSignal } from "../lib/api";
 
 // ── Screen share resolution presets ──
@@ -159,7 +160,8 @@ function createRoom(): Room {
   // Webviews without WebRTC (Linux Flatpak) use the Rust voice engine; every other platform is unchanged.
   if (needsNativeVoice()) return createNativeRoom();
 
-  const noiseSupp = getNoiseMode() !== "off";
+  // DeepFilterNet replaces the browser's own filter, so the two do not stack.
+  const noiseSupp = getNoiseMode() === "standard";
   const echoCancellation = localStorage.getItem("nexe:voice:echoCancellation") !== "false";
   const autoGain = localStorage.getItem("nexe:voice:autoGain") !== "false";
 
@@ -250,7 +252,7 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
         participants: resp.participants || [],
       });
 
-      try { await room.localParticipant.setMicrophoneEnabled(true); }
+      try { await room.localParticipant.setMicrophoneEnabled(true); void applyWebNoiseMode(room); }
       catch { console.warn("Microphone unavailable on join"); }
     } catch (err) {
       console.error("Failed to join voice channel:", err);
@@ -482,7 +484,7 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
       await room.connect(resp.url, resp.token);
       set({ room });
 
-      try { await room.localParticipant.setMicrophoneEnabled(true); } catch { /* */ }
+      try { await room.localParticipant.setMicrophoneEnabled(true); void applyWebNoiseMode(room); } catch { /* */ }
       if (video) {
         try { await room.localParticipant.setCameraEnabled(true); set({ cameraEnabled: true }); } catch { /* */ }
       }
@@ -514,7 +516,7 @@ export const useVoiceStore = create<VoiceStore>((set, get) => ({
       await room.connect(resp.url, resp.token);
       set({ room });
 
-      try { await room.localParticipant.setMicrophoneEnabled(true); } catch { /* */ }
+      try { await room.localParticipant.setMicrophoneEnabled(true); void applyWebNoiseMode(room); } catch { /* */ }
       if (incomingCall.video) {
         try { await room.localParticipant.setCameraEnabled(true); set({ cameraEnabled: true }); } catch { /* */ }
       }
@@ -578,3 +580,8 @@ export function isConnected(state: VoiceStore): boolean {
 export function isDMCall(state: VoiceStore): boolean {
   return state.activeCall?.type === "dm";
 }
+
+// Settings changed the noise mode during a call: switch the DeepFilterNet filter on the microphone.
+window.addEventListener("nexe:voice-processing", () => {
+  void applyWebNoiseMode(useVoiceStore.getState().room);
+});

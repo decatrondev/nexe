@@ -4,6 +4,7 @@ import { api, type SocialLink, type TierLimits } from "../lib/api";
 import ImageCropModal from "./ImageCropModal";
 import { listNativeDevices, needsNativeVoice } from "../lib/nativeRoom";
 import { useMicTest } from "../lib/micTest";
+import { dfnWebSupported } from "../lib/dfnWeb";
 import { applyNativeProcessing, setNoiseMode, getNoiseMode, type NoiseMode } from "../lib/voicePrefs";
 import { invoke } from "@tauri-apps/api/core";
 import { Tabs, TabList, TabPanel, Select, ColorPicker, Toggle, type TabItem } from "@nexe/ui";
@@ -1370,11 +1371,11 @@ function VoiceVideoTab() {
     { value: "1080p60", label: "1080p 60fps", desc: "Full HD smooth", tier: "ultra", minTier: "ultra" },
   ];
 
-  // DeepFilterNet runs in the native voice engine, so it is only offered where that engine is used.
+  // DeepFilterNet runs in the native engine on Linux and as WebAssembly in the webview elsewhere.
   const noiseOptions: { value: NoiseMode; label: string; desc: string }[] = [
     { value: "off", label: "Off", desc: "No filtering" },
     { value: "standard", label: "Standard", desc: "Light, low CPU" },
-    ...(needsNativeVoice() ? [{ value: "dfn" as NoiseMode, label: "DeepFilterNet", desc: "Strongest, AI based" }] : []),
+    ...(needsNativeVoice() || dfnWebSupported() ? [{ value: "dfn" as NoiseMode, label: "DeepFilterNet", desc: "Strongest, AI based" }] : []),
   ];
 
   const tierOrder = ["free", "pro", "ultra"];

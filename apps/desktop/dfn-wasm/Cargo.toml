@@ -1,0 +1,28 @@
+[package]
+name = "nexe-dfn-wasm"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Built on its own (not part of the Tauri workspace): this is the DeepFilterNet noise suppressor
+# compiled to WebAssembly for the webviews of Windows and macOS.
+[workspace]
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+deep_filter_net = { package = "deep_filter", git = "https://github.com/Rikorose/DeepFilterNet", rev = "d375b2d", default-features = false, features = ["tract", "default-model"] }
+wasm-bindgen = "=0.2.100"
+tract-core = "=0.21.4"
+tract-onnx = "=0.21.4"
+tract-hir = "=0.21.4"
+tract-pulse = "=0.21.4"
+ndarray = "0.15"
+# Audio worklets have no crypto API; the only randomness needed is hash-map seeding, so a fixed generator is enough.
+getrandom = { version = "0.2", features = ["custom"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
