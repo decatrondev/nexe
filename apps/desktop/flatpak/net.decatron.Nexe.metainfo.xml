@@ -51,6 +51,11 @@
     <category>Chat</category>
   </categories>
   <releases>
+    <release version="0.5.40" date="2026-10-27">
+      <description>
+        <p>On Linux you can now see other people's cameras and shared screens in calls.</p>
+      </description>
+    </release>
     <release version="0.5.39" date="2026-10-26">
       <description>
         <p>The DeepFilterNet noise suppression option is now available on every platform, not only in Linux voice calls.</p>

@@ -12,6 +12,7 @@ mod updater;
 #[cfg(target_os = "linux")]
 mod audio_pipeline;
 mod mic_test;
+mod video;
 mod voice;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -28,6 +29,10 @@ pub fn run() {
 
     if std::env::var_os("NEXE_CALL_SELFTEST").is_some() {
         voice::selftest();
+        return;
+    }
+    if std::env::var_os("NEXE_VIDEO_SELFTEST").is_some() {
+        voice::video_selftest();
         return;
     }
     if std::env::var_os("NEXE_MIC_SELFTEST").is_some() {
@@ -62,6 +67,8 @@ pub fn run() {
             installer::self_install,
             voice::voice_connect,
             voice::voice_disconnect,
+            voice::voice_video_attach,
+            voice::voice_video_detach,
             voice::voice_set_mic,
             voice::voice_set_deafen,
             voice::voice_set_volume,
