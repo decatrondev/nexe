@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { ConnectionQuality, RoomEvent, type Room } from "livekit-client";
+import { getAutoGain, getEchoCancellation, getNoiseMode } from "./voicePrefs";
 
 /**
  * Voice engine for webviews without WebRTC (WebKitGTK in the Linux Flatpak has no
@@ -86,13 +87,14 @@ export class NativeRoom {
   async connect(url: string, token: string): Promise<void> {
     this.unlisten = await listen<NativeEvent>("voice://event", (e) => this.onNative(e.payload));
     try {
-      const on = (key: string) => localStorage.getItem(key) !== "false";
       await invoke("voice_connect", {
         url,
         token,
-        echoCancellation: on("nexe:voice:echoCancellation"),
-        noiseSuppression: on("nexe:voice:noiseSuppression"),
-        autoGain: on("nexe:voice:autoGain"),
+        echoCancellation: getEchoCancellation(),
+        noiseMode: getNoiseMode(),
+        autoGain: getAutoGain(),
+        inputDevice: localStorage.getItem("nexe:voice:inputDevice") || null,
+        outputDevice: localStorage.getItem("nexe:voice:outputDevice") || null,
       });
     } catch (err) {
       this.dispose();

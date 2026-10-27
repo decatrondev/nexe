@@ -2,12 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { needsNativeVoice } from "./nativeRoom";
+import type { NoiseMode } from "./voicePrefs";
 
 export interface MicTestOptions {
   input: string;
   output: string;
   echoCancellation: boolean;
-  noiseSuppression: boolean;
+  noiseMode: NoiseMode;
   autoGain: boolean;
 }
 
@@ -49,7 +50,7 @@ export function useMicTest(opts: MicTestOptions) {
   }, [opts, stop]);
 
   // Restart with the new options when something changes during a test.
-  const key = `${opts.input}|${opts.output}|${opts.echoCancellation}|${opts.noiseSuppression}|${opts.autoGain}`;
+  const key = `${opts.input}|${opts.output}|${opts.echoCancellation}|${opts.noiseMode}|${opts.autoGain}`;
   const lastKey = useRef(key);
   useEffect(() => {
     if (lastKey.current !== key) {
@@ -80,7 +81,7 @@ async function startNative(
       output: opts.output,
       loopback: true,
       echoCancellation: opts.echoCancellation,
-      noiseSuppression: opts.noiseSuppression,
+      noiseMode: opts.noiseMode,
       autoGain: opts.autoGain,
     });
   } catch (e) {
@@ -95,7 +96,7 @@ async function startWeb(opts: MicTestOptions, setLevel: (v: number) => void): Pr
     audio: {
       deviceId: opts.input ? { exact: opts.input } : undefined,
       echoCancellation: opts.echoCancellation,
-      noiseSuppression: opts.noiseSuppression,
+      noiseSuppression: opts.noiseMode !== "off",
       autoGainControl: opts.autoGain,
     },
   });

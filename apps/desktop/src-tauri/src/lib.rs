@@ -9,6 +9,8 @@ use tauri_plugin_autostart::ManagerExt;
 mod flatpak_update;
 mod installer;
 mod updater;
+#[cfg(target_os = "linux")]
+mod audio_pipeline;
 mod mic_test;
 mod voice;
 
@@ -24,6 +26,10 @@ pub fn run() {
         }
     }
 
+    if std::env::var_os("NEXE_CALL_SELFTEST").is_some() {
+        voice::selftest();
+        return;
+    }
     if std::env::var_os("NEXE_MIC_SELFTEST").is_some() {
         mic_test::selftest();
         return;
@@ -59,9 +65,9 @@ pub fn run() {
             voice::voice_set_mic,
             voice::voice_set_deafen,
             voice::voice_set_volume,
-            voice::voice_list_devices,
             voice::voice_set_input,
             voice::voice_set_output,
+            voice::voice_set_processing,
             mic_test::mic_test_list_devices,
             mic_test::mic_test_start,
             mic_test::mic_test_stop,

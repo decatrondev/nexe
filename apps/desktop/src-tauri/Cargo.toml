@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.5.37"
+version = "0.5.38"
 description = "Nexe desktop client"
 authors = ["Decatron"]
 license = "AGPL-3.0-only"
@@ -39,3 +39,11 @@ zbus = "5"
 livekit = { version = "0.9.7", features = ["rustls-tls-native-roots"] }
 libpulse-binding = "2.30"
 libpulse-simple-binding = "2.29"
+# DeepFilterNet noise suppression. crates.io only has a 2022 release (DFN2), so it comes from git; tract
+# is pinned to 0.21.4 because newer versions switch ndarray to 0.16, which this release does not build with.
+deep_filter_net = { package = "deep_filter", git = "https://github.com/Rikorose/DeepFilterNet", rev = "d375b2d", default-features = false, features = ["tract", "default-model"] }
+ndarray = "0.15"
+tract-core = "=0.21.4"
+tract-onnx = "=0.21.4"
+tract-hir = "=0.21.4"
+tract-pulse = "=0.21.4"

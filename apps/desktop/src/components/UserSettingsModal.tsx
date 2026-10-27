@@ -4,6 +4,8 @@ import { api, type SocialLink, type TierLimits } from "../lib/api";
 import ImageCropModal from "./ImageCropModal";
 import { listNativeDevices, needsNativeVoice } from "../lib/nativeRoom";
 import { useMicTest } from "../lib/micTest";
+import { applyNativeProcessing, setNoiseMode, getNoiseMode, type NoiseMode } from "../lib/voicePrefs";
+import { invoke } from "@tauri-apps/api/core";
 import { Tabs, TabList, TabPanel, Select, ColorPicker, Toggle, type TabItem } from "@nexe/ui";
 
 interface Props { onClose: () => void }
@@ -1316,12 +1318,12 @@ function VoiceVideoTab() {
   const [outputDevice, setOutputDevice] = useState(() => localStorage.getItem("nexe:voice:outputDevice") ?? "");
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
   const [outputDevices, setOutputDevices] = useState<MediaDeviceInfo[]>([]);
-  const [noiseSupp, setNoiseSupp] = useState(() => localStorage.getItem("nexe:voice:noiseSuppression") !== "false");
+  const [noiseMode, setNoiseModeState] = useState<NoiseMode>(() => getNoiseMode());
   const [echoCancellation, setEchoCancellation] = useState(() => localStorage.getItem("nexe:voice:echoCancellation") !== "false");
   const [autoGain, setAutoGain] = useState(() => localStorage.getItem("nexe:voice:autoGain") !== "false");
   const [tierLimits, setTierLimits] = useState<import("../lib/api").TierLimits | null>(null);
 
-  const micTest = useMicTest({ input: inputDevice, output: outputDevice, echoCancellation, noiseSuppression: noiseSupp, autoGain });
+  const micTest = useMicTest({ input: inputDevice, output: outputDevice, echoCancellation, noiseMode, autoGain });
 
   useEffect(() => {
     (async () => {
@@ -1368,6 +1370,13 @@ function VoiceVideoTab() {
     { value: "1080p60", label: "1080p 60fps", desc: "Full HD smooth", tier: "ultra", minTier: "ultra" },
   ];
 
+  // DeepFilterNet runs in the native voice engine, so it is only offered where that engine is used.
+  const noiseOptions: { value: NoiseMode; label: string; desc: string }[] = [
+    { value: "off", label: "Off", desc: "No filtering" },
+    { value: "standard", label: "Standard", desc: "Light, low CPU" },
+    ...(needsNativeVoice() ? [{ value: "dfn" as NoiseMode, label: "DeepFilterNet", desc: "Strongest, AI based" }] : []),
+  ];
+
   const tierOrder = ["free", "pro", "ultra"];
   const userTierIndex = tierOrder.indexOf(userTier);
 
@@ -1394,7 +1403,7 @@ function VoiceVideoTab() {
           <label className="mb-2 block text-sm font-medium text-slate-200">Input Device</label>
           <select
             value={inputDevice}
-            onChange={(e) => { setInputDevice(e.target.value); saveVoiceSetting("inputDevice", e.target.value); }}
+            onChange={(e) => { setInputDevice(e.target.value); saveVoiceSetting("inputDevice", e.target.value); if (needsNativeVoice()) invoke("voice_set_input", { deviceId: e.target.value, label: null }).catch(() => {}); }}
             className="w-full rounded-lg border border-dark-600 bg-dark-900 px-3 py-2 text-sm text-white outline-none focus:border-nexe-500"
           >
             <option value="">Default</option>
@@ -1407,7 +1416,7 @@ function VoiceVideoTab() {
           <label className="mb-2 block text-sm font-medium text-slate-200">Output Device</label>
           <select
             value={outputDevice}
-            onChange={(e) => { setOutputDevice(e.target.value); saveVoiceSetting("outputDevice", e.target.value); }}
+            onChange={(e) => { setOutputDevice(e.target.value); saveVoiceSetting("outputDevice", e.target.value); if (needsNativeVoice()) invoke("voice_set_output", { deviceId: e.target.value, label: null }).catch(() => {}); }}
             className="w-full rounded-lg border border-dark-600 bg-dark-900 px-3 py-2 text-sm text-white outline-none focus:border-nexe-500"
           >
             <option value="">Default</option>
@@ -1451,26 +1460,37 @@ function VoiceVideoTab() {
 
       <div className="space-y-3">
         <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Audio Processing</p>
-        <div className="flex items-center justify-between rounded-lg border border-dark-700 bg-dark-800 p-4">
-          <div>
-            <p className="text-sm font-medium text-slate-200">Noise Suppression</p>
-            <p className="text-xs text-slate-500">Reduce background noise from your microphone.</p>
+        <div className="rounded-lg border border-dark-700 bg-dark-800 p-4">
+          <p className="text-sm font-medium text-slate-200">Noise Suppression</p>
+          <p className="mb-3 text-xs text-slate-500">Reduce background noise from your microphone. Use "Test microphone" above to compare.</p>
+          <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${noiseOptions.length}, minmax(0, 1fr))` }}>
+            {noiseOptions.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => { setNoiseModeState(opt.value); setNoiseMode(opt.value); applyNativeProcessing(); }}
+                className={`rounded-lg border px-3 py-2 text-left transition-colors ${
+                  noiseMode === opt.value ? "border-nexe-500 bg-nexe-500/10" : "border-dark-600 hover:border-dark-500"
+                }`}
+              >
+                <span className="block text-sm font-medium text-slate-200">{opt.label}</span>
+                <span className="block text-[11px] text-slate-500">{opt.desc}</span>
+              </button>
+            ))}
           </div>
-          <Toggle checked={noiseSupp} onChange={(v) => { setNoiseSupp(v); saveVoiceSetting("noiseSuppression", String(v)); }} />
         </div>
         <div className="flex items-center justify-between rounded-lg border border-dark-700 bg-dark-800 p-4">
           <div>
             <p className="text-sm font-medium text-slate-200">Echo Cancellation</p>
             <p className="text-xs text-slate-500">Prevent echo from your speakers being captured.</p>
           </div>
-          <Toggle checked={echoCancellation} onChange={(v) => { setEchoCancellation(v); saveVoiceSetting("echoCancellation", String(v)); }} />
+          <Toggle checked={echoCancellation} onChange={(v) => { setEchoCancellation(v); saveVoiceSetting("echoCancellation", String(v)); applyNativeProcessing(); }} />
         </div>
         <div className="flex items-center justify-between rounded-lg border border-dark-700 bg-dark-800 p-4">
           <div>
             <p className="text-sm font-medium text-slate-200">Auto Gain Control</p>
             <p className="text-xs text-slate-500">Automatically adjust microphone volume.</p>
           </div>
-          <Toggle checked={autoGain} onChange={(v) => { setAutoGain(v); saveVoiceSetting("autoGain", String(v)); }} />
+          <Toggle checked={autoGain} onChange={(v) => { setAutoGain(v); saveVoiceSetting("autoGain", String(v)); applyNativeProcessing(); }} />
         </div>
       </div>
 

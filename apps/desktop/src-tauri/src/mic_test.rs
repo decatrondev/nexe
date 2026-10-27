@@ -12,7 +12,7 @@ mod imp {
     use super::{AudioDevice, AudioDevices};
     use libpulse_binding as pulse;
     use libpulse_simple_binding::Simple;
-    use livekit::webrtc::native::apm::AudioProcessingModule;
+    use crate::audio_pipeline::{new_shared_apm, MicProcessor, NoiseMode, Processing};
     use pulse::callbacks::ListResult;
     use pulse::context::{Context, FlagSet, State};
     use pulse::def::BufferAttr;
@@ -109,7 +109,7 @@ mod imp {
         input: Option<String>,
         output: Option<String>,
         loopback: bool,
-        noise: bool,
+        noise: NoiseMode,
         gain: bool,
     }
 
@@ -143,7 +143,8 @@ mod imp {
         };
 
         // No playback reference exists here, so echo cancellation has nothing to cancel in a test.
-        let mut apm = AudioProcessingModule::new(false, cfg.gain, true, cfg.noise);
+        let chain = Processing { echo: false, gain: cfg.gain, noise: cfg.noise };
+        let mut proc = MicProcessor::new(chain, new_shared_apm(chain));
         let mut bytes = vec![0u8; BLOCK_SAMPLES * 2];
         let mut samples = vec![0i16; BLOCK_SAMPLES];
         let (mut rms_acc, mut peak, mut blocks) = (0f64, 0f64, 0u32);
@@ -155,7 +156,7 @@ mod imp {
             for (s, b) in samples.iter_mut().zip(bytes.chunks_exact(2)) {
                 *s = i16::from_le_bytes([b[0], b[1]]);
             }
-            let _ = apm.process_stream(&mut samples, RATE as i32, 1);
+            proc.process(&mut samples);
 
             let mut sum = 0f64;
             for s in &samples {
@@ -193,7 +194,8 @@ mod imp {
         )));
         let stop = Arc::new(AtomicBool::new(false));
         let flag = stop.clone();
-        let cfg = Settings { input: None, output: None, loopback: true, noise: true, gain: true };
+        let mode = NoiseMode::parse(&std::env::var("NEXE_MIC_SELFTEST").unwrap_or_default());
+        let cfg = Settings { input: None, output: None, loopback: true, noise: mode, gain: true };
         let worker = std::thread::spawn(move || run(&|v| println!("level: {v}"), flag, cfg));
         std::thread::sleep(std::time::Duration::from_secs(4));
         stop.store(true, Ordering::SeqCst);
@@ -214,7 +216,7 @@ mod imp {
         output: Option<String>,
         loopback: bool,
         _echo_cancellation: bool,
-        noise_suppression: bool,
+        noise_mode: String,
         auto_gain: bool,
     ) -> Result<(), String> {
         state.stop();
@@ -223,7 +225,7 @@ mod imp {
             input: nonempty(input),
             output: nonempty(output),
             loopback,
-            noise: noise_suppression,
+            noise: NoiseMode::parse(&noise_mode),
             gain: auto_gain,
         };
         let flag = stop.clone();
@@ -261,7 +263,7 @@ mod imp {
         _output: Option<String>,
         _loopback: bool,
         _echo_cancellation: bool,
-        _noise_suppression: bool,
+        _noise_mode: String,
         _auto_gain: bool,
     ) -> Result<(), String> {
         Err("The native microphone test is only used on Linux".into())

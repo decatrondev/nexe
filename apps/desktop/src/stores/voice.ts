@@ -7,6 +7,7 @@ import {
   type RemoteTrackPublication,
 } from "livekit-client";
 import { createNativeRoom, isNativeRoom, needsNativeVoice } from "../lib/nativeRoom";
+import { getNoiseMode } from "../lib/voicePrefs";
 import { api, type VoiceState, type TierLimits, type DMCallSignal } from "../lib/api";
 
 // ── Screen share resolution presets ──
@@ -158,7 +159,7 @@ function createRoom(): Room {
   // Webviews without WebRTC (Linux Flatpak) use the Rust voice engine; every other platform is unchanged.
   if (needsNativeVoice()) return createNativeRoom();
 
-  const noiseSupp = localStorage.getItem("nexe:voice:noiseSuppression") !== "false";
+  const noiseSupp = getNoiseMode() !== "off";
   const echoCancellation = localStorage.getItem("nexe:voice:echoCancellation") !== "false";
   const autoGain = localStorage.getItem("nexe:voice:autoGain") !== "false";
 

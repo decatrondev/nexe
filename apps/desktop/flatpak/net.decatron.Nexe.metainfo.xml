@@ -51,6 +51,11 @@
     <category>Chat</category>
   </categories>
   <releases>
+    <release version="0.5.38" date="2026-10-26">
+      <description>
+        <p>Linux voice calls now use Nexe's own audio engine: per-user volume, working echo cancellation and a new AI noise suppression option (DeepFilterNet) in Voice &amp; Video settings.</p>
+      </description>
+    </release>
     <release version="0.5.37" date="2026-10-26">
       <description>
         <p>On Linux the window now has Nexe's own dark title bar with working minimize, maximize and close buttons, instead of the white system one.</p>
